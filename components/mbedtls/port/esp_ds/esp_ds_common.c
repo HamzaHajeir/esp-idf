@@ -12,7 +12,7 @@
 #include "esp_ds/esp_ds_rsa.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "psa/crypto.h"
+#include "mbedtls/rsa.h"
 
 #ifdef SOC_DIG_SIGN_SUPPORTED
 #include "rom/digital_signature.h"
@@ -40,16 +40,6 @@ hmac_key_id_t esp_ds_get_hmac_key_id(void)
 }
 
 size_t esp_ds_get_keylen(void *ctx)
-{
-    if (s_ds_data == NULL) {
-        ESP_LOGE(TAG, "s_ds_data is NULL, cannot get key length");
-        return 0;
-    }
-    /* calculating the rsa_length in bytes */
-    return ((s_ds_data->rsa_length + 1) * FACTOR_KEYLEN_IN_BYTES);
-}
-
-size_t esp_ds_get_keylen_alt(mbedtls_pk_context *ctx)
 {
     if (s_ds_data == NULL) {
         ESP_LOGE(TAG, "s_ds_data is NULL, cannot get key length");
@@ -144,7 +134,7 @@ int esp_ds_mgf_mask(unsigned char *dst, size_t dlen, unsigned char *src,
     mbedtls_md_init(&md_ctx);
     md_info = mbedtls_md_info_from_type(md_alg);
     if (md_info == NULL) {
-        return PSA_ERROR_INVALID_ARGUMENT;
+        return MBEDTLS_ERR_RSA_BAD_INPUT_DATA;
     }
 
     if ((ret = mbedtls_md_setup(&md_ctx, md_info, 0)) != 0) {
@@ -201,11 +191,11 @@ int esp_ds_hash_mprime(const unsigned char *hash, size_t hlen,
     const unsigned char zeros[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     mbedtls_md_context_t md_ctx;
-    int ret = PSA_ERROR_INVALID_ARGUMENT;
+    int ret = MBEDTLS_ERR_RSA_BAD_INPUT_DATA;
 
     const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(md_alg);
     if (md_info == NULL) {
-        return PSA_ERROR_INVALID_ARGUMENT;
+        return MBEDTLS_ERR_RSA_BAD_INPUT_DATA;
     }
 
     mbedtls_md_init(&md_ctx);

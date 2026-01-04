@@ -29,8 +29,7 @@
 #include "esp_random.h"
 
 #ifdef CONFIG_NVS_ENCRYPTION
-#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
-#include "mbedtls/private/aes.h"
+#include "mbedtls/aes.h"
 #endif
 
 #ifdef CONFIG_SOC_HMAC_SUPPORTED

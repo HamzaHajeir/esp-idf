@@ -6,6 +6,7 @@
 
 #include "sdkconfig.h"
 #include "esp_attr.h"
+#include "freertos/FreeRTOS.h"
 #include "esp_private/io_mux.h"
 #include "esp_private/critical_section.h"
 #include "hal/rtc_io_ll.h"
@@ -22,7 +23,7 @@ esp_err_t io_mux_set_clock_source(soc_module_clk_t clk_src)
 }
 
 extern portMUX_TYPE rtc_spinlock;
-DEFINE_CRIT_SECTION_LOCK_STATIC(s_io_mux_spinlock);
+static portMUX_TYPE s_io_mux_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 static rtc_io_status_t s_rtc_io_status = {
     .rtc_io_enabled_cnt = { 0 },

@@ -1,0 +1,47 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Runs every hour
+  workflow_dispatch: # Allows manual triggering of the workflow
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # Fetch all history for all branches
+          token: ${{ secrets.PUSH_TOKEN }} # Use the default token
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "Hamzah Hajeir"
+          git config --global user.email "HamzaHajeir@users.noreply.github.com"
+          git remote add upstream https://github.com/espressif/esp-idf.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+      
+      - name: Sync All Branches
+        run: |
+          for remote_branch in $(git branch -r | grep upstream | grep -v HEAD); do
+            branch=$(echo $remote_branch | sed 's/upstream\///') # Get the branch name without upstream/
+            
+            if git show-ref --verify --quiet refs/heads/$branch; then
+              # Branch already exists, update it
+              git checkout $branch
+              
+              git reset --soft upstream/$branch
+              git add .
+              git commit -m "Sync with upstream changes while retaining local edits"
+            else
+              # Branch doesn't exist; create and track it
+              git checkout -b $branch upstream/$branch
+            fi
+            # Force push to origin, this will overwrite the remote branches
+            git push -f origin $branch || { echo "Push failed for $branch. Manual intervention required."; exit 1; }
+          done
+
+

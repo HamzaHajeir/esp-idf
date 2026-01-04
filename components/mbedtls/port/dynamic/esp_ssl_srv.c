@@ -21,7 +21,8 @@ static bool ssl_ciphersuite_uses_rsa_key_ex(mbedtls_ssl_context *ssl)
     const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
         ssl->MBEDTLS_PRIVATE(handshake)->ciphersuite_info;
 
-    if (ciphersuite_info->MBEDTLS_PRIVATE(key_exchange) == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA) {
+    if (ciphersuite_info->MBEDTLS_PRIVATE(key_exchange) == MBEDTLS_KEY_EXCHANGE_RSA ||
+        ciphersuite_info->MBEDTLS_PRIVATE(key_exchange) == MBEDTLS_KEY_EXCHANGE_RSA_PSK) {
         return true;
     } else {
         return false;
@@ -100,6 +101,7 @@ static int manage_resource(mbedtls_ssl_context *ssl, bool add)
                 CHECK_OK(esp_mbedtls_add_tx_buffer(ssl, buffer_len));
             } else {
 #ifdef CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA
+                esp_mbedtls_free_dhm(ssl);
                 /**
                  * Not free keycert->key and keycert until MBEDTLS_SSL_CLIENT_KEY_EXCHANGE for rsa key exchange methods.
                  * For ssl server will use keycert->key to parse client key exchange.

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
 #include "esp_srp_mpi.h"
 
 esp_mpi_t *esp_mpi_new(void)

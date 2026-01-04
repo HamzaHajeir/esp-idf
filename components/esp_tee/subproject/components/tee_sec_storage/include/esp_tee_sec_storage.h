@@ -16,11 +16,11 @@ extern "C" {
 #include "esp_err.h"
 #include "esp_bit_defs.h"
 
-#if CONFIG_SECURE_TEE_SEC_STG_SUPPORT_SECP384R1_SIGN
+#if SOC_ECDSA_SUPPORT_CURVE_P384
 #define MAX_ECDSA_SUPPORTED_KEY_LEN         48   /*!< Maximum supported size for the ECDSA key (SECP384R1) */
 #else
 #define MAX_ECDSA_SUPPORTED_KEY_LEN         32   /*!< Maximum supported size for the ECDSA key (SECP256R1) */
-#endif /* CONFIG_SECURE_TEE_SEC_STG_SUPPORT_SECP384R1_SIGN */
+#endif /* SOC_ECDSA_SUPPORT_CURVE_P384 */
 #define MAX_AES_SUPPORTED_KEY_LEN           32   /*!< Maximum supported size for the AES key */
 
 #define SEC_STORAGE_FLAG_NONE               0      /*!< No flags */
@@ -86,7 +86,8 @@ typedef struct {
  *
  */
 typedef struct {
-    uint8_t signature[MAX_ECDSA_SUPPORTED_KEY_LEN * 2];    /*!< Signature */
+    uint8_t sign_r[MAX_ECDSA_SUPPORTED_KEY_LEN];    /*!< R component */
+    uint8_t sign_s[MAX_ECDSA_SUPPORTED_KEY_LEN];    /*!< S component */
 } __attribute__((__packed__)) esp_tee_sec_storage_ecdsa_sign_t;
 
 #if ESP_TEE_BUILD && !(__DOXYGEN__)

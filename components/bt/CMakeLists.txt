@@ -685,10 +685,6 @@ if(CONFIG_BT_ENABLED)
                 "porting/transport/src/hci_transport.c"
         )
 
-        list(APPEND include_dirs
-            host/nimble/port/include
-        )
-
         if(CONFIG_BT_CONTROLLER_DISABLED)
             list(APPEND srcs
                 "host/nimble/nimble/porting/nimble/src/hal_uart.c"
@@ -729,12 +725,7 @@ if(CONFIG_BT_ENABLED)
         )
     endif()
 
-    # Compile TinyCrypt if:
-    # 1. Controller uses TinyCrypt (not mbedTLS), OR
-    # 2. NimBLE uses TinyCrypt (not mbedTLS), OR
-    # 3. Bluedroid Host SMP uses TinyCrypt
-    if(CONFIG_BT_SMP_CRYPTO_STACK_TINYCRYPT OR
-       (NOT CONFIG_BT_LE_CRYPTO_STACK_MBEDTLS AND NOT CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS))
+    if(NOT (CONFIG_BT_LE_CRYPTO_STACK_MBEDTLS OR CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS))
         list(APPEND include_dirs
                 common/tinycrypt/include
                 common/tinycrypt/port

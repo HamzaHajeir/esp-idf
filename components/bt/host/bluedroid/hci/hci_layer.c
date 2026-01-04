@@ -123,9 +123,7 @@ int hci_start_up(void)
     osi_event_bind(hci_host_env.downstream_data_ready, hci_host_thread, HCI_DOWNSTREAM_DATA_QUEUE_IDX);
 
     packet_fragmenter->init(&packet_fragmenter_callbacks);
-    if (!hal->open(&hal_callbacks, hci_host_thread)) {
-        goto error;
-    }
+    hal->open(&hal_callbacks, hci_host_thread);
 
     hci_host_startup_flag = true;
     return 0;

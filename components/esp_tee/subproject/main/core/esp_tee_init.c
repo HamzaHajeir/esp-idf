@@ -22,8 +22,6 @@
 #include "esp_app_desc.h"
 #endif
 
-#include "psa/crypto.h"
-
 /* TEE symbols */
 extern uint32_t _tee_stack;
 extern uint32_t _tee_bss_start;
@@ -155,13 +153,6 @@ void __attribute__((noreturn)) esp_tee_init(uint32_t ree_entry_addr, uint32_t re
         abort();
     }
     ESP_FAULT_ASSERT(err == ESP_OK);
-
-    psa_status_t status = psa_crypto_init();
-    if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "Failed to initialize PSA Crypto! (0x%08x)", status);
-        abort();
-    }
-    ESP_FAULT_ASSERT(status == PSA_SUCCESS);
 
     /* Initializing the secure storage */
     err = esp_tee_sec_storage_init();

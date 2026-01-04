@@ -1236,14 +1236,9 @@ int bt_mesh_dfu_cli_send(struct bt_mesh_dfu_cli *cli,
     cli->xfer.flags = 0U;
 
     if (xfer->blob_params) {
-        if (xfer->blob_params->block_size_log &&
-            xfer->blob_params->chunk_size) {
-            cli->xfer.flags |= FLAG_SKIP_CAPS_GET;
-            cli->xfer.blob.block_size_log = xfer->blob_params->block_size_log;
-            cli->xfer.blob.chunk_size = xfer->blob_params->chunk_size;
-        }
-        memcpy(&cli->xfer.blob.chunk_enh_params, &xfer->blob_params->chunk_enh_params,
-               sizeof(bt_mesh_msg_enh_params_t));
+        cli->xfer.flags |= FLAG_SKIP_CAPS_GET;
+        cli->xfer.blob.block_size_log = xfer->blob_params->block_size_log;
+        cli->xfer.blob.chunk_size = xfer->blob_params->chunk_size;
     }
 
     /* Phase will be set based on target status messages: */

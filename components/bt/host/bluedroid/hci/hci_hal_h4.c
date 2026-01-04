@@ -188,7 +188,6 @@ static bool hal_open(const hci_hal_callbacks_t *upper_callbacks, void *task_thre
 
     //register vhci host cb
     if (hci_host_register_callback(&hci_host_cb) != ESP_OK) {
-        hci_hal_env_deinit();  // Clean up allocated resources on failure
         return false;
     }
 
@@ -667,7 +666,7 @@ static int host_recv_pkt_cb(uint8_t *data, uint16_t len)
         }
 #endif
         pkt_size = BT_PKT_LINKED_HDR_SIZE + BT_HDR_SIZE + len;
-        #if (HEAP_MEMORY_DEBUG || HEAP_MEMORY_STATS)
+        #if HEAP_MEMORY_DEBUG
         linked_pkt = (pkt_linked_item_t *) osi_calloc(pkt_size);
         #else
         linked_pkt = (pkt_linked_item_t *) osi_calloc_base(pkt_size);

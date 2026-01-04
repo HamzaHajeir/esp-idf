@@ -38,10 +38,8 @@
 static ble_hci_trans_rx_cmd_fn *ble_hci_rx_cmd_hs_cb;
 static void *ble_hci_rx_cmd_hs_arg;
 
-#if NIMBLE_BLE_CONNECT
 static ble_hci_trans_rx_acl_fn *ble_hci_rx_acl_hs_cb;
 static void *ble_hci_rx_acl_hs_arg;
-#endif
 
 /*
  * The MBUF payload size must accommodate the HCI data header size plus the
@@ -59,9 +57,8 @@ const static char *TAG = "NimBLE";
 
 int os_msys_buf_alloc(void);
 void os_msys_buf_free(void);
-#if !MYNEWT_VAL(BLE_STATIC_TO_DYNAMIC)
 extern uint8_t ble_hs_enabled_state;
-#endif
+
 void ble_hci_trans_cfg_hs(ble_hci_trans_rx_cmd_fn *cmd_cb,
                           void *cmd_arg,
                           ble_hci_trans_rx_acl_fn *acl_cb,
@@ -69,10 +66,8 @@ void ble_hci_trans_cfg_hs(ble_hci_trans_rx_cmd_fn *cmd_cb,
 {
     ble_hci_rx_cmd_hs_cb = cmd_cb;
     ble_hci_rx_cmd_hs_arg = cmd_arg;
-#if NIMBLE_BLE_CONNECT
     ble_hci_rx_acl_hs_cb = acl_cb;
     ble_hci_rx_acl_hs_arg = acl_arg;
-#endif
 }
 
 void esp_vhci_host_send_packet_wrapper(uint8_t *data, uint16_t len)
@@ -123,7 +118,6 @@ int ble_hci_trans_ll_evt_tx(uint8_t *hci_ev)
     return rc;
 }
 
-#if NIMBLE_BLE_CONNECT
 int ble_hci_trans_hs_acl_tx(struct os_mbuf *om)
 {
     uint16_t len = 0;
@@ -153,7 +147,6 @@ int ble_hci_trans_hs_acl_tx(struct os_mbuf *om)
 
     return rc;
 }
-#endif
 
 int ble_hci_trans_ll_acl_tx(struct os_mbuf *om)
 {
@@ -173,7 +166,7 @@ int ble_hci_trans_reset(void)
     return 0;
 }
 
-#if NIMBLE_BLE_CONNECT
+
 static void ble_hci_rx_acl(uint8_t *data, uint16_t len)
 {
     struct os_mbuf *m = NULL;
@@ -216,7 +209,6 @@ static void ble_hci_rx_acl(uint8_t *data, uint16_t len)
     ble_transport_to_hs_acl(m);
     OS_EXIT_CRITICAL(sr);
 }
-#endif
 
 /*
  * @brief: BT controller callback function, used to notify the upper layer that
@@ -272,11 +264,7 @@ static int host_rcv_pkt(uint8_t *data, uint16_t len)
 
     bt_record_hci_data(data, len);
 
-#if MYNEWT_VAL(BLE_STATIC_TO_DYNAMIC)
-    if (!ble_hs_get_enabled_state()) {
-#else
-    if (!ble_hs_enabled_state) {
-#endif
+    if(!ble_hs_enabled_state) {
         /* If host is not enabled, drop the packet */
         esp_rom_printf("Host not enabled. Dropping the packet!");
         return 0;
@@ -320,9 +308,7 @@ static int host_rcv_pkt(uint8_t *data, uint16_t len)
         rc = ble_hci_trans_ll_evt_tx(evbuf);
         assert(rc == 0);
     } else if (data[0] == BLE_HCI_UART_H4_ACL) {
-#if NIMBLE_BLE_CONNECT
         ble_hci_rx_acl(data + 1, len - 1);
-#endif
     }
     return 0;
 }

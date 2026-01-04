@@ -24,9 +24,6 @@
 
 #include <string.h>
 #include "common/bt_target.h"
-
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
-
 #include "p_256_ecc_pp.h"
 #include "p_256_multprecision.h"
 
@@ -368,7 +365,7 @@ void multiprecision_fast_mod_P256(DWORD *c, DWORD *a)
     uint8_t UB;
     uint8_t UC;
     uint8_t UD;
-    uint8_t U_E;
+    uint8_t UE;
     uint8_t UF;
     uint8_t UG;
     DWORD U;
@@ -384,7 +381,7 @@ void multiprecision_fast_mod_P256(DWORD *c, DWORD *a)
     // E = a[8] + a[9];
     E = a[8];
     E += a[9];
-    U_E = (E < a[9]);
+    UE = (E < a[9]);
 
     // F = a[9] + a[10];
     F = a[9];
@@ -421,7 +418,7 @@ void multiprecision_fast_mod_P256(DWORD *c, DWORD *a)
     c[0] = a[0];
     c[0] += E;
     U = (c[0] < E);
-    U += U_E;
+    U += UE;
     U -= (c[0] < A);
     U -= UA;
     c[0] -= A;
@@ -482,7 +479,7 @@ void multiprecision_fast_mod_P256(DWORD *c, DWORD *a)
     U -= (c[3] < a[15]);
     c[3] -= a[15];
     U -= (c[3] < E);
-    U -= U_E;
+    U -= UE;
     c[3] -= E;
 
     if (U & 0x80000000) {
@@ -549,7 +546,7 @@ void multiprecision_fast_mod_P256(DWORD *c, DWORD *a)
     c[6] += a[15];
     U += (c[6] < a[15]);
     U -= (c[6] < E);
-    U -= U_E;
+    U -= UE;
     c[6] -= E;
 
     if (U & 0x80000000) {
@@ -648,5 +645,3 @@ void multiprecision_inv_mod(DWORD *aminus, DWORD *u, uint32_t keyLength)
         multiprecision_copy(aminus, C, keyLength);
     }
 }
-
-#endif /* SMP_CRYPTO_STACK_NATIVE == TRUE */

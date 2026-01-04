@@ -5,9 +5,15 @@
  */
 #include "esp_log.h"
 #include "esp_secure_boot.h"
+#include "mbedtls/sha256.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/md.h"
+#include "mbedtls/platform.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/ecp.h"
 #include "rom/ecdsa.h"
 #include "sdkconfig.h"
-#include "psa/crypto.h"
 
 #include "secure_boot_signature_priv.h"
 
@@ -25,35 +31,32 @@ esp_err_t verify_ecdsa_signature_block(const ets_secure_boot_signature_t *sig_bl
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t ret = ESP_OK;
-    psa_status_t status;
+    esp_err_t ret;
 
-    /* Prepare public key for verification */
-    psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-    psa_key_id_t key_handle = 0;
+    mbedtls_mpi r, s;
 
-    /* Set key attributes according to the curve */
-    psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_VERIFY_HASH);
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi_init(&s);
+
+    /* Initialise ECDSA context */
+    mbedtls_ecdsa_context ecdsa_context;
+    mbedtls_ecdsa_init(&ecdsa_context);
 
     uint8_t key_size = 0;
-    psa_ecc_family_t curve_family;
 
     switch(trusted_block->ecdsa.key.curve_id) {
         case ECDSA_CURVE_P192:
             key_size = 24;
-            curve_family = PSA_ECC_FAMILY_SECP_R1;
-            psa_set_key_bits(&key_attributes, PSA_BYTES_TO_BITS(key_size));
+            mbedtls_ecp_group_load(&ecdsa_context.MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_SECP192R1);
             break;
         case ECDSA_CURVE_P256:
             key_size = 32;
-            curve_family = PSA_ECC_FAMILY_SECP_R1;
-            psa_set_key_bits(&key_attributes, PSA_BYTES_TO_BITS(key_size));
+            mbedtls_ecp_group_load(&ecdsa_context.MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_SECP256R1);
             break;
 #if CONFIG_SECURE_BOOT_ECDSA_KEY_LEN_384_BITS
         case ECDSA_CURVE_P384:
             key_size = 48;
-            curve_family = PSA_ECC_FAMILY_SECP_R1;
-            psa_set_key_bits(&key_attributes, PSA_BYTES_TO_BITS(key_size));
+            mbedtls_ecp_group_load(&ecdsa_context.MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_SECP384R1);
             break;
 #endif /* CONFIG_SECURE_BOOT_ECDSA_KEY_LEN_384_BITS */
         default:
@@ -61,58 +64,50 @@ esp_err_t verify_ecdsa_signature_block(const ets_secure_boot_signature_t *sig_bl
             return ESP_ERR_INVALID_ARG;
     }
 
-    psa_set_key_algorithm(&key_attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
-    psa_set_key_type(&key_attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(curve_family));
+    uint8_t x_point[ECDSA_INTEGER_LEN] = {};
+    uint8_t y_point[ECDSA_INTEGER_LEN] = {};
+    uint8_t _r[ECDSA_INTEGER_LEN] = {};
+    uint8_t _s[ECDSA_INTEGER_LEN] = {};
 
-    /* Prepare the public key data from X and Y coordinates */
-    uint8_t public_key[(2 * ECDSA_INTEGER_LEN) + 1];
-    uint8_t x_point[ECDSA_INTEGER_LEN] = {0};
-    uint8_t y_point[ECDSA_INTEGER_LEN] = {0};
-
-    /* Convert key points from little-endian to big-endian format */
+    /* Convert r and s components to big endian format */
     for (int i = 0; i < key_size; i++) {
-        x_point[i] = trusted_block->ecdsa.key.point[key_size - i - 1];
-
-        y_point[i] = trusted_block->ecdsa.key.point[2 * key_size - i - 1];
+        _r[i] = trusted_block->ecdsa.signature[key_size - i - 1];
+        _s[i] = trusted_block->ecdsa.signature[2 * key_size - i - 1];
     }
 
-    public_key[0] = 0x04; /* Uncompressed point format */
-
-    /* Combine X and Y into a single public key buffer */
-    memcpy(public_key + 1, x_point, key_size);
-    memcpy(public_key + 1 + key_size, y_point, key_size);
-
-    /* Import the public key */
-    status = psa_import_key(&key_attributes, public_key, (2 * key_size) + 1, &key_handle);
-    if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "Failed to import key, err:%d", status);
-        ret = ESP_FAIL;
-        goto cleanup;
+    /* Extract r and s components from RAW ECDSA signature of 64 bytes */
+    ret = mbedtls_mpi_read_binary(&r, _r, key_size);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed mbedtls_mpi_read_binary(r), err:%d", ret);
+        mbedtls_ecdsa_free(&ecdsa_context);
+        return ESP_FAIL;
     }
 
-    /* Convert signature from little-endian to big-endian format */
-    uint8_t signature[2 * ECDSA_INTEGER_LEN] = {0};
-    for (int i = 0; i < key_size; i++) {
-        signature[i] = trusted_block->ecdsa.signature[key_size - i - 1];
-        signature[key_size + i] = trusted_block->ecdsa.signature[2 * key_size - i - 1];
+    ret = mbedtls_mpi_read_binary(&s, _s, key_size);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed mbedtls_mpi_read_binary(s), err:%d", ret);
+        mbedtls_mpi_free(&r);
+        mbedtls_ecdsa_free(&ecdsa_context);
+        return ESP_FAIL;
     }
 
-    /* Verify the signature */
-    status = psa_verify_hash(key_handle, PSA_ALG_ECDSA(PSA_ALG_SHA_256),
-                             image_digest, ESP_SECURE_BOOT_DIGEST_LEN,
-                             signature, 2 * key_size);
+    size_t plen = mbedtls_mpi_size(&ecdsa_context.MBEDTLS_PRIVATE(grp).P);
 
-    if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "Signature verification failed, err:%d", status);
-        ret = ESP_FAIL;
+    for (int i = 0; i < plen; i++) {
+        x_point[i] = trusted_block->ecdsa.key.point[plen - 1 - i];
+        y_point[i] = trusted_block->ecdsa.key.point[2 * plen - 1 - i];
     }
+
+    /* Extract X and Y components from ECDSA public key */
+    MBEDTLS_MPI_CHK(mbedtls_mpi_read_binary(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), x_point, plen));
+    MBEDTLS_MPI_CHK(mbedtls_mpi_read_binary(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(Y), y_point, plen));
+    MBEDTLS_MPI_CHK(mbedtls_mpi_lset(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(Z), 1));
+
+    ret = mbedtls_ecdsa_verify(&ecdsa_context.MBEDTLS_PRIVATE(grp), image_digest, ESP_SECURE_BOOT_DIGEST_LEN, &ecdsa_context.MBEDTLS_PRIVATE(Q), &r, &s);
 
 cleanup:
-    /* Clean up resources */
-    if (key_handle) {
-        psa_destroy_key(key_handle);
-    }
-    psa_reset_key_attributes(&key_attributes);
-
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+    mbedtls_ecdsa_free(&ecdsa_context);
     return ret;
 }

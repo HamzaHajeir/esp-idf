@@ -141,9 +141,13 @@ esp_err_t esp_tee_sec_storage_ecdsa_get_pubkey(const esp_tee_sec_storage_key_cfg
  * @brief Perform encryption using AES256-GCM with the key from secure storage
  *
  * @param[in]  ctx      Pointer to the AEAD operation context
+ * @param[out] iv       Pointer to the output buffer for the generated initialization vector
+ * @param[in]  iv_len   Length of the initialization vector buffer; must be exactly 12 bytes (96-bit IV, per NIST SP 800-38D)
  * @param[out] tag      Pointer to the authentication tag buffer
- * @param[in]  tag_len  Length of the authentication tag
+ * @param[in]  tag_len  Length of the authentication tag; must be 12 to 16 bytes (96- to 128-bit tag, per NIST SP 800-38D)
  * @param[out] output   Pointer to the output data buffer
+ *
+ * @note Non-standard @p iv_len / @p tag_len values are rejected with ESP_ERR_INVALID_SIZE.
  *
  * @return esp_err_t ESP_OK on success, appropriate error code otherwise.
  */
@@ -153,9 +157,13 @@ esp_err_t esp_tee_sec_storage_aead_encrypt(esp_tee_sec_storage_aead_ctx_t *ctx, 
  * @brief Perform decryption using AES256-GCM with the key from secure storage
  *
  * @param[in]  ctx      Pointer to the AEAD operation context
+ * @param[in]  iv       Pointer to the initialization vector used during encryption
+ * @param[in]  iv_len   Length of the initialization vector; must be exactly 12 bytes (96-bit IV, per NIST SP 800-38D)
  * @param[in]  tag      Pointer to the authentication tag buffer
- * @param[in]  tag_len  Length of the authentication tag
+ * @param[in]  tag_len  Length of the authentication tag; must be 12 to 16 bytes (96- to 128-bit tag, per NIST SP 800-38D)
  * @param[out] output   Pointer to the output data buffer
+ *
+ * @note Non-standard @p iv_len / @p tag_len values are rejected with ESP_ERR_INVALID_SIZE.
  *
  * @return esp_err_t ESP_OK on success, appropriate error code otherwise.
  */

@@ -23,6 +23,7 @@
     .equ RTNVAL, 0xc0de
     .equ ECALL_U_MODE, 0x8
     .equ ECALL_M_MODE, 0xb
+    .equ MSTATUS_MPP_SHIFT, 11
     /* NOTE: INTWDT timeout and Cache error interrupts trigger the panic
      * handler before reset, so they don’t need to be delegated. */
     .equ TEE_INTR_DELEG_MASK, ~((1U << TEE_SECURE_INUM) | (1U << ETS_INT_WDT_INUM) | (1U << ETS_CACHEERR_INUM))
@@ -56,34 +57,32 @@ _ns_sp_min:
 _ns_sp_max:
     .word 0
 
+    .global _ns_int_rtn
+_ns_int_rtn:
+    .word 0
+
     .section .exception_vectors.text, "ax"
 
     /* Exception handler. */
     .global _tee_panic_handler
     .type _tee_panic_handler, @function
 _tee_panic_handler:
-    /* Backup t0, t1 on the stack before using it */
-    addi    sp, sp, -16
-    sw      t0, 0(sp)
-    sw      t1, 4(sp)
+    /* Backup t0 before using it */
+    csrw    mscratch, t0
 
-    /* Read mcause */
+    /* Check whether the exception is an M-mode/U-mode ecall */
     csrr    t0, mcause
-    li      t1, VECTORS_MCAUSE_REASON_MASK
-    and     t0, t0, t1
+    andi    t0, t0, VECTORS_MCAUSE_REASON_MASK
+    addi    t0, t0, -ECALL_M_MODE
+    beqz    t0, _machine_ecall              /* M-mode ecall */
+    addi    t0, t0, (ECALL_M_MODE - ECALL_U_MODE)
+    beqz    t0, _user_ecall                 /* U-mode ecall */
 
-    /* Check whether the exception is an M-mode ecall */
-    li      t1, ECALL_M_MODE
-    beq     t0, t1, _machine_ecall
+    /* Validate a U-mode-origin sp before the handler stores/dumps through it */
+    VALIDATE_REE_SP RV_STK_FRMSZ, t0
 
-    /* Check whether the exception is an U-mode ecall */
-    li      t1, ECALL_U_MODE
-    beq     t0, t1, _user_ecall
-
-    /* Restore t0, t1 from the stack */
-    lw      t0, 0(sp)
-    lw      t1, 4(sp)
-    addi    sp, sp, 16
+    /* Restore t0 */
+    csrr    t0, mscratch
 
 _actual_panic:
     /* Not an ecall, proceed to the panic handler */
@@ -137,6 +136,12 @@ _return_from_exception:
     lw      gp, RV_STK_GP(sp)
     restore_general_regs RV_STK_FRMSZ
     mret
+
+    /* Fault if the sp given by the REE is found to be out-of-bounds */
+_tee_sp_reject:
+    csrr    t0, mscratch
+    la      sp, _tee_stack
+    j       _actual_panic
 
     .size  _tee_panic_handler, .-_tee_panic_handler
 
@@ -192,14 +197,15 @@ _skip_ctx_restore:
     /* U-mode ecall handler */
 _user_ecall:
     /* Check whether we are returning after servicing an U-mode interrupt */
-    lui     t0, RTNVAL
-    csrrw   t1, mscratch, zero
-    beq     t0, t1, _rtn_from_ns_int
+    la      t0, _ns_int_rtn
+    lw      t0, 0(t0)
+    bnez    t0, _rtn_from_ns_int
 
-    /* Restore t0, t1 from the stack */
-    lw      t0, 0(sp)
-    lw      t1, 4(sp)
-    addi    sp, sp, 16
+    /* Reject an sp whose frame would be out-of-bounds */
+    VALIDATE_REE_SP CONTEXT_SIZE, t0, 0
+
+    /* Restore t0 */
+    csrr    t0, mscratch
 
     /* This point is reached when a secure service call is issued from the REE */
     /* Save register context and mepc */
@@ -244,6 +250,10 @@ _process_ecall:
     /* This point is reached after servicing a U-mode interrupt occurred
      * while executing a secure service */
 _rtn_from_ns_int:
+    /* Consume the U-mode-interrupt-return sentinel (checked in _user_ecall). */
+    la      t0, _ns_int_rtn
+    sw      zero, 0(t0)
+
     /* Disable the U-mode interrupt delegation */
     csrwi    mideleg, 0
 
@@ -315,8 +325,9 @@ _tee_ns_intr_handler:
     lw     sp, 0(t1)
 
     /* Set a flag to identify the next U2M switch would be after handling a U-mode interrupt */
-    lui     t0, RTNVAL
-    csrw    mscratch, t0
+    la      t0, _ns_int_rtn
+    li      t1, RTNVAL
+    sw      t1, 0(t0)
 
     /* Enable the U-mode interrupt delegation (except for the TEE secure interrupt) */
     li      t0, TEE_INTR_DELEG_MASK
@@ -335,6 +346,11 @@ _tee_ns_intr_handler:
     .global _tee_s_intr_handler
     .type _tee_s_intr_handler, @function
 _tee_s_intr_handler:
+    /* Check sp if trapped from U-mode */
+    csrw    mscratch, t0
+    VALIDATE_REE_SP RV_STK_FRMSZ, t0
+    csrr    t0, mscratch                                 /* restore the preempted t0 */
+
     /* Start by saving the general purpose registers and the PC value before
      * the interrupt happened. */
     save_general_regs RV_STK_FRMSZ

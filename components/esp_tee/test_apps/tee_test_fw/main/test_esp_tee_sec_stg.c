@@ -464,7 +464,7 @@ TEST_CASE("Test TEE Secure Storage - Host-generated keys", "[sec_storage_host_ke
 
     TEST_ESP_OK(esp_tee_sec_storage_clear_key(ecdsa_key_id0));
 
-    TEST_ESP_ERR(ESP_ERR_INVALID_STATE, esp_tee_sec_storage_clear_key(attest_key_id));
+    TEST_ESP_ERR(ESP_ERR_INVALID_ARG, esp_tee_sec_storage_clear_key(attest_key_id));
 
 #if CONFIG_SECURE_TEE_ATTESTATION
     uint8_t *token_buf = heap_caps_calloc(ESP_ATT_TK_BUF_SIZE, sizeof(uint8_t), MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
@@ -528,6 +528,7 @@ static void test_ecdsa_sign(mbedtls_ecp_group_id gid)
     mbedtls_mpi_init(&s);
 
     mbedtls_ecdsa_context ecdsa_context;
+    mbedtls_ecdsa_init(&ecdsa_context);
 
     TEST_ASSERT_MBEDTLS_OK(mbedtls_ecp_group_load(&ecdsa_context.MBEDTLS_PRIVATE(grp), gid));
 

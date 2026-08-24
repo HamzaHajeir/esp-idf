@@ -38,7 +38,6 @@
 #define AES256_GCM_IV_LEN                   12
 #define AES256_GCM_TAG_LEN_MIN              12   /* NIST SP800-38D general-use minimum (96-bit tag) */
 #define AES256_GCM_TAG_LEN_MAX              16   /* full GCM tag (128-bit) */
-#define ECDSA_SECP384R1_KEY_LEN             48
 #define ECDSA_SECP256R1_KEY_LEN             32
 #define ECDSA_SECP192R1_KEY_LEN             24
 

@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -19,30 +18,13 @@
 
 #define PEER_ADDR_VAL_SIZE      6
 
-static const char *tag = "NimBLE_SPP_CLIENT";
+static const char *tag = "NimBLE_SPP_BLE_CENT";
 static int ble_spp_client_gap_event(struct ble_gap_event *event, void *arg);
 QueueHandle_t spp_common_uart_queue = NULL;
 void ble_store_config_init(void);
 uint16_t attribute_handle[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
-static SemaphoreHandle_t g_attr_handle_mutex = NULL;
 static void ble_spp_client_scan(void);
 static ble_addr_t connected_addr[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char remote_device_name[32];
-
-static char *esp_ble_spp_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 #if MYNEWT_VAL(BLE_GATTC)
 static void ble_spp_client_write_subscribe(const struct peer *peer)
@@ -86,27 +68,27 @@ static void
 ble_spp_client_set_handle(const struct peer *peer)
 {
     const struct peer_chr *chr;
+    const struct peer_dsc *dsc;
+    uint8_t value[2];
     chr = peer_chr_find_uuid(peer,
                              BLE_UUID16_DECLARE(GATT_SPP_SVC_UUID),
                              BLE_UUID16_DECLARE(GATT_SPP_CHR_UUID));
-
-    if (chr == NULL) {
-        MODLOG_DFLT(ERROR, "Error: Peer lacks SPP characteristic\n");
-        return;
-    }
-    if (peer->conn_handle > CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-        MODLOG_DFLT(ERROR, "Error: conn_handle %d out of range\n", peer->conn_handle);
-        return;
-    }
-    if (g_attr_handle_mutex != NULL) {
-        xSemaphoreTake(g_attr_handle_mutex, portMAX_DELAY);
-    }
     attribute_handle[peer->conn_handle] = chr->chr.val_handle;
     MODLOG_DFLT(INFO, "attribute_handle %x\n", attribute_handle[peer->conn_handle]);
-    if (g_attr_handle_mutex != NULL) {
-        xSemaphoreGive(g_attr_handle_mutex);
+
+    dsc = peer_dsc_find_uuid(peer,
+                             BLE_UUID16_DECLARE(GATT_SPP_SVC_UUID),
+                             BLE_UUID16_DECLARE(GATT_SPP_CHR_UUID),
+                             BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
+    if (dsc == NULL) {
+        MODLOG_DFLT(ERROR, "Error: Peer lacks a CCCD for the subscribable characteristic\n");
+	return;
     }
 
+    value[0] = 1;
+    value[1] = 0;
+    ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
+                            value, sizeof(value), NULL, NULL);
 }
 
 /**
@@ -173,12 +155,6 @@ ble_spp_client_scan(void)
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    /* Full scan improves discovery reliability in multi-board CI environments. */
-    disc_params.itvl = BLE_GAP_SCAN_ITVL_MS(50);
-    disc_params.window = BLE_GAP_SCAN_ITVL_MS(50);
-#endif
-
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
                       ble_spp_client_gap_event, NULL);
     if (rc != 0) {
@@ -219,14 +195,6 @@ ble_spp_client_should_connect(const struct ble_gap_disc_desc *disc)
         return 0;
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    if (fields.name != NULL &&
-            fields.name_len == strlen(remote_device_name) &&
-            memcmp(fields.name, remote_device_name, fields.name_len) == 0) {
-        return 1;
-    }
-    return 0;
-#else
     /* The device has to advertise support for the SPP
      * service (0xABF0).
      */
@@ -236,7 +204,6 @@ ble_spp_client_should_connect(const struct ble_gap_disc_desc *disc)
         }
     }
     return 0;
-#endif
 }
 
 /**
@@ -255,10 +222,6 @@ ble_spp_client_connect_if_interesting(const struct ble_gap_disc_desc *disc)
         return;
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    ESP_LOGI(tag, "Found device: %s, name: %s", addr_str(disc->addr.val), remote_device_name);
-#endif
-
 #if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
     /* Scanning must be stopped before a connection can be initiated. */
     rc = ble_gap_disc_cancel();
@@ -272,9 +235,6 @@ ble_spp_client_connect_if_interesting(const struct ble_gap_disc_desc *disc)
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_spp_client_scan();
-#endif
         return;
     }
 
@@ -288,9 +248,6 @@ ble_spp_client_connect_if_interesting(const struct ble_gap_disc_desc *disc)
         MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
                     "addr=%s; rc=%d\n",
                     disc->addr.type, addr_str(disc->addr.val), rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_spp_client_scan();
-#endif
         return;
     }
 }
@@ -338,14 +295,10 @@ ble_spp_client_gap_event(struct ble_gap_event *event, void *arg)
             MODLOG_DFLT(INFO, "Connection established ");
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
-            if (event->connect.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-                memcpy(&connected_addr[event->connect.conn_handle].val, desc.peer_id_addr.val,
-                       PEER_ADDR_VAL_SIZE);
-            }
+            memcpy(&connected_addr[event->connect.conn_handle].val, desc.peer_id_addr.val,
+                   PEER_ADDR_VAL_SIZE);
             print_conn_desc(&desc);
             MODLOG_DFLT(INFO, "\n");
-            ESP_LOGI(tag, "Connected, conn_handle %d, remote %s",
-                     event->connect.conn_handle, addr_str(desc.peer_ota_addr.val));
 
             /* Remember peer. */
             rc = peer_add(event->connect.conn_handle);
@@ -379,16 +332,8 @@ ble_spp_client_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "\n");
 
         /* Forget about peer. */
-        if (event->disconnect.conn.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            memset(&connected_addr[event->disconnect.conn.conn_handle].val, 0, PEER_ADDR_VAL_SIZE);
-            if (g_attr_handle_mutex != NULL) {
-                xSemaphoreTake(g_attr_handle_mutex, portMAX_DELAY);
-            }
-            attribute_handle[event->disconnect.conn.conn_handle] = 0;
-            if (g_attr_handle_mutex != NULL) {
-                xSemaphoreGive(g_attr_handle_mutex);
-            }
-        }
+        memset(&connected_addr[event->disconnect.conn.conn_handle].val, 0, PEER_ADDR_VAL_SIZE);
+        attribute_handle[event->disconnect.conn.conn_handle] = 0;
         peer_delete(event->disconnect.conn.conn_handle);
 
         /* Resume scanning. */
@@ -477,38 +422,18 @@ void ble_client_uart_task(void *pvParameters)
                     }
                     memset(temp, 0x0, event.size);
                     uart_read_bytes(UART_NUM_0, temp, event.size, portMAX_DELAY);
-                    /* Collect valid connections while holding mutex to prevent race conditions */
-                    struct {
-                        uint16_t conn_handle;
-                        uint16_t attr_handle;
-                    } valid_conns[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
-                    int valid_count = 0;
-
-                    if (g_attr_handle_mutex != NULL) {
-                        xSemaphoreTake(g_attr_handle_mutex, portMAX_DELAY);
-                    }
-                    for (i = 0; i <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+                    for ( i = 0; i <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
                         if (attribute_handle[i] != 0) {
-                            valid_conns[valid_count].conn_handle = i;
-                            valid_conns[valid_count].attr_handle = attribute_handle[i];
-                            valid_count++;
-                        }
-                    }
-                    if (g_attr_handle_mutex != NULL) {
-                        xSemaphoreGive(g_attr_handle_mutex);
-                    }
-
-                    /* Write to all valid connections (outside mutex to avoid blocking) */
-                    for (i = 0; i < valid_count; i++) {
 #if MYNEWT_VAL(BLE_GATTC)
-                        rc = ble_gattc_write_flat(valid_conns[i].conn_handle, valid_conns[i].attr_handle, temp, event.size, NULL, NULL);
-                        if (rc == 0) {
-                            ESP_LOGI(tag, "Write in uart task success!");
-                        } else {
-                            ESP_LOGI(tag, "Error in writing characteristic rc=%d", rc);
-                        }
+                            rc = ble_gattc_write_flat(i, attribute_handle[i], temp, event.size, NULL, NULL);
+                            if (rc == 0) {
+                                ESP_LOGI(tag, "Write in uart task success!");
+                            } else {
+                                ESP_LOGI(tag, "Error in writing characteristic rc=%d", rc);
+                            }
 #endif
-                        vTaskDelay(10);
+                            vTaskDelay(10);
+                        }
                     }
                     free(temp);
                 }
@@ -524,8 +449,7 @@ void ble_client_uart_task(void *pvParameters)
 static void ble_spp_uart_init(void)
 {
     uart_config_t uart_config = {
-        /* Keep console baud (e.g. 74880 on ESP32-C2 26MHz XTAL) when sharing UART0. */
-        .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+        .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -535,11 +459,7 @@ static void ble_spp_uart_init(void)
     };
 
     //Install UART driver, and get the queue.
-    esp_err_t err = uart_driver_install(UART_NUM_0, 4096, 8192, 10, &spp_common_uart_queue, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(tag, "uart_driver_install failed: %d", err);
-        return;
-    }
+    uart_driver_install(UART_NUM_0, 4096, 8192, 10, &spp_common_uart_queue, 0);
     //Set UART parameters
     uart_param_config(UART_NUM_0, &uart_config);
     //Set UART pins
@@ -564,24 +484,8 @@ app_main(void)
         return;
     }
 
-    /* Initialize mutex for attribute_handle protection */
-    g_attr_handle_mutex = xSemaphoreCreateMutex();
-    if (g_attr_handle_mutex == NULL) {
-        ESP_LOGE(tag, "Failed to create attribute handle mutex");
-        nimble_port_deinit();
-        return;
-    }
-
     /* Initialize UART driver and start uart task */
     ble_spp_uart_init();
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    /* Log after UART0 init so DeviceName is not corrupted by uart_driver_install. */
-    strncpy(remote_device_name, esp_ble_spp_get_example_name(), sizeof(remote_device_name) - 1);
-    remote_device_name[sizeof(remote_device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             remote_device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
 
     /* Configure the host. */
     ble_hs_cfg.reset_cb = ble_spp_client_on_reset;

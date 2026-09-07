@@ -129,22 +129,6 @@ static const tBTM_ESCO_PARAMS bta_ag_esco_params[BTA_AG_NUM_CODECS] =
         BTM_ESCO_RETRANS_QUALITY            /* Retransmission effort                    */
     }
 };
-
-static BOOLEAN bta_ag_is_transparent_codec(tBTM_SCO_CODEC_TYPE codec)
-{
-    return (codec == BTM_SCO_CODEC_MSBC || codec == BTM_SCO_CODEC_LC3);
-}
-
-static UINT32 bta_ag_sco_get_pcm_rate(tBTM_SCO_CODEC_TYPE codec)
-{
-    if (codec == BTM_SCO_CODEC_LC3) {
-        return BTA_HFP_SCO_SAMP_RATE_32K;
-    }
-    if (codec == BTM_SCO_CODEC_MSBC) {
-        return BTA_HFP_SCO_SAMP_RATE_16K;
-    }
-    return BTA_HFP_SCO_SAMP_RATE_8K;
-}
 #else
 #define BTA_AG_NUM_CODECS   2
 #define BTA_AG_ESCO_SETTING_IDX_CVSD    0   /* eSCO setting for CVSD S3 */
@@ -215,12 +199,9 @@ static void bta_ag_sco_conn_cback(UINT16 sco_idx)
             handle = 0;
     }
 
-    if (handle != 0 && p_scb)
+    if (handle != 0)
     {
-        if (BTM_ReadEScoLinkParms(sco_idx, &sco_data) == BTM_MODE_UNSUPPORTED) {
-            APPL_TRACE_WARNING("ESCO link parameters not supported or disabled.");
-            return;
-        }
+        BTM_ReadEScoLinkParms(sco_idx, &sco_data);
 
         p_scb->link_type = sco_data.link_type;
         p_scb->tx_interval = sco_data.tx_interval;
@@ -270,10 +251,10 @@ static void bta_ag_sco_disc_cback(UINT16 sco_idx)
 
     APPL_TRACE_DEBUG ("bta_ag_sco_disc_cback(): sco_idx: 0x%x  p_cur_scb: 0x%08x  sco.state: %d", (unsigned int)sco_idx, (unsigned int)bta_ag_cb.sco.p_curr_scb, (unsigned int)bta_ag_cb.sco.state);
 
-    for (int i = 0; i < BTA_AG_NUM_SCB; i++) {
-        APPL_TRACE_DEBUG ("bta_ag_sco_disc_cback(): scb[%d] addr: 0x%08x  in_use: %u  sco_idx: 0x%x  sco state: %u", i,
-                          (unsigned int) &bta_ag_cb.scb[i], (unsigned int)bta_ag_cb.scb[i].in_use, (unsigned int)bta_ag_cb.scb[i].sco_idx, (unsigned int)bta_ag_cb.scb[i].state);
-    }
+    APPL_TRACE_DEBUG ("bta_ag_sco_disc_cback(): scb[0] addr: 0x%08x  in_use: %u  sco_idx: 0x%x  sco state: %u",
+                       (unsigned int) &bta_ag_cb.scb[0], (unsigned int)bta_ag_cb.scb[0].in_use, (unsigned int)bta_ag_cb.scb[0].sco_idx, (unsigned int)bta_ag_cb.scb[0].state);
+    APPL_TRACE_DEBUG ("bta_ag_sco_disc_cback(): scb[1] addr: 0x%08x  in_use: %u  sco_idx: 0x%x  sco state: %u",
+                       (unsigned int) &bta_ag_cb.scb[1], (unsigned int) bta_ag_cb.scb[1].in_use, (unsigned int) bta_ag_cb.scb[1].sco_idx, (unsigned int) bta_ag_cb.scb[1].state);
 
     /* match callback to scb */
     if (bta_ag_cb.sco.p_curr_scb != NULL && bta_ag_cb.sco.p_curr_scb->in_use)
@@ -298,33 +279,24 @@ static void bta_ag_sco_disc_cback(UINT16 sco_idx)
 
 #if (BTM_WBS_INCLUDED == TRUE )
         /* Restore settings */
-        if (bta_ag_is_transparent_codec(bta_ag_cb.sco.p_curr_scb->inuse_codec))
+        if(bta_ag_cb.sco.p_curr_scb->inuse_codec == BTA_AG_CODEC_MSBC)
         {
             /* set_sco_codec(BTM_SCO_CODEC_NONE); we should get a close */
             BTM_WriteVoiceSettings (BTM_VOICE_SETTING_CVSD);
 
-            /* If SCO open was initiated by AG and failed for mSBC/LC3, then attempt
-            transparent codec with T1 settings i.e. 'Safe Settings'. If this fails,
-            fall back to mSBC (from LC3) or CVSD. */
+            /* If SCO open was initiated by AG and failed for mSBC, then attempt
+            mSBC with T1 settings i.e. 'Safe Settings'. If this fails, then switch to CVSD */
             if (bta_ag_sco_is_opening (bta_ag_cb.sco.p_curr_scb))
             {
                 if (bta_ag_cb.sco.p_curr_scb->codec_msbc_settings == BTA_AG_SCO_MSBC_SETTINGS_T2)
                 {
-                     APPL_TRACE_DEBUG("Fallback to transparent codec T1 settings");
+                     APPL_TRACE_DEBUG("Fallback to mSBC T1 settings");
                      bta_ag_cb.sco.p_curr_scb->codec_msbc_settings = BTA_AG_SCO_MSBC_SETTINGS_T1;
                 }
                 else
                 {
-                    if (bta_ag_cb.sco.p_curr_scb->inuse_codec == BTA_AG_CODEC_LC3 &&
-                        (bta_ag_cb.sco.p_curr_scb->peer_codecs & BTA_AG_CODEC_MSBC)) {
-                        APPL_TRACE_DEBUG("Fallback from LC3 to mSBC");
-                        bta_ag_cb.sco.p_curr_scb->sco_codec = BTA_AG_CODEC_MSBC;
-                        bta_ag_cb.sco.p_curr_scb->codec_msbc_settings = BTA_AG_SCO_MSBC_SETTINGS_T2;
-                        bta_ag_cb.sco.p_curr_scb->codec_updated = TRUE;
-                    } else {
-                        APPL_TRACE_DEBUG("Fallback to CVSD settings");
-                        bta_ag_cb.sco.p_curr_scb->codec_fallback = TRUE;
-                    }
+                    APPL_TRACE_DEBUG("Fallback to CVSD settings");
+                    bta_ag_cb.sco.p_curr_scb->codec_fallback = TRUE;
                 }
             }
         }
@@ -507,11 +479,7 @@ static UINT16 bta_ag_sco_get_frame_size(tBTA_AG_SCB *p_scb)
         frame_size = p_scb->out_pkt_len;
         break;
     case BTM_SCO_AIR_MODE_TRANSPNT:
-        if (p_scb->inuse_codec == BTA_AG_CODEC_LC3) {
-            frame_size = BTA_AG_LC3_FRAME_PAYLOAD_SIZE;
-        } else {
-            frame_size = BTA_AG_MSBC_FRAME_PAYLOAD_SIZE;
-        }
+        frame_size = BTA_AG_MSBC_FRAME_SIZE;
         break;
     default:
         break;
@@ -584,9 +552,9 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
 
 #if (BTM_WBS_INCLUDED == TRUE)
 
-    if (bta_ag_is_transparent_codec(p_scb->sco_codec) && !p_scb->codec_fallback && !p_scb->retry_with_sco_only)
+    if ((p_scb->sco_codec == BTM_SCO_CODEC_MSBC) && !p_scb->codec_fallback && !p_scb->retry_with_sco_only)
     {
-        esco_codec = p_scb->sco_codec;
+        esco_codec = BTM_SCO_CODEC_MSBC;
     }
     if (p_scb->codec_fallback)
     {
@@ -595,8 +563,8 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
         p_scb->codec_updated = TRUE;
     }
     /* If WBS included, use CVSD by default, index is 0 for CVSD by initialization */
-    /* If eSCO codec is mSBC or LC3, index is T2 or T1 */
-    if (bta_ag_is_transparent_codec(esco_codec))
+    /* If eSCO codec is mSBC, index is T2 or T1 */
+    if (esco_codec == BTM_SCO_CODEC_MSBC)
     {
         if (p_scb->codec_msbc_settings == BTA_AG_SCO_MSBC_SETTINGS_T2)
         {
@@ -654,12 +622,12 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
                ||!((params.packet_types & ~(BTM_ESCO_LINK_ONLY_MASK | BTM_SCO_LINK_ONLY_MASK)) ^ BTA_AG_NO_EDR_ESCO))
             {
 #if (BTM_WBS_INCLUDED == TRUE)
-                if (!bta_ag_is_transparent_codec(esco_codec))
+                if (esco_codec != BTA_AG_CODEC_MSBC)
                 {
                     p_scb->retry_with_sco_only = TRUE;
                     APPL_TRACE_API("Setting retry_with_sco_only to TRUE");
                 }
-                else    /* Do not use SCO when using mSBC or LC3 */
+                else    /* Do not use SCO when using mSBC */
                 {
                     p_scb->retry_with_sco_only = FALSE;
                     APPL_TRACE_API("Setting retry_with_sco_only to FALSE");
@@ -672,7 +640,7 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
         }
         else
         {
-            if(p_scb->retry_with_sco_only) {
+            if(p_scb->retry_with_sco_only){
                 APPL_TRACE_API("retrying with SCO only");
             }
             p_scb->retry_with_sco_only = FALSE;
@@ -690,7 +658,7 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
 
         /* This setting may not be necessary */
         /* To be verified with stable 2049 boards */
-        if (bta_ag_is_transparent_codec(esco_codec))
+        if (esco_codec == BTA_AG_CODEC_MSBC)
             BTM_WriteVoiceSettings(BTM_VOICE_SETTING_TRANS);
         else
             BTM_WriteVoiceSettings(BTM_VOICE_SETTING_CVSD);
@@ -704,12 +672,10 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
 
 #if (BTM_SCO_HCI_INCLUDED == TRUE)
 #if (BTM_WBS_INCLUDED == TRUE)
-        pcm_sample_rate = bta_ag_sco_get_pcm_rate(esco_codec);
-#else
-        {
-            pcm_sample_rate = BTA_HFP_SCO_SAMP_RATE_8K;
-        }
+    if (esco_codec == BTA_AG_CODEC_MSBC)
+        pcm_sample_rate = BTA_HFP_SCO_SAMP_RATE_16K;
 #endif
+        pcm_sample_rate = BTA_HFP_SCO_SAMP_RATE_8K;
         sco_route = bta_ag_sco_co_init(pcm_sample_rate, pcm_sample_rate, &codec_info, p_scb->app_id);
 #endif
 
@@ -758,7 +724,7 @@ static void bta_ag_create_sco(tBTA_AG_SCB *p_scb, BOOLEAN is_orig)
 *******************************************************************************/
 BOOLEAN bta_ag_attempt_msbc_safe_settings(tBTA_AG_SCB *p_scb)
 {
-    if (p_scb->svc_conn && bta_ag_is_transparent_codec(p_scb->sco_codec) &&
+    if (p_scb->svc_conn && p_scb->sco_codec == BTM_SCO_CODEC_MSBC &&
         p_scb->codec_msbc_settings == BTA_AG_SCO_MSBC_SETTINGS_T1)
         return TRUE;
     else
@@ -819,9 +785,8 @@ void bta_ag_codec_negotiate(tBTA_AG_SCB *p_scb)
         bta_ag_send_bcs(p_scb, NULL);
 
         /* Start timer to handle timeout */
-        bta_sys_stop_timer(&p_scb->cn_timer);
         p_scb->cn_timer.p_cback = (TIMER_CBACK*)&bta_ag_cn_timer_cback;
-        p_scb->cn_timer.param = (UINT32)p_scb;
+        p_scb->cn_timer.param = (INT32)p_scb;
         bta_sys_start_timer(&p_scb->cn_timer, 0, BTA_AG_CODEC_NEGO_TIMEOUT);
     }
     else
@@ -878,7 +843,6 @@ static void bta_ag_sco_event(tBTA_AG_SCB *p_scb, UINT8 event)
                     }
                 } else {
                     osi_free(p_buf);
-                    break;
                 }
             } else {
                 osi_free(p_buf);
@@ -1617,9 +1581,7 @@ void bta_ag_sco_conn_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 
 #if (BTM_WBS_INCLUDED == TRUE)
     /* call app callback */
-    if (p_scb->inuse_codec == BTA_AG_CODEC_LC3) {
-        bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_LC3_OPEN_EVT);
-    } else if (p_scb->inuse_codec == BTA_AG_CODEC_MSBC) {
+    if (p_scb->sco_codec == BTA_AG_CODEC_MSBC) {
         bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_MSBC_OPEN_EVT);
     } else {
         bta_ag_cback_sco(p_scb, BTA_AG_AUDIO_OPEN_EVT);
@@ -1726,7 +1688,7 @@ void bta_ag_sco_conn_close(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 *******************************************************************************/
 void bta_ag_sco_conn_rsp(tBTA_AG_SCB *p_scb, tBTM_ESCO_CONN_REQ_EVT_DATA *p_data)
 {
-    tBTM_ESCO_PARAMS    resp = {0};
+    tBTM_ESCO_PARAMS    resp;
     UINT8               hci_status = HCI_SUCCESS;
 #if (BTM_SCO_HCI_INCLUDED == TRUE)
     tBTA_HFP_CODEC_INFO codec_info = {BTA_HFP_SCO_CODEC_PCM};
@@ -1936,43 +1898,24 @@ static void bta_ag_sco_data_send_cvsd(tBTA_AG_SCB *p_scb, BT_HDR *p_buf)
 
 /*******************************************************************************
 **
-** Function         bta_ag_sco_transparent_air_pad
+** Function         bta_ag_sco_data_send_msbc
 **
-** Description      Padding bytes after H2 + codec payload to fill eSCO packet.
-**
-** Returns          Number of padding bytes
-**
-*******************************************************************************/
-static UINT8 bta_ag_sco_transparent_air_pad(UINT16 frame_payload_size, UINT16 out_pkt_len)
-{
-    UINT16 air_len = frame_payload_size + BTA_AG_H2_HEADER_LEN;
-    if (out_pkt_len > air_len) {
-        return (UINT8)(out_pkt_len - air_len);
-    }
-    return 0;
-}
-
-/*******************************************************************************
-**
-** Function         bta_ag_sco_data_send_transparent
-**
-** Description      Process SCO data of transparent air mode (mSBC or LC3-SWB)
+** Description      Process SCO data of mSBC air mode
 **
 **
 ** Returns          void
 **
 *******************************************************************************/
-static void bta_ag_sco_data_send_transparent(tBTA_AG_SCB *p_scb, BT_HDR *p_buf, UINT16 frame_payload_size)
+static void bta_ag_sco_data_send_msbc(tBTA_AG_SCB *p_scb, BT_HDR *p_buf)
 {
     UINT16 out_pkt_len = p_scb->out_pkt_len;
-    UINT8 air_pad = bta_ag_sco_transparent_air_pad(frame_payload_size, out_pkt_len);
-
-    if (p_buf->len == frame_payload_size && p_buf->offset >= BTA_AG_BUFF_OFFSET_MIN + BTA_AG_H2_HEADER_LEN) {
+    if (p_buf->len == BTA_AG_MSBC_FRAME_SIZE && p_buf->offset >= BTA_AG_BUFF_OFFSET_MIN + BTA_AG_H2_HEADER_LEN) {
         /* add H2 header */
         p_buf->offset -= BTA_AG_H2_HEADER_LEN;
         UINT8 *p_data = (UINT8 *)(p_buf + 1) + p_buf->offset;
         bta_ag_h2_header((UINT16 *)p_data);
-        p_buf->len += BTA_AG_H2_HEADER_LEN + air_pad;
+        /* add header len, add addition one bytes, the len is BTA_AG_SCO_OUT_PKT_LEN_2EV3 now */
+        p_buf->len += BTA_AG_H2_HEADER_LEN + 1;
 
         if (out_pkt_len == BTA_AG_SCO_OUT_PKT_LEN_2EV3) {
             /* mSBC frame can be send directly */
@@ -2000,8 +1943,8 @@ static void bta_ag_sco_data_send_transparent(tBTA_AG_SCB *p_scb, BT_HDR *p_buf, 
             APPL_TRACE_WARNING("%s, invalid out pkt len: %d", __FUNCTION__, out_pkt_len);
         }
     }
-    else if (p_buf->len != 0 && p_buf->len % frame_payload_size == 0) {
-        /* multiple mSBC or LC3-SWB frame in the buffer, or just one but offset is too small */
+    else if (p_buf->len != 0 && p_buf->len % BTA_AG_MSBC_FRAME_SIZE == 0) {
+        /* multiple mSBC frame in the buffer, or just one but offset is too small */
         UINT8 *p_data = (UINT8 *)(p_buf + 1) + p_buf->offset;
         UINT16 total_len = p_buf->len;
         if (out_pkt_len == BTA_AG_SCO_OUT_PKT_LEN_2EV3) {
@@ -2016,9 +1959,9 @@ static void bta_ag_sco_data_send_transparent(tBTA_AG_SCB *p_scb, BT_HDR *p_buf, 
                 UINT8 *p_data2 = (UINT8 *)(p_buf2 + 1) + p_buf2->offset;
                 bta_ag_h2_header((UINT16 *)p_data2);
                 p_data2 += BTA_AG_H2_HEADER_LEN;
-                memcpy(p_data2, p_data, frame_payload_size);
-                p_data += frame_payload_size;
-                total_len -= frame_payload_size;
+                memcpy(p_data2, p_data, BTA_AG_MSBC_FRAME_SIZE);
+                p_data += BTA_AG_MSBC_FRAME_SIZE;
+                total_len -= BTA_AG_MSBC_FRAME_SIZE;
                 bta_ag_write_sco_data(p_scb, p_buf2, NULL);
             }
         }
@@ -2051,10 +1994,9 @@ static void bta_ag_sco_data_send_transparent(tBTA_AG_SCB *p_scb, BT_HDR *p_buf, 
                 p_buf3->offset = BTA_AG_BUFF_OFFSET_MIN;
                 p_buf3->len = BTA_AG_SCO_OUT_PKT_LEN_EV3;
                 UINT8 *p_data3 = (UINT8 *)(p_buf3 + 1) + p_buf3->offset;
-                UINT16 rem_payload = frame_payload_size - (BTA_AG_SCO_OUT_PKT_LEN_EV3 - BTA_AG_H2_HEADER_LEN);
-                memcpy(p_data3, p_data, rem_payload);
-                p_data += rem_payload;
-                total_len -= rem_payload;
+                memcpy(p_data3, p_data, BTA_AG_MSBC_FRAME_SIZE - BTA_AG_H2_HEADER_LEN - BTA_AG_SCO_OUT_PKT_LEN_EV3);
+                p_data += BTA_AG_MSBC_FRAME_SIZE - BTA_AG_H2_HEADER_LEN - BTA_AG_SCO_OUT_PKT_LEN_EV3;
+                total_len -= BTA_AG_MSBC_FRAME_SIZE - BTA_AG_H2_HEADER_LEN - BTA_AG_SCO_OUT_PKT_LEN_EV3;
                 bta_ag_write_sco_data(p_scb, p_buf2, p_buf3);
             }
         }
@@ -2064,7 +2006,7 @@ static void bta_ag_sco_data_send_transparent(tBTA_AG_SCB *p_scb, BT_HDR *p_buf, 
         osi_free(p_buf);
     }
     else {
-        APPL_TRACE_WARNING("%s, unaccepted data len: %d (frame %d)", __FUNCTION__, p_buf->len, frame_payload_size);
+        APPL_TRACE_WARNING("%s, unaccepted data len: %d", __FUNCTION__, p_buf->len);
         osi_free(p_buf);
     }
 }
@@ -2098,11 +2040,7 @@ void bta_ag_sco_data_send(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         bta_ag_sco_data_send_cvsd(p_scb, p_buf);
         break;
     case BTM_SCO_AIR_MODE_TRANSPNT:
-        if (p_scb->inuse_codec == BTA_AG_CODEC_LC3) {
-            bta_ag_sco_data_send_transparent(p_scb, p_buf, BTA_AG_LC3_FRAME_PAYLOAD_SIZE);
-        } else {
-            bta_ag_sco_data_send_transparent(p_scb, p_buf, BTA_AG_MSBC_FRAME_PAYLOAD_SIZE);
-        }
+        bta_ag_sco_data_send_msbc(p_scb, p_buf);
         break;
     default:
         osi_free(p_buf);

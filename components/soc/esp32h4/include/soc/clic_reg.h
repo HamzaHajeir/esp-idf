@@ -10,6 +10,8 @@
 extern "C" {
 #endif
 
+//TODO: [ESP32H4] IDF-12303
+
 #define NLBITS                   3
 #define CLIC_EXT_INTR_NUM_OFFSET 16
 #define DUALCORE_CLIC_CTRL_OFF   0x10000

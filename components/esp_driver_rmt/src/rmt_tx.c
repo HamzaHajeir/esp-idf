@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,11 +32,12 @@ static bool rmt_dma_tx_eof_cb(gdma_channel_handle_t dma_chan, gdma_event_data_t 
 static esp_err_t rmt_tx_init_dma_link(rmt_tx_channel_t *tx_channel, const rmt_tx_channel_config_t *config)
 {
     gdma_channel_alloc_config_t dma_chan_config = {
+        .direction = GDMA_CHANNEL_DIRECTION_TX,
 #if CONFIG_RMT_TX_ISR_CACHE_SAFE
         .flags.isr_cache_safe = true,
 #endif
     };
-    ESP_RETURN_ON_ERROR(gdma_new_ahb_channel(&dma_chan_config, &tx_channel->base.dma_chan, NULL), TAG, "allocate TX DMA channel failed");
+    ESP_RETURN_ON_ERROR(gdma_new_ahb_channel(&dma_chan_config, &tx_channel->base.dma_chan), TAG, "allocate TX DMA channel failed");
     gdma_strategy_config_t gdma_strategy_conf = {
         .auto_update_desc = true,
         .owner_check = true,
@@ -53,10 +54,9 @@ static esp_err_t rmt_tx_init_dma_link(rmt_tx_channel_t *tx_channel, const rmt_tx
     // register the DMA callbacks may fail if the interrupt service can not be installed successfully
     ESP_RETURN_ON_ERROR(gdma_register_tx_event_callbacks(tx_channel->base.dma_chan, &cbs, tx_channel), TAG, "register DMA callbacks failed");
 
-    gdma_channel_alignment_info_t align_info;
+    size_t int_alignment = 0;
     // get the alignment requirement from DMA
-    gdma_get_channel_alignment_constraints(tx_channel->base.dma_chan, &align_info);
-    size_t int_alignment = align_info.int_mem_alignment;
+    gdma_get_alignment_constraints(tx_channel->base.dma_chan, &int_alignment, NULL);
     // apply RMT hardware alignment requirement
     int_alignment = MAX(int_alignment, sizeof(rmt_symbol_word_t));
     // the memory returned by `heap_caps_aligned_calloc` also meets the cache alignment requirement (both address and size)
@@ -75,7 +75,7 @@ static esp_err_t rmt_tx_init_dma_link(rmt_tx_channel_t *tx_channel, const rmt_tx
     // For simplicity, encoder will use the non-cached address to read/write the DMA buffer
     tx_channel->dma_mem_base_nc = (rmt_symbol_word_t *)RMT_GET_NON_CACHE_ADDR(dma_mem_base);
     // the DMA buffer size should be aligned to the DMA requirement
-    size_t mount_size_per_node = ESP_ALIGN_DOWN(config->mem_block_symbols * sizeof(rmt_symbol_word_t) / RMT_DMA_NODES_PING_PONG, int_alignment);
+    size_t mount_size_per_node = ALIGN_DOWN(config->mem_block_symbols * sizeof(rmt_symbol_word_t) / RMT_DMA_NODES_PING_PONG, int_alignment);
     // check the upper and lower bound of mount_size_per_node
     ESP_RETURN_ON_FALSE(mount_size_per_node >= sizeof(rmt_symbol_word_t), ESP_ERR_INVALID_ARG,
                         TAG, "mem_block_symbols is too small");
@@ -301,18 +301,18 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
     rmt_hal_tx_channel_reset(&group->hal, channel_id);
     portEXIT_CRITICAL(&group->spinlock);
     // install tx interrupt
+    // --- install interrupt service
     // interrupt is mandatory to run basic RMT transactions, so it's not lazy installed in `rmt_tx_register_event_callbacks()`
-    int isr_flags = (config->intr_priority ? (1 << config->intr_priority) : RMT_ALLOW_INTR_PRIORITY_MASK) | RMT_TX_INTR_ALLOC_FLAG;
-    esp_intr_alloc_info_t intr_info = {
-        .source = soc_rmt_signals[group_id].irq,
-        .flags = isr_flags,
-        .intrstatusreg = (uint32_t)rmt_ll_get_interrupt_status_reg(hal->regs),
-        .intrstatusmask = RMT_LL_EVENT_TX_MASK(channel_id),
-        .handler = rmt_tx_default_isr,
-        .arg = tx_channel,
-        .bind_by.name = soc_rmt_signals[group_id].module_name,
-    };
-    ret = esp_intr_alloc_info(&intr_info, &tx_channel->base.intr);
+    // 1-- Set user specified priority to `group->intr_priority`
+    bool priority_conflict = rmt_set_intr_priority_to_group(group, config->intr_priority);
+    ESP_GOTO_ON_FALSE(!priority_conflict, ESP_ERR_INVALID_ARG, err, TAG, "intr_priority conflict");
+    // 2-- Get interrupt allocation flag
+    int isr_flags = rmt_isr_priority_to_flags(group) | RMT_TX_INTR_ALLOC_FLAG;
+    // 3-- Allocate interrupt using isr_flag
+    ret = esp_intr_alloc_intrstatus(soc_rmt_signals[group_id].irq, isr_flags,
+                                    (uint32_t) rmt_ll_get_interrupt_status_reg(hal->regs),
+                                    RMT_LL_EVENT_TX_MASK(channel_id), rmt_tx_default_isr, tx_channel,
+                                    &tx_channel->base.intr);
     ESP_GOTO_ON_ERROR(ret, err, TAG, "install tx interrupt failed");
     // install DMA service
 #if SOC_RMT_SUPPORT_DMA
@@ -378,12 +378,9 @@ static esp_err_t rmt_del_tx_channel(rmt_channel_handle_t channel)
     rmt_group_t *group = channel->group;
     int group_id = group->group_id;
     int channel_id = channel->channel_id;
-    soc_module_clk_t clk_src = (soc_module_clk_t)group->clk_src;
     ESP_LOGD(TAG, "del tx channel(%d,%d)", group_id, channel_id);
     // recycle memory resource
     ESP_RETURN_ON_ERROR(rmt_tx_destroy(tx_chan), TAG, "destroy tx channel failed");
-    // disable the clock source at last
-    ESP_RETURN_ON_ERROR(esp_clk_tree_enable_src(clk_src, false), TAG, "clock source disable failed");
     return ESP_OK;
 }
 
@@ -728,13 +725,11 @@ static void rmt_tx_do_transaction(rmt_tx_channel_t *tx_chan, rmt_tx_trans_desc_t
         // don't enable threshold interrupt with loop mode on
         // threshold interrupt will be disabled in `rmt_encode_eof()`
         rmt_ll_enable_interrupt(hal->regs, RMT_LL_EVENT_TX_THRES(channel_id), t->loop_count == 0);
+        // Threshold interrupt will be generated by accident, clear it before starting new transmission
+        rmt_ll_clear_interrupt_status(hal->regs, RMT_LL_EVENT_TX_THRES(channel_id));
     }
     // don't generate trans done event for loop transmission
     rmt_ll_enable_interrupt(hal->regs, RMT_LL_EVENT_TX_DONE(channel_id), t->loop_count == 0);
-    // Clear stale TX events before the engine starts.
-    // Some targets can keep TX_DONE pending after a loop transaction.
-    // And Threshold interrupt may be generated by accident
-    rmt_ll_clear_interrupt_status(hal->regs, RMT_LL_EVENT_TX_MASK(channel_id));
     portEXIT_CRITICAL_SAFE(&group->spinlock);
 
     // at the beginning of a new transaction, encoding memory offset should start from zero.
@@ -918,8 +913,6 @@ bool rmt_isr_handle_tx_threshold(rmt_tx_channel_t *tx_chan)
 {
     // continue ping-pong transmission
     rmt_tx_trans_desc_t *t = tx_chan->cur_trans;
-    // sanity check
-    assert(t);
     size_t encoded_symbols = t->transmitted_symbol_num;
     // encoding finished, only need to send the EOF symbol
     if (t->flags.encoding_done) {

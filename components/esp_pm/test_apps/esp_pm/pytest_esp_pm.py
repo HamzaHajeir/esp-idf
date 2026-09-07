@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import pytest
 from pytest_embedded import Dut
@@ -17,7 +17,6 @@ from pytest_embedded_idf.utils import idf_parametrize
     indirect=True,
 )
 @idf_parametrize('target', ['supported_targets'], indirect=['target'])
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='bringup on this module is not done')
 def test_esp_pm(dut: Dut) -> None:
     dut.run_all_single_board_cases()
 
@@ -51,22 +50,7 @@ def test_esp_attr_xip_psram_esp32s3(dut: Dut) -> None:
 @pytest.mark.parametrize(
     'config',
     ['pm_pd_top_sleep'],
-    indirect=True,
 )
 @idf_parametrize('target', ['esp32c5', 'esp32c6', 'esp32h2', 'esp32p4'], indirect=['target'])
 def test_esp_pd_top_and_cpu_sleep(dut: Dut) -> None:
-    dut.run_all_single_board_cases()
-
-
-# Tickless IDLE without lightsleep
-@pytest.mark.generic
-@pytest.mark.parametrize(
-    'config',
-    ['tickless_waiti'],
-    indirect=True,
-)
-@idf_parametrize('target', ['supported_targets'], indirect=['target'])
-@pytest.mark.temp_skip_ci(targets=['esp32', 'esp32s2'], reason='PM_TICKLESS_IDLE_WAITI requires systimer')
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='bringup on this module is not done')
-def test_ticlkess_waiti(dut: Dut) -> None:
     dut.run_all_single_board_cases()

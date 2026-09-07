@@ -143,14 +143,17 @@ if(CONFIG_LWIP_ENABLE)
     endif()
 
 
-    if(NOT ${target} STREQUAL "linux")
+if(NOT ${target} STREQUAL "linux")
+        # Support for vfs and linker fragments only for target builds
         set(linker_fragments linker.lf)
-    endif()
-
-    if(CONFIG_VFS_SUPPORT_IO)
-        list(APPEND srcs "port/vfs_lwip.c")
+        if(CONFIG_VFS_SUPPORT_IO)
+            list(APPEND srcs "port/${target}/vfs_lwip.c")
+        else()
+            list(APPEND srcs "port/${target}/no_vfs_syscalls.c")
+        endif()
     else()
-        list(APPEND srcs "port/${target}/no_vfs_syscalls.c")
+        # This wraps some posix IO functions to conditionally pass control to lwip
+        list(APPEND srcs "port/${target}/vfs_lwip.c")
     endif()
 
     if(CONFIG_LWIP_ICMP)
@@ -176,7 +179,9 @@ if(CONFIG_LWIP_ENABLE)
     endif()
 endif() # CONFIG_LWIP_ENABLE
 
-set(priv_requires vfs)
+if(NOT ${target} STREQUAL "linux")
+    set(priv_requires vfs)
+endif()
 
 idf_component_register(SRCS "${srcs}"
                     INCLUDE_DIRS  ${include_dirs}
@@ -208,23 +213,6 @@ if(CONFIG_LWIP_ENABLE)
         -Wno-array-parameter
     )
 
-    # TODO IDF-15784: remove
-    # vars only used in LWIP_ASSERT / debug; unused when asserts disabled
-    set_source_files_properties(
-        lwip/src/core/netif.c
-        lwip/src/core/ipv4/ip4_napt.c
-        PROPERTIES COMPILE_FLAGS
-        -Wno-unused-but-set-variable
-    )
-
-    if(CONFIG_COMPILER_STATIC_ANALYZER AND CONFIG_IDF_TOOLCHAIN_GCC)
-        set_source_files_properties(
-            lwip/src/core/ipv4/ip4_addr.c
-            PROPERTIES COMPILE_FLAGS
-            -Wno-analyzer-use-of-uninitialized-value
-        )
-    endif()
-
     if(CONFIG_OPENTHREAD_ENABLED)
         idf_component_optional_requires(PRIVATE openthread)
     endif()
@@ -241,5 +229,14 @@ if(CONFIG_LWIP_ENABLE)
         set(THREADS_PREFER_PTHREAD_FLAG ON)
         find_package(Threads REQUIRED)
         target_link_libraries(${COMPONENT_LIB} PRIVATE Threads::Threads)
+        set(WRAP_FUNCTIONS      select
+                                read
+                                fcntl
+                                write
+                                close)
+        foreach(wrap ${WRAP_FUNCTIONS})
+                    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${wrap}")
+                    target_link_libraries(${COMPONENT_LIB} INTERFACE "-u __wrap_${wrap}")
+        endforeach()
     endif()
 endif()

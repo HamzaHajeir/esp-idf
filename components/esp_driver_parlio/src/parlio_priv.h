@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,13 +50,6 @@
 #include "esp_private/gdma_link.h"
 #include "esp_private/esp_dma_utils.h"
 
-#if defined(SOC_GDMA_TRIG_PERIPH_PARLIO0_BUS) && defined(SOC_GDMA_BUS_AXI) && (SOC_GDMA_TRIG_PERIPH_PARLIO0_BUS == SOC_GDMA_BUS_AXI)
-#include "hal/axi_dma_ll.h"
-#if AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-#define PARLIO_USE_GDMA_LINK_SWITCH_EVENT 1
-#endif
-#endif
-
 #if CONFIG_PARLIO_OBJ_CACHE_SAFE
 #define PARLIO_MEM_ALLOC_CAPS    (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #else
@@ -78,18 +71,6 @@
 // Use retention link only when the target supports sleep retention is enabled
 #define PARLIO_USE_RETENTION_LINK  (SOC_PARLIO_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
 
-#if SOC_PARLIO_SUPPORT_SLEEP_RETENTION
-typedef struct {
-    const periph_retention_module_t retention_module;
-    const regdma_entries_config_t *regdma_entry_array;
-    uint32_t array_size;
-} parlio_retention_desc_t;
-
-extern const parlio_retention_desc_t parlio_retention_infos[PARLIO_LL_GET(INST_NUM)];
-extern const uint32_t parlio_regs_map[4];
-extern const uint32_t parlio_regs_cnt;
-#endif // SOC_PARLIO_SUPPORT_SLEEP_RETENTION
-
 #define PARLIO_DMA_DESCRIPTOR_BUFFER_MAX_SIZE 4095
 
 #if defined(SOC_GDMA_TRIG_PERIPH_PARLIO0_BUS) // Parlio uses GDMA
@@ -104,6 +85,19 @@ extern const uint32_t parlio_regs_cnt;
 
 // loop transmission requires ping-pong link to prevent data tearing.
 #define PARLIO_DMA_LINK_NUM         2
+
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define PARLIO_CLOCK_SRC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define PARLIO_CLOCK_SRC_ATOMIC()
+#endif
+
+#if !SOC_RCC_IS_INDEPENDENT
+// Reset and Clock Control registers are mixing with other peripherals, so we need to use a critical section
+#define PARLIO_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define PARLIO_RCC_ATOMIC()
+#endif  // SOC_RCC_IS_INDEPENDENT
 
 ///!< Logging settings
 #define TAG "parlio"
@@ -137,8 +131,6 @@ typedef struct parlio_group_t {
     int                       group_id;     // group ID, index from 0
     portMUX_TYPE              spinlock;     // to protect per-group register level concurrent access
     parlio_hal_context_t      hal;          // hal layer context
-    uint32_t                  regs_map[4];  // register map for software retention
-    uint32_t                  regs_cnt;     // register count for software retention
     uint32_t                  dma_align;    // DMA buffer alignment
     parlio_unit_base_handle_t    tx_units[PARLIO_LL_GET(TX_UNITS_PER_INST)]; // tx unit handles
     parlio_unit_base_handle_t    rx_units[PARLIO_LL_GET(RX_UNITS_PER_INST)]; // rx unit handles
@@ -221,15 +213,6 @@ esp_err_t parlio_register_unit_to_group(parlio_unit_base_handle_t unit);
  * @param[in]  unit        The TX/RX unit base handle
  */
 void parlio_unregister_unit_from_group(parlio_unit_base_handle_t unit);
-
-/**
- * @brief Retain the Parallel IO registers by software
- *
- * @param[in]  group       The parlio group handle
- * @param[in]  reg_dump    The register dump buffer
- * @param[in]  save        If true, save the registers; if false, restore the registers
- */
-void parlio_sw_retention(parlio_group_t *group, uint32_t *reg_dump, bool save);
 
 #if PARLIO_USE_RETENTION_LINK
 esp_err_t parlio_create_sleep_retention_link_cb(void *arg);

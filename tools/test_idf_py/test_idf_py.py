@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import json
 import os
@@ -27,9 +27,9 @@ except ImportError:
     import idf
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
-idf_py_path = os.path.normpath(os.path.join(current_dir, '..', 'idf.py'))
+idf_py_path = os.path.join(current_dir, '..', 'idf.py')
 extension_path = os.path.join(current_dir, 'test_idf_extensions', 'test_ext')
-py_actions_path = os.path.normpath(os.path.join(current_dir, '..', 'idf_py_actions'))
+py_actions_path = os.path.join(current_dir, '..', 'idf_py_actions')
 link_path = os.path.join(py_actions_path, 'test_ext')
 
 
@@ -48,61 +48,50 @@ class TestWithoutExtensions(TestCase):
 
         super().setUpClass()
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.env_patcher.stop()
-        super().tearDownClass()
-
 
 class TestExtensions(TestWithoutExtensions):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        # Create symlink once for all tests in this class
-        # Handle race conditions with parallel test execution (pytest-xdist)
+    def test_extension_loading(self):
         try:
             os.symlink(extension_path, link_path)
-        except FileExistsError:
-            # Another worker already created it - that's fine
-            pass
-        os.environ['IDF_EXTRA_ACTIONS_PATH'] = os.path.join(current_dir, 'extra_path')
+            os.environ['IDF_EXTRA_ACTIONS_PATH'] = os.path.join(current_dir, 'extra_path')
+            output = subprocess.check_output([sys.executable, idf_py_path, '--help'], env=os.environ).decode(
+                'utf-8', 'ignore'
+            )
 
-    @classmethod
-    def tearDownClass(cls):
-        # Clean up symlink after all tests complete
-        # Use try/except to handle race conditions with parallel execution
-        try:
+            self.assertIn('--test-extension-option', output)
+            self.assertIn('test_subcommand', output)
+            self.assertIn('--some-extension-option', output)
+            self.assertIn('extra_subcommand', output)
+        finally:
             os.remove(link_path)
-        except FileNotFoundError:
-            # Another worker already removed it - that's fine
-            pass
-        super().tearDownClass()
-
-    def test_extension_loading(self):
-        output = subprocess.check_output([sys.executable, idf_py_path, '--help'], env=os.environ).decode(
-            'utf-8', 'ignore'
-        )
-        self.assertIn('--test-extension-option', output)
-        self.assertIn('test_subcommand', output)
-        self.assertIn('--some-extension-option', output)
-        self.assertIn('extra_subcommand', output)
 
     def test_extension_execution(self):
-        output = subprocess.check_output(
-            [sys.executable, idf_py_path, '--some-extension-option=awesome', 'test_subcommand', 'extra_subcommand'],
-            env=os.environ,
-        ).decode('utf-8', 'ignore')
-        self.assertIn('!!! From some global callback: awesome', output)
-        self.assertIn('!!! From some subcommand', output)
-        self.assertIn('!!! From test global callback: test', output)
-        self.assertIn('!!! From some subcommand', output)
+        try:
+            os.symlink(extension_path, link_path)
+            os.environ['IDF_EXTRA_ACTIONS_PATH'] = ';'.join([os.path.join(current_dir, 'extra_path')])
+            output = subprocess.check_output(
+                [sys.executable, idf_py_path, '--some-extension-option=awesome', 'test_subcommand', 'extra_subcommand'],
+                env=os.environ,
+            ).decode('utf-8', 'ignore')
+            self.assertIn('!!! From some global callback: awesome', output)
+            self.assertIn('!!! From some subcommand', output)
+            self.assertIn('!!! From test global callback: test', output)
+            self.assertIn('!!! From some subcommand', output)
+        finally:
+            os.remove(link_path)
 
     def test_hidden_commands(self):
-        output = subprocess.check_output([sys.executable, idf_py_path, '--help'], env=os.environ).decode(
-            'utf-8', 'ignore'
-        )
-        self.assertIn('test_subcommand', output)
-        self.assertNotIn('hidden_one', output)
+        try:
+            os.symlink(extension_path, link_path)
+            os.environ['IDF_EXTRA_ACTIONS_PATH'] = ';'.join([os.path.join(current_dir, 'extra_path')])
+            output = subprocess.check_output([sys.executable, idf_py_path, '--help'], env=os.environ).decode(
+                'utf-8', 'ignore'
+            )
+            self.assertIn('test_subcommand', output)
+            self.assertNotIn('hidden_one', output)
+
+        finally:
+            os.remove(link_path)
 
 
 class TestDependencyManagement(TestWithoutExtensions):
@@ -142,11 +131,9 @@ class TestDependencyManagement(TestWithoutExtensions):
             standalone_mode=False,
         )
         sys.stderr = sys.__stderr__
-        # The shared esp_pylib logger wraps long lines at the console width; collapse whitespace
-        # so the substring check does not depend on where the line break lands.
         self.assertIn(
-            'Commands "all", "clean" are found in the list of commands more than once.',
-            ' '.join(capturedOutput.getvalue().split()),
+            'WARNING: Commands "all", "clean" are found in the list of commands more than once.',
+            capturedOutput.getvalue(),
         )
 
         sys.stderr = capturedOutput
@@ -156,29 +143,8 @@ class TestDependencyManagement(TestWithoutExtensions):
         )
         sys.stderr = sys.__stderr__
         self.assertIn(
-            'Command "clean" is found in the list of commands more than once.',
-            ' '.join(capturedOutput.getvalue().split()),
+            'WARNING: Command "clean" is found in the list of commands more than once.', capturedOutput.getvalue()
         )
-
-
-class TestIdfVersionSeeding(TestWithoutExtensions):
-    def test_idf_version_seeded_when_unset(self):
-        from idf_py_actions.tools import idf_version_from_cmake
-
-        with mock.patch.dict(os.environ):
-            os.environ.pop('IDF_VERSION', None)
-            idf.init_cli()(args=['--dry-run', 'build'], standalone_mode=False)
-            self.assertIn('IDF_VERSION', os.environ)
-            expected = idf_version_from_cmake()
-            self.assertIsNotNone(expected)
-            expected_stripped = expected.lstrip('v')
-            self.assertEqual(os.environ['IDF_VERSION'], expected_stripped)
-            self.assertFalse(os.environ['IDF_VERSION'].startswith('v'))
-
-    def test_idf_version_not_overwritten_when_set(self):
-        with mock.patch.dict(os.environ, {'IDF_VERSION': '0.0.0-sentinel'}):
-            idf.init_cli()(args=['--dry-run', 'build'], standalone_mode=False)
-            self.assertEqual(os.environ['IDF_VERSION'], '0.0.0-sentinel')
 
 
 class TestVerboseFlag(TestWithoutExtensions):
@@ -240,7 +206,7 @@ class TestDeprecations(TestWithoutExtensions):
             )
         except subprocess.CalledProcessError as e:
             output = e.output.decode('utf-8', 'ignore').replace('\r\n', '\n')
-            self.assertIn('Command "test-2" is deprecated and was removed', output)
+            self.assertIn('Error: Command "test-2" is deprecated and was removed\n', output)
 
     def test_exit_with_error_for_option(self):
         try:
@@ -251,7 +217,7 @@ class TestDeprecations(TestWithoutExtensions):
             )
         except subprocess.CalledProcessError as e:
             self.assertIn(
-                'Option "test_5" is deprecated since v2.0 and was removed in v3.0.',
+                'Error: Option "test_5" is deprecated since v2.0 and was removed in v3.0.',
                 e.output.decode('utf-8', 'ignore'),
             )
 
@@ -275,18 +241,19 @@ class TestDeprecations(TestWithoutExtensions):
             env=os.environ,
             stderr=subprocess.STDOUT,
         ).decode('utf-8', 'ignore')
-        output = ' '.join(output.split())
-        self.assertIn('Option "test_sub_1" is deprecated and will be removed in future versions.', output)
+        self.assertIn('Warning: Option "test_sub_1" is deprecated and will be removed in future versions.', output)
         self.assertIn(
-            'Command "test-1" is deprecated and will be removed in future versions. Please use alternative command.',
+            'Warning: Command "test-1" is deprecated and will be removed in future versions. '
+            'Please use alternative command.',
             output,
         )
-        self.assertIn('Option "test_1" is deprecated and will be removed in future versions.', output)
+        self.assertIn('Warning: Option "test_1" is deprecated and will be removed in future versions.', output)
         self.assertIn(
-            'Option "test_2" is deprecated and will be removed in future versions. Please update your parameters.',
+            'Warning: Option "test_2" is deprecated and will be removed in future versions. '
+            'Please update your parameters.',
             output,
         )
-        self.assertIn('Option "test_3" is deprecated and will be removed in future versions.', output)
+        self.assertIn('Warning: Option "test_3" is deprecated and will be removed in future versions.', output)
         self.assertNotIn('"test-0" is deprecated', output)
         self.assertNotIn('"test_0" is deprecated', output)
 

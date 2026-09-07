@@ -1,6 +1,7 @@
 .build_template:
   stage: build
   extends:
+    - .before_script:build
     - .after_script:build
   image: $ESP_ENV_IMAGE
   tags: [build, shiny]
@@ -8,6 +9,50 @@
     # Enable ccache for all build jobs. See configure_ci_environment.sh for more ccache related settings.
     IDF_CCACHE_ENABLE: "1"
   dependencies: # set dependencies to null to avoid missing artifacts issue
+
+######################
+# build_template_app #
+######################
+.build_template_app_template:
+  extends:
+    - .build_template
+  artifacts:
+    paths:
+      - log_template_app/*
+      - size_info.txt
+      - build_template_app/**/size*.json
+    expire_in: 1 week
+    when: always
+  script:
+    # Set the variable for 'esp-idf-template' testing
+    - ESP_IDF_TEMPLATE_GIT=${ESP_IDF_TEMPLATE_GIT:-"https://github.com/espressif/esp-idf-template.git"}
+    - retry_failed git clone ${ESP_IDF_TEMPLATE_GIT}
+    # Try to use the same branch name for esp-idf-template that we're
+    # using on esp-idf. If it doesn't exist then just stick to the default branch
+    - python $CHECKOUT_REF_SCRIPT esp-idf-template esp-idf-template
+    - export PATH="$IDF_PATH/tools:$PATH"
+    # Only do the default cmake build for each target, remaining part are done in the build_template_app job
+    - tools/ci/build_template_app.sh ${BUILD_COMMAND_ARGS}
+
+# Build at least one project for each target at earliest stage to reduce build cost for obvious failing commits
+fast_template_app:
+  extends:
+    - .build_template_app_template
+    - .rules:build
+  stage: pre_check
+  tags: [fast_run, shiny]
+  variables:
+    BUILD_COMMAND_ARGS: "-p"
+
+# This job builds template app with permutations of targets and optimization levels
+build_template_app:
+  extends:
+    - .build_template_app_template
+    - .rules:build
+  stage: host_test
+  needs:
+    - job: fast_template_app
+      artifacts: false
 
 ########################################
 # Clang Build Apps Without Tests Cases #
@@ -17,7 +62,7 @@
     - .build_template
     - .rules:build
   needs:
-    - job: fast_build_check
+    - job: fast_template_app
       artifacts: false
     - pipeline_variables
   artifacts:
@@ -35,17 +80,13 @@
     TEST_BUILD_OPTS_EXTRA: ""
   script:
     # CI specific options start from "--parallel-count xxx". could ignore when running locally
-    #
-    # In addition to the default sdkconfig.ci.* configs, build the
-    # sdkconfig.ci_clang.* configs, which are meant only for the clang build
-    # jobs (the generic build jobs would build them with the GCC toolchain).
     - run_cmd idf-build-apps build
       -p tools/test_apps/system/clang_build_test
-      components/esp_security/test_apps/fault_assert_opt_check
       -t $IDF_TARGET
-      --config-rules "sdkconfig.ci=default" "sdkconfig.ci.*=" "sdkconfig.ci_clang.*="
-      --modified-components \"${MR_MODIFIED_COMPONENTS}\"
-      --modified-files \"${MR_MODIFIED_FILES}\"
+      --parallel-count ${CI_NODE_TOTAL:-1}
+      --parallel-index ${CI_NODE_INDEX:-1}
+      --modified-components ${MR_MODIFIED_COMPONENTS}
+      --modified-files ${MR_MODIFIED_FILES}
       $TEST_BUILD_OPTS_EXTRA
 
 build_clang_test_apps_xtensa:
@@ -70,38 +111,18 @@ build_clang_test_apps_riscv:
 ####################
 # Dynamic Pipeline #
 ####################
-# !!!
-# configurations moved to ci/actions/common/idf/
-# !!!
-
-# Generates a separate child-pipeline YAML for the cmakev2 build system.
-# The build_dir stays identical to cmakev1 (build_<target>_<config>); v1/v2
-# binaries are kept separate in s3 by suffixing PIPELINE_COMMIT_SHA — see
-# the python injection below — which idf-ci uses unmodified in its s3
-# prefix (project/<sha>/...). Keeping build_dir identical preserves the
-# upstream pytest matching that uses app.build_path to filter test cases.
-generate_build_child_pipeline_buildv2:
+generate_build_child_pipeline:
   extends:
     - .build_template
-    - .rules:labels:buildv2
   tags: [fast_run, shiny]
-  variables:
-    # The build child pipeline's app list is fixed here, at generation time.
-    # Set IDF_BUILD_V2 so that manifest `disable: if IDF_BUILD_V2 == "1"` rules
-    # take effect during app discovery; otherwise those apps (e.g. kasan_test,
-    # IDF-15864) are discovered, built and target-tested even though the build
-    # jobs run with IDF_BUILD_V2 injected by patch_buildv2_child_pipeline.py.
-    IDF_BUILD_V2: "1"
   dependencies: # set dependencies to null to avoid missing artifacts issue
   needs:
     - pipeline_variables
-    - job: pre_check_complete
-      artifacts: false
     - job: baseline_manifest_sha
       optional: true
   artifacts:
     paths:
-      - buildv2_child_pipeline.yml
+      - build_child_pipeline.yml
       - test_related_apps.txt
       - non_test_related_apps.txt
     expire_in: 1 week
@@ -111,34 +132,44 @@ generate_build_child_pipeline_buildv2:
       -p components
       -p examples
       -p tools/test_apps
-      --modified-files \"${MR_MODIFIED_FILES}\"
-      buildv2_child_pipeline.yml > idfci_buildv2_gen.log 2>&1
-    - tail -20 idfci_buildv2_gen.log
-    - shuf test_related_apps.txt -o test_related_apps.txt
-    - shuf non_test_related_apps.txt -o non_test_related_apps.txt
-    # Patch the generated yaml to activate the cmakev2 shim and route v2 build
-    # and target_test artifacts to a distinct s3 namespace. See the script
-    # docstring for the rationale.
-    - python tools/ci/dynamic_pipelines/scripts/patch_buildv2_child_pipeline.py buildv2_child_pipeline.yml
-    - 'echo "=== buildv2_child_pipeline.yml (post-injection) ==="; cat buildv2_child_pipeline.yml; echo "=== end ==="'
+      --modified-files $MR_MODIFIED_FILES
 
-build_child_pipeline_buildv2:
+build_child_pipeline:
   stage: build
-  extends:
-    - .rules:labels:buildv2
   needs:
-    - job: fast_build_check
+    - job: fast_template_app
       optional: true
       artifacts: false
     - pipeline_variables
-    - generate_build_child_pipeline_buildv2
+    - generate_build_child_pipeline
   variables:
+    MR_MODIFIED_COMPONENTS: $MR_MODIFIED_COMPONENTS
+    MR_MODIFIED_FILES: $MR_MODIFIED_FILES
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+  # https://gitlab.com/gitlab-org/gitlab/-/issues/214340
   inherit:
     variables: false
   trigger:
     include:
-      - artifact: buildv2_child_pipeline.yml
-        job: generate_build_child_pipeline_buildv2
+      - artifact: build_child_pipeline.yml
+        job: generate_build_child_pipeline
     strategy: depend
-  allow_failure: true
+
+generate_disabled_apps_report:
+  extends:
+    - .build_template
+  tags: [fast_run, shiny]
+  dependencies: # set dependencies to null to avoid missing artifacts issue
+  needs:
+    - pipeline_variables
+    - job: baseline_manifest_sha
+      optional: true
+  artifacts:
+    paths:
+      - disabled_report.html
+    expire_in: 1 week
+    when: always
+  script:
+    - pip install dominate idf-build-apps
+    - run_cmd python tools/ci/gen_disabled_report.py --output disabled_report.html --verbose --enable-preview-targets
+    - echo "Report generated at https://${CI_PAGES_HOSTNAME}:${CI_SERVER_PORT}/-/esp-idf/-/jobs/${CI_JOB_ID}/artifacts/disabled_report.html"

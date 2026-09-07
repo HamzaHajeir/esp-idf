@@ -1,13 +1,10 @@
-# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
+import argparse
 import os
 import re
 import struct
 import time
-
-import rich_click as click
-from esp_pylib.logger import log
-from rich.markup import escape
 
 
 def create_new_bt_snoop_file(filename: str) -> None:
@@ -22,9 +19,9 @@ def create_new_bt_snoop_file(filename: str) -> None:
 
 def append_hci_to_bt_snoop_file(filename: str, direction: int, data: str, timestamp_us: int) -> None:
     if os.path.exists(filename):
-        log.print(f'Appending to existing file: {escape(filename)}')
+        print(f'Appending to existing file: {filename}')
     else:
-        log.print(f'Creating new file: {escape(filename)}')
+        print(f'Creating new file: {filename}')
         create_new_bt_snoop_file(filename)
     data_bytes = bytearray.fromhex(data)
     with open(filename, 'ab') as f:
@@ -42,7 +39,8 @@ def log_data_clean(data: str) -> str:
 
 def parse_log(input_path: str, output_tag: str, has_timestamp: bool = True) -> None:
     if not os.path.exists(input_path):
-        log.die(f"The file '{escape(input_path)}' does not exist.")
+        print(f"Error: The file '{input_path}' does not exist.")
+        return
     output_dir = './parsed_logs'
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, f'parsed_log_{output_tag}.btsnoop.log')
@@ -114,38 +112,28 @@ def parse_log(input_path: str, output_tag: str, has_timestamp: bool = True) -> N
                     append_hci_to_bt_snoop_file(output_file, direction, hci_data, timestamp_us)
                     parsed_num += 1
             except Exception as e:
-                log.warn(f'Exception: {escape(str(e))}')
+                print(f'Exception: {e}')
     if parsed_num > 0:
-        log.print(
-            f'Parsing completed, parsed_num {parsed_num}, all_line_num {all_line_num}.\n'
-            f'Output saved to: {escape(output_file)}'
+        print(
+            f'Parsing completed, parsed_num {parsed_num}, all_line_num {all_line_num}.\nOutput saved to: {output_file}'
         )
     else:
-        log.warn('No data could be parsed.')
-
-
-@click.command(
-    context_settings={'help_option_names': ['-h', '--help']},
-    help='Parse Bluetooth HCI logs and convert them to BTSnoop format.',
-)
-@click.option('-p', '--path', required=True, help='Path to the input log file')
-@click.option('-o', '--output', required=True, help='Name tag for the output file')
-@click.option(
-    '--has-ts',
-    is_flag=True,
-    default=False,
-    help='Set this if the input file has timestamp information as part of packets (default: False)',
-)
-def cli(path: str, output: str, has_ts: bool) -> None:
-    parse_log(path, output, has_timestamp=has_ts)
+        print('No data could be parsed.')
 
 
 def main() -> None:
-    cli()
+    parser = argparse.ArgumentParser(description='Log Parsing Tool')
+    parser.add_argument('-p', '--path', required=True, help='Path to the input log file')
+    parser.add_argument('-o', '--output', required=True, help='Name tag for the output file')
+    parser.add_argument(
+        '--has-ts',
+        action='store_true',
+        default=False,
+        help='Set this if the input file has timestamp information as part of packets (default: False)',
+    )
+    args = parser.parse_args()
+    parse_log(args.path, args.output, has_timestamp=args.has_ts)
 
 
 if __name__ == '__main__':
-    from esp_pylib.excepthook import install_exception_reporting
-
-    install_exception_reporting()
     main()

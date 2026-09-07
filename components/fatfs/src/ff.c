@@ -1133,7 +1133,7 @@ static FRESULT sync_fs (	/* Returns FR_OK or FR_DISK_ERR */
 #if FF_FS_EXFAT
 			else if (fs->fs_type == FS_EXFAT) {	/* exFAT: Update PercInUse field in BPB */
 				if (disk_read(fs->pdrv, fs->win, fs->winsect = fs->volbase, 1) == RES_OK) {	/* Load VBR */
-					BYTE perc_inuse = (fs->n_fatent > 2 && fs->free_clst <= fs->n_fatent - 2) ? (BYTE)((QWORD)(fs->n_fatent - 2 - fs->free_clst) * 100 / (fs->n_fatent - 2)) : 0xFF;	/* Precent in use 0-100 or 0xFF(unknown). CVE-2026-6683: guard divisor (n_fatent-2) against zero */
+					BYTE perc_inuse = (fs->free_clst <= fs->n_fatent - 2) ? (BYTE)((QWORD)(fs->n_fatent - 2 - fs->free_clst) * 100 / (fs->n_fatent - 2)) : 0xFF;	/* Precent in use 0-100 or 0xFF(unknown) */
 
 					if (fs->win[BPB_PercInUseEx] != perc_inuse) {	/* Write it back into VBR if needed */
 						fs->win[BPB_PercInUseEx] = perc_inuse;
@@ -3513,10 +3513,8 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	if (SS(fs) > FF_MAX_SS || SS(fs) < FF_MIN_SS || (SS(fs) & (SS(fs) - 1))) return FR_DISK_ERR;
 #endif
 #if FF_USE_DYN_BUFFER
-    if (!fs->win) {
-        fs->win = ff_memalloc(SS(fs));		/* Allocate memory for sector buffer */
-        if (!fs->win) return FR_NOT_ENOUGH_CORE;
-    }
+    fs->win = ff_memalloc(SS(fs));		/* Allocate memory for sector buffer */
+    if (!fs->win) return FR_NOT_ENOUGH_CORE;
 #endif
 
 	/* Find an FAT volume on the hosting drive */
@@ -3554,14 +3552,13 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 
 		ncl = ld_32(fs->win + BPB_NumClusEx);			/* Number of clusters */
 		if (ncl > MAX_EXFAT) return FR_NO_FILESYSTEM;	/* (Too many clusters) */
-		if (ncl == 0) return FR_NO_FILESYSTEM;			/* CVE-2026-6683: reject empty cluster heap (n_fatent-2==0 causes divide-by-zero in sync_fs) */
 		fs->n_fatent = ncl + 2;
 
 		/* Boundaries and Limits */
 		fs->volbase = bsect;
 		fs->database = bsect + ld_32(fs->win + BPB_DataOfsEx);
 		fs->fatbase = bsect + ld_32(fs->win + BPB_FatOfsEx);
-		if (maxlba < (QWORD)fs->database + (QWORD)ncl * fs->csize) return FR_NO_FILESYSTEM;	/* exFAT mount hardening (defense-in-depth): promote to 64-bit before multiply to avoid integer overflow that would accept an undersized volume */
+		if (maxlba < (QWORD)fs->database + ncl * fs->csize) return FR_NO_FILESYSTEM;	/* (Volume size must not be smaller than the size required) */
 		fs->dirbase = ld_32(fs->win + BPB_RootClusEx);
 
 		/* Get bitmap location and check if it is contiguous (implementation assumption) */
@@ -3577,7 +3574,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 		}
 		bcl = ld_32(fs->win + i + 20);				/* Bitmap cluster */
 		if (bcl < 2 || bcl >= fs->n_fatent) return FR_NO_FILESYSTEM;	/* (Wrong cluster#) */
-		fs->bitbase = fs->database + (LBA_t)fs->csize * (bcl - 2);	/* Bitmap sector (exFAT mount hardening: 64-bit multiply to avoid overflow) */
+		fs->bitbase = fs->database + fs->csize * (bcl - 2);	/* Bitmap sector */
 		for (;;) {	/* Check if bitmap is contiguous */
 			if (move_window(fs, fs->fatbase + bcl / (SS(fs) / 4)) != FR_OK) return FR_DISK_ERR;
 			cv = ld_32(fs->win + bcl % (SS(fs) / 4) * 4);
@@ -3603,7 +3600,6 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 
 		fs->n_fats = fs->win[BPB_NumFATs];				/* Number of FATs */
 		if (fs->n_fats != 1 && fs->n_fats != 2) return FR_NO_FILESYSTEM;	/* (Must be 1 or 2) */
-		if (fs->n_fats == 2 && fasize > 0xFFFFFFFF / 2) return FR_NO_FILESYSTEM;	/* CVE-2026-6682: reject a per-FAT size that overflows DWORD when multiplied by the FAT count; a wrapped (too-small) fasize would move the data area into the FAT region and let a crafted image forge a directory entry with an attacker-controlled file size */
 		fasize *= fs->n_fats;							/* Number of sectors for FAT area */
 
 		fs->csize = fs->win[BPB_SecPerClus];			/* Cluster size */
@@ -3620,7 +3616,6 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 
 		/* Determine the FAT sub type */
 		sysect = nrsv + fasize + fs->n_rootdir / (SS(fs) / SZDIRE);	/* RSV + FAT + FF_DIR */
-		if (sysect < fasize) return FR_NO_FILESYSTEM;	/* CVE-2026-6682: reject reserved+FAT+root system-area size that overflows DWORD (same data-area displacement as the FAT-count overflow above) */
 		if (tsect < sysect) return FR_NO_FILESYSTEM;	/* (Invalid volume size) */
 		nclst = (tsect - sysect) / fs->csize;			/* Number of clusters */
 		if (nclst == 0) return FR_NO_FILESYSTEM;		/* (Invalid volume size) */
@@ -3773,10 +3768,8 @@ FRESULT f_mount (
 		ff_mutex_delete(vol);
 #endif
 #if FF_USE_DYN_BUFFER
-        if (cfs->win) {           /* Check if the buffer was ever allocated */
+        if (cfs->fs_type)           /* Check if the buffer was ever allocated */
             ff_memfree(cfs->win);   /* Deallocate buffer allocated for the filesystem object */
-            cfs->win = NULL;
-        }
 #endif
 		cfs->fs_type = 0;		/* Invalidate the filesystem object to be unregistered */
 	}
@@ -3962,15 +3955,18 @@ FRESULT f_open (
 #if !FF_FS_READONLY
 #if !FF_FS_TINY
 #if FF_USE_DYN_BUFFER
-            if (!fp->buf) {
+            fp->buf = NULL;
+            if (res == FR_OK) {
                 fp->buf = ff_memalloc(SS(fs));
                 if (!fp->buf) {
                     res = FR_NOT_ENOUGH_CORE;	/* Not enough memory */
                     goto fail;
                 }
+    			memset(fp->buf, 0, SS(fs));	/* Clear sector buffer */
             }
-#endif
+#else
             memset(fp->buf, 0, SS(fs));    /* Clear sector buffer */
+#endif
 #endif
 			if ((mode & FA_SEEKEND) && fp->obj.objsize > 0) {	/* Seek to end of file if FA_OPEN_APPEND is specified */
 				DWORD bcs, clst;
@@ -4017,7 +4013,7 @@ FRESULT f_open (
 #endif
     }
 
-#if !FF_FS_TINY && FF_USE_DYN_BUFFER
+#if FF_USE_DYN_BUFFER
 fail:
 #endif
 
@@ -4086,11 +4082,11 @@ FRESULT f_read (
 				if (disk_read(fs->pdrv, rbuff, sect, cc) != RES_OK) ABORT(fs, FR_DISK_ERR);
 #if !FF_FS_READONLY && FF_FS_MINIMIZE <= 2		/* Replace one of the read sectors with cached data if it contains a dirty sector */
 #if FF_FS_TINY
-				if (fs->wflag && fs->winsect >= sect && fs->winsect - sect < cc) {	/* CVE-2026-6685: guard against unsigned wrap when winsect < sect (mis-offset would be an OOB write into rbuff) */
+				if (fs->wflag && fs->winsect - sect < cc) {
 					memcpy(rbuff + ((fs->winsect - sect) * SS(fs)), fs->win, SS(fs));
 				}
 #else
-				if ((fp->flag & FA_DIRTY) && fp->sect >= sect && fp->sect - sect < cc) {	/* CVE-2026-6685: guard against unsigned wrap when fp->sect < sect (mis-offset would be an OOB write into rbuff) */
+				if ((fp->flag & FA_DIRTY) && fp->sect - sect < cc) {
 					memcpy(rbuff + ((fp->sect - sect) * SS(fs)), fp->buf, SS(fs));
 				}
 #endif
@@ -4201,12 +4197,12 @@ FRESULT f_write (
 				if (disk_write(fs->pdrv, wbuff, sect, cc) != RES_OK) ABORT(fs, FR_DISK_ERR);
 #if FF_FS_MINIMIZE <= 2
 #if FF_FS_TINY
-				if (fs->winsect >= sect && fs->winsect - sect < cc) {	/* Refill sector cache if it gets invalidated by the direct write (CVE-2026-6685: guard against unsigned wrap when winsect < sect) */
+				if (fs->winsect - sect < cc) {	/* Refill sector cache if it gets invalidated by the direct write */
 					memcpy(fs->win, wbuff + ((fs->winsect - sect) * SS(fs)), SS(fs));
 					fs->wflag = 0;
 				}
 #else
-				if (fp->sect >= sect && fp->sect - sect < cc) { /* Refill sector cache if it gets invalidated by the direct write (CVE-2026-6685: guard against unsigned wrap when fp->sect < sect) */
+				if (fp->sect - sect < cc) { /* Refill sector cache if it gets invalidated by the direct write */
 					memcpy(fp->buf, wbuff + ((fp->sect - sect) * SS(fs)), SS(fs));
 					fp->flag &= (BYTE)~FA_DIRTY;
 				}
@@ -4354,17 +4350,15 @@ FRESULT f_close (
 #else
 			fp->obj.fs = 0;	/* Invalidate file object */
 #endif
+#if !FF_FS_TINY && FF_USE_DYN_BUFFER
+            ff_memfree(fp->buf);
+            fp->buf = NULL;
+#endif
 #if FF_FS_REENTRANT
 			unlock_volume(fs, FR_OK);		/* Unlock volume */
 #endif
 		}
 	}
-#if !FF_FS_TINY && FF_USE_DYN_BUFFER
-    if (fp->buf) {
-        ff_memfree(fp->buf);
-        fp->buf = NULL;
-    }
-#endif
 	return res;
 }
 
@@ -5309,7 +5303,7 @@ FRESULT f_rename (
 {
 	FRESULT res;
 	FATFS *fs;
-	FF_DIR djo = {0}, djn = {0};	/* zero-init before memcpy between directory objects */
+	FF_DIR djo, djn;
 	BYTE buf[FF_FS_EXFAT ? SZDIRE * 2 : SZDIRE], *dir;
 	DEF_NAMEBUFF
 
@@ -5568,11 +5562,9 @@ FRESULT f_getlabel (
 #if FF_FS_EXFAT
 				if (fs->fs_type == FS_EXFAT) {
 					WCHAR hs;
-					UINT nw, nchar;
+					UINT nw;
 
-					nchar = dj.dir[XDIR_NumLabel];	/* Number of UTF-16 characters in the label entry */
-					if (nchar > 11) nchar = 11;		/* CVE-2026-6687: clamp to the exFAT maximum (11) to prevent OOB read of the entry and overflow of the caller label buffer */
-					for (si = di = hs = 0; si < nchar; si++) {	/* Extract volume label from 83 entry */
+					for (si = di = hs = 0; si < dj.dir[XDIR_NumLabel]; si++) {	/* Extract volume label from 83 entry */
 						wc = ld_16(dj.dir + XDIR_Label + si * 2);
 						if (hs == 0 && IsSurrogate(wc)) {	/* Is the code a surrogate? */
 							hs = wc; continue;

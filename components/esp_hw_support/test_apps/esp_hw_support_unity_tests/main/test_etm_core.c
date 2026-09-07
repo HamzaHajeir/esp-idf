@@ -10,7 +10,7 @@
 #include "freertos/task.h"
 #include "unity.h"
 #include "esp_etm.h"
-#include "hal/etm_ll.h"
+#include "hal/etm_periph.h"
 
 TEST_CASE("etm_channel_install_uninstall", "[etm]")
 {

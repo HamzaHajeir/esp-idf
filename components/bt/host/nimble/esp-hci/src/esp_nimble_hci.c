@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,10 +38,8 @@
 static ble_hci_trans_rx_cmd_fn *ble_hci_rx_cmd_hs_cb;
 static void *ble_hci_rx_cmd_hs_arg;
 
-#if NIMBLE_BLE_CONNECT
 static ble_hci_trans_rx_acl_fn *ble_hci_rx_acl_hs_cb;
 static void *ble_hci_rx_acl_hs_arg;
-#endif
 
 /*
  * The MBUF payload size must accommodate the HCI data header size plus the
@@ -59,9 +57,8 @@ const static char *TAG = "NimBLE";
 
 int os_msys_buf_alloc(void);
 void os_msys_buf_free(void);
-#if !MYNEWT_VAL(BLE_STATIC_TO_DYNAMIC)
 extern uint8_t ble_hs_enabled_state;
-#endif
+
 void ble_hci_trans_cfg_hs(ble_hci_trans_rx_cmd_fn *cmd_cb,
                           void *cmd_arg,
                           ble_hci_trans_rx_acl_fn *acl_cb,
@@ -69,27 +66,21 @@ void ble_hci_trans_cfg_hs(ble_hci_trans_rx_cmd_fn *cmd_cb,
 {
     ble_hci_rx_cmd_hs_cb = cmd_cb;
     ble_hci_rx_cmd_hs_arg = cmd_arg;
-#if NIMBLE_BLE_CONNECT
     ble_hci_rx_acl_hs_cb = acl_cb;
     ble_hci_rx_acl_hs_arg = acl_arg;
-#endif
 }
 
 void esp_vhci_host_send_packet_wrapper(uint8_t *data, uint16_t len)
 {
 #if (BT_HCI_LOG_INCLUDED == TRUE)
-    uint8_t data_type = bt_hci_log_h4_type_to_data_type(data[0]);
-    bt_hci_log_record_hci_data(data_type, &data[1], len - 1);
-#if BT_HCI_INSIGHTS_INCLUDED
-    bt_hci_log_record_insights(data_type, &data[1], len - 1);
-#endif
+    bt_hci_log_record_hci_data(data[0], &data[1], len - 1);
 #endif
 #if CONFIG_BT_BLE_LOG_SPI_OUT_HCI_ENABLED
     ble_log_spi_out_hci_write(BLE_LOG_SPI_OUT_SOURCE_HCI_DOWNSTREAM, data, len);
 #endif // CONFIG_BT_BLE_LOG_SPI_OUT_HCI_ENABLED
-#if CONFIG_BLE_LOG_HOST_SIDE_HCI_LOG_ENABLED
-    ble_log_write_hci(BLE_LOG_HCI_DOWNSTREAM, data, len);
-#endif /* CONFIG_BLE_LOG_HOST_SIDE_HCI_LOG_ENABLED */
+#if CONFIG_BLE_LOG_ENABLED
+    ble_log_write_hex(BLE_LOG_SRC_HCI, data, len);
+#endif /* CONFIG_BLE_LOG_ENABLED */
     esp_vhci_host_send_packet(data, len);
 }
 
@@ -127,7 +118,6 @@ int ble_hci_trans_ll_evt_tx(uint8_t *hci_ev)
     return rc;
 }
 
-#if NIMBLE_BLE_CONNECT
 int ble_hci_trans_hs_acl_tx(struct os_mbuf *om)
 {
     uint16_t len = 0;
@@ -157,7 +147,6 @@ int ble_hci_trans_hs_acl_tx(struct os_mbuf *om)
 
     return rc;
 }
-#endif
 
 int ble_hci_trans_ll_acl_tx(struct os_mbuf *om)
 {
@@ -177,11 +166,12 @@ int ble_hci_trans_reset(void)
     return 0;
 }
 
-#if NIMBLE_BLE_CONNECT
+
 static void ble_hci_rx_acl(uint8_t *data, uint16_t len)
 {
     struct os_mbuf *m = NULL;
     int rc;
+    int sr;
 
     int retry_count = 1;
 
@@ -194,7 +184,7 @@ static void ble_hci_rx_acl(uint8_t *data, uint16_t len)
         m = ble_transport_alloc_acl_from_ll();
 
         if (!m) {
-            if (retry_count % 5 == 0) {
+            if (retry_count % 5) {
                 esp_rom_printf("ACL buf alloc failed %d times\n", retry_count);
                 esp_rom_printf("Free ACL mbufs: %d\n", os_msys_num_free());
             }
@@ -215,10 +205,10 @@ static void ble_hci_rx_acl(uint8_t *data, uint16_t len)
         os_mbuf_free_chain(m);
         return;
     }
-    /* Host path may block on the NimBLE event queue; must not run inside OS critical. */
+    OS_ENTER_CRITICAL(sr);
     ble_transport_to_hs_acl(m);
+    OS_EXIT_CRITICAL(sr);
 }
-#endif
 
 /*
  * @brief: BT controller callback function, used to notify the upper layer that
@@ -239,24 +229,18 @@ static void dummy_controller_rcv_pkt_ready(void)
 void bt_record_hci_data(uint8_t *data, uint16_t len)
 {
 #if (BT_HCI_LOG_INCLUDED == TRUE)
-    if (len < 2) {
-        return;
-    }
-    if ((len >= 4) && (data[0] == BLE_HCI_UART_H4_EVT) && (data[1] == BLE_HCI_EVCODE_LE_META) && ((data[3] ==  BLE_HCI_LE_SUBEV_ADV_RPT) || (data[3] == BLE_HCI_LE_SUBEV_DIRECT_ADV_RPT)
+    if ((data[0] == BLE_HCI_UART_H4_EVT) && (data[1] == BLE_HCI_EVCODE_LE_META) && ((data[3] ==  BLE_HCI_LE_SUBEV_ADV_RPT) || (data[3] == BLE_HCI_LE_SUBEV_DIRECT_ADV_RPT)
         || (data[3] == BLE_HCI_LE_SUBEV_EXT_ADV_RPT) || (data[3] == BLE_HCI_LE_SUBEV_PERIODIC_ADV_RPT))) {
         bt_hci_log_record_hci_adv(HCI_LOG_DATA_TYPE_ADV, &data[2], len - 2);
-#if BT_HCI_INSIGHTS_INCLUDED
-        bt_hci_log_record_insights(HCI_LOG_DATA_TYPE_ADV, &data[2], len - 2);
-#endif
     } else {
         uint8_t data_type;
-        data_type = ((data[0] == 2) ? HCI_LOG_DATA_TYPE_C2H_ACL : bt_hci_log_h4_type_to_data_type(data[0]));
+        if (data[0] == HCI_LOG_DATA_TYPE_ISO_DATA) {
+            data_type = HCI_LOG_DATA_TYPE_ISO_DATA;
+        } else {
+            data_type = ((data[0] == 2) ? HCI_LOG_DATA_TYPE_C2H_ACL : data[0]);
+        }
         bt_hci_log_record_hci_data(data_type, &data[1], len - 1);
-#if BT_HCI_INSIGHTS_INCLUDED
-        bt_hci_log_record_insights(data_type, &data[1], len - 1);
-#endif
     }
-
 #endif // (BT_HCI_LOG_INCLUDED == TRUE)
 }
 
@@ -274,17 +258,13 @@ static int host_rcv_pkt(uint8_t *data, uint16_t len)
 #if CONFIG_BT_BLE_LOG_SPI_OUT_HCI_ENABLED
     ble_log_spi_out_hci_write(BLE_LOG_SPI_OUT_SOURCE_HCI_UPSTREAM, data, len);
 #endif // CONFIG_BT_BLE_LOG_SPI_OUT_HCI_ENABLED
-#if CONFIG_BLE_LOG_HOST_SIDE_HCI_LOG_ENABLED
-    ble_log_write_hci(BLE_LOG_HCI_UPSTREAM, data, len);
-#endif /* CONFIG_BLE_LOG_HOST_SIDE_HCI_LOG_ENABLED */
+#if CONFIG_BLE_LOG_ENABLED
+    ble_log_write_hex(BLE_LOG_SRC_HCI, data, len);
+#endif /* CONFIG_BLE_LOG_ENABLED */
 
     bt_record_hci_data(data, len);
 
-#if MYNEWT_VAL(BLE_STATIC_TO_DYNAMIC)
-    if (!ble_hs_get_enabled_state()) {
-#else
-    if (!ble_hs_enabled_state) {
-#endif
+    if(!ble_hs_enabled_state) {
         /* If host is not enabled, drop the packet */
         esp_rom_printf("Host not enabled. Dropping the packet!");
         return 0;
@@ -328,9 +308,7 @@ static int host_rcv_pkt(uint8_t *data, uint16_t len)
         rc = ble_hci_trans_ll_evt_tx(evbuf);
         assert(rc == 0);
     } else if (data[0] == BLE_HCI_UART_H4_ACL) {
-#if NIMBLE_BLE_CONNECT
         ble_hci_rx_acl(data + 1, len - 1);
-#endif
     }
     return 0;
 }

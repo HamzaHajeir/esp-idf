@@ -165,25 +165,6 @@ endfunction()
         ``linkerscript`` template. The ``linkerscript`` is processed with ldgen
         to produce the ``output``.
 
-    *FLAGS[in,opt]*
-
-        Explicit preprocessor flags for the linker script(s) registered by this
-        call, for example ``-D`` defines or extra ``-I`` include directories.
-        When given, they replace the default parent-dir==target include
-        heuristic while a ``.in`` script or template is preprocessed.
-        ``-I<config_dir>`` and the linked components' include directories are
-        always added regardless. Applies to every ``scriptfile`` in the same
-        call.
-
-    *MEMORY[opt]*
-
-        Marks the script(s) as the memory-layout base for the link. Such
-        scripts are emitted as ``-T`` before all other linker scripts, so that
-        section-placement scripts from other components can reference their
-        ``MEMORY`` regions and ``REGION_ALIAS`` names. Needed when the memory
-        layout lives in a different component than the section scripts that
-        depend on it.
-
     This function adds one or more linker scripts to the specified component
     target, incorporating the linker script into the linking process.
 
@@ -193,173 +174,28 @@ endfunction()
     with the ``PROCESS`` option, it is logical to provide only a single
     ``scriptfile`` as a template.
 #]]
-function(target_linker_script target deptype)
+function(target_linker_script target deptype scriptfiles)
     # The linker script files, templates, and their output filenames are stored
     # only as component properties. The script files are generated and added to
     # the library link interface in the idf_build_library function.
-    set(options MEMORY)
-    set(one_value PROCESS FLAGS)
+    set(options)
+    set(one_value PROCESS)
     set(multi_value)
     cmake_parse_arguments(ARG "${options}" "${one_value}" "${multi_value}" ${ARGN})
-    set(scriptfiles ${ARG_UNPARSED_ARGUMENTS})
-    if(NOT scriptfiles)
-        message(FATAL_ERROR "target_linker_script requires at least one linker script file")
-    endif()
     foreach(scriptfile ${scriptfiles})
         get_filename_component(scriptfile "${scriptfile}" ABSOLUTE)
         idf_msg("Adding linker script ${scriptfile}")
-        __linker_script_key("${scriptfile}" script_key)
         if(ARG_PROCESS)
             get_filename_component(output "${ARG_PROCESS}" ABSOLUTE)
             idf_component_set_property("${target}" LINKER_SCRIPTS_TEMPLATE "${scriptfile}" APPEND)
-            # Key the generated output path by the template instead of keeping a
-            # second list index-aligned with LINKER_SCRIPTS_TEMPLATE.
-            idf_component_set_property("${target}" "LINKER_SCRIPT_GENERATED_${script_key}" "${output}")
+            idf_component_set_property("${target}" LINKER_SCRIPTS_GENERATED "${output}" APPEND)
         else()
-            idf_component_set_property("${target}" LINKER_SCRIPTS "${scriptfile}" APPEND)
-        endif()
-        # Memory-layout scripts are emitted before other scripts in the link,
-        # so section-placement scripts can reference their MEMORY regions.
-        if(ARG_MEMORY)
-            idf_component_set_property("${target}" "LINKER_SCRIPT_MEMORY_${script_key}" TRUE)
-        endif()
-        # Per-script preprocessor flags, consumed by __preprocess_linker_script
-        # when a ".in" script or template is built. The "__DEFAULT__" sentinel
-        # means FLAGS was not given (use the parent-dir==target heuristic); any
-        # other value, including empty, means FLAGS was given and replaces it.
-        # This distinguishes "not given" from "given empty", which the property
-        # value alone cannot (both would read back as empty).
-        if(DEFINED ARG_FLAGS)
-            idf_component_set_property("${target}" "LINKER_SCRIPT_FLAGS_${script_key}" "${ARG_FLAGS}")
-        else()
-            idf_component_set_property("${target}" "LINKER_SCRIPT_FLAGS_${script_key}" "__DEFAULT__")
+            idf_component_set_property("${target}" LINKER_SCRIPTS ${scriptfile} APPEND)
         endif()
     endforeach()
-endfunction()
-
-function(__idf_component_link_optional_requirement component target link_type req_interface output)
-    # Config-only cmakev1 components are represented by INTERFACE libraries.
-    # CMake cannot apply PRIVATE links to an INTERFACE library, so optional
-    # private requirements are ignored for those components.
-    idf_component_get_property(component_target_type "${component}" COMPONENT_REAL_TARGET_TYPE)
-    if("${component_target_type}" STREQUAL "INTERFACE_LIBRARY")
-        if("${link_type}" STREQUAL "PRIVATE")
-            set(${output} FALSE PARENT_SCOPE)
-            return()
-        endif()
-        target_link_libraries("${target}" INTERFACE "${req_interface}")
-    else()
-        target_link_libraries("${target}" "${link_type}" "${req_interface}")
-    endif()
-
-    if("${link_type}" STREQUAL "PRIVATE")
-        set(req_type PRIV_REQUIRES)
-    elseif("${link_type}" STREQUAL "PUBLIC" OR "${link_type}" STREQUAL "INTERFACE")
-        set(req_type REQUIRES)
-    else()
-        set(req_type "")
-    endif()
-
-    if(req_type)
-        idf_component_get_property(req_name "${req_interface}" COMPONENT_NAME)
-        idf_component_get_property(existing "${component}" ${req_type})
-        if(NOT "${req_name}" IN_LIST existing)
-            idf_component_set_property("${component}" ${req_type} "${req_name}" APPEND)
-        endif()
-    endif()
-
-    set(${output} TRUE PARENT_SCOPE)
 endfunction()
 
 #[[
-    __idf_component_process_optional_requires()
-
-    Called by idf_build_library() before LIBRARY_COMPONENTS_LINKED is computed.
-    For each pending (caller, type, req) entry recorded by
-    idf_component_optional_requires, links req's interface target to the
-    caller's real target if both are present in this library.
-#]]
-function(__idf_component_process_optional_requires)
-    # Nothing to do if no component has called idf_component_optional_requires.
-    idf_build_get_property(callers __DEFERRED_OPTIONAL_CALLERS)
-    if(NOT callers)
-        return()
-    endif()
-
-    # DEFERRED mode + multiple libraries is disallowed
-    idf_build_get_property(libraries_list LIBRARY_INTERFACES)
-    list(LENGTH libraries_list lib_count)
-    if(lib_count GREATER 1)
-        idf_die("DEFERRED optional requires mode cannot be used when building "
-                "multiple libraries (detected ${lib_count} libraries). "
-                "Set IDF_COMPONENT_OPTIONAL_REQUIRES_MODE to IMMEDIATE for multi-library projects.")
-    endif()
-
-    # Fetch the components included in the project (single library only here,
-    # so this equals the library's component set).
-    idf_build_get_property(components_included COMPONENTS_INCLUDED)
-    set(library_component_interfaces "")
-    foreach(comp_name IN LISTS components_included)
-        __get_component_interface(COMPONENT "${comp_name}" OUTPUT dep_interface)
-        if(dep_interface AND NOT "${dep_interface}" IN_LIST library_component_interfaces)
-            list(APPEND library_component_interfaces "${dep_interface}")
-        endif()
-    endforeach()
-
-    # For every caller that recorded optional requirements, check whether it is
-    # part of this library and, if so, apply any pending pairs whose
-    # requirement is also in the library.
-    foreach(caller_target IN LISTS callers)
-        # Resolve the caller target to its component interface.
-        __get_component_interface(COMPONENT "${caller_target}" OUTPUT caller_interface)
-        if(NOT caller_interface)
-            continue()
-        endif()
-
-        # Skip if this caller is not linked into the current library.
-        if(NOT "${caller_interface}" IN_LIST library_component_interfaces)
-            continue()
-        endif()
-
-        # Fetch this caller's pending pairs and the pairs already processed in
-        # earlier idf_build_library() calls.
-        idf_build_get_property(pairs "__OPT_REQ_${caller_target}")
-        idf_build_get_property(done  "__OPT_REQ_DONE_${caller_target}")
-
-        foreach(pair IN LISTS pairs)
-            # Skip pairs already processed for a previous library. The
-            # target_link_libraries call and property updates are permanent
-            # global mutations; repeating them would be redundant.
-            if("${pair}" IN_LIST done)
-                continue()
-            endif()
-
-            # Decode the "type::::req_interface" entry.
-            string(REPLACE "::::" ";" split "${pair}")
-            list(GET split 0 link_type)
-            list(GET split 1 req_interface)
-
-            # Skip if the optional requirement is not part of this library.
-            if(NOT "${req_interface}" IN_LIST library_component_interfaces)
-                continue()
-            endif()
-
-            # Link the caller's real target to the requirement's interface target.
-            __idf_component_link_optional_requirement("${caller_interface}" "${caller_target}"
-                                                      "${link_type}" "${req_interface}" linked)
-            if(NOT linked)
-                continue()
-            endif()
-
-            # Mark this pair as done so it is not processed again for subsequent
-            # libraries.
-            idf_build_set_property("__OPT_REQ_DONE_${caller_target}" "${pair}" APPEND)
-        endforeach()
-    endforeach()
-endfunction()
-
-
-#[[api
 .. cmakev2:function:: idf_component_optional_requires
 
     .. code-block:: cmake
@@ -375,71 +211,22 @@ endfunction()
         The component name that should be added as a dependency to the
         evaluated component. It may be provided multiple times.
 
-    Add a dependency on a specific component only if the component is
-    recognized by the build system. The behavior is controlled by the
-    ``IDF_COMPONENT_OPTIONAL_REQUIRES_MODE`` build property:
-
-    * **IMMEDIATE** (default): Include the component and link it to the
-      caller if it is discovered. Safe for multi-library projects but may
-      pull in more components than strictly needed.
-    * **DEFERRED**: Do not include or link immediately; record the request
-      and resolve it in :cmakev2:ref:`idf_build_library` so that the
-      component is linked only when it is part of the library's dependency
-      graph. Matches v1 semantics and reduces unnecessary components, but
-      must not be used when building multiple libraries (see docs).
-
-    .. note::
-        This function should be avoided in cmakev2, where
-        dependencies should be added based on configuration options. This is purely
-        for backward compatibility with cmakev1.
-
-    .. warning::
-        In multi-library projects with **DEFERRED** mode, optional requires
-        resolved when processing a later library apply globally to shared
-        component targets. Earlier libraries then link that optional component
-        too, but their per-library metadata (e.g. linker fragments) was
-        already computed and is not updated. DEFERRED mode is therefore
-        disallowed when more than one library is built.
+    Add a dependency on a specific component only if it is included in the
+    build.
 #]]
-function(idf_component_optional_requires type)
+function(idf_component_optional_requires req_type)
     set(optional_reqs ${ARGN})
-
-    idf_build_get_property(mode IDF_COMPONENT_OPTIONAL_REQUIRES_MODE)
-    if(NOT mode)
-        set(mode IMMEDIATE)
-    endif()
-
-    if("${mode}" STREQUAL "DEFERRED")
-        # DEFERRED mode: record for resolution in idf_build_library.
-        # The component is linked only if it is part of the library's dependency graph.
-        foreach(req ${optional_reqs})
-            __get_component_interface(COMPONENT "${req}" OUTPUT req_interface)
-            if("${req_interface}" STREQUAL "NOTFOUND")
-                continue()
-            endif()
-
-            idf_build_get_property(callers __DEFERRED_OPTIONAL_CALLERS)
-            if(NOT "${COMPONENT_TARGET}" IN_LIST callers)
-                idf_build_set_property(__DEFERRED_OPTIONAL_CALLERS "${COMPONENT_TARGET}" APPEND)
-            endif()
-
-            # Store the optional requirement in the __OPT_REQ_<component_target> property.
-            idf_build_set_property("__OPT_REQ_${COMPONENT_TARGET}"
-                                   "${type}::::${req_interface}" APPEND)
-        endforeach()
-    else()
-        # IMMEDIATE mode: include and link discovered components unconditionally.
-        foreach(req ${optional_reqs})
-            __get_component_interface(COMPONENT "${req}" OUTPUT req_interface)
-            if("${req_interface}" STREQUAL "NOTFOUND")
-                continue()
-            endif()
-            idf_component_include("${req}")
-
-            __idf_component_link_optional_requirement("${COMPONENT_NAME}" "${COMPONENT_TARGET}"
-                                                      "${type}" "${req_interface}" linked)
-        endforeach()
-    endif()
+    foreach(req ${optional_reqs})
+        __get_component_interface(COMPONENT "${req}" OUTPUT req_interface)
+        if("${req_interface}" STREQUAL "NOTFOUND")
+            continue()
+        endif()
+        idf_component_get_property(req_alias "${req}" COMPONENT_ALIAS)
+        # The component alias is created only after the component is included,
+        # meaning the add_subdirectory command for it has been called. This can
+        # be used to detect if a component has already been added to the build.
+        target_link_libraries(${COMPONENT_TARGET} ${req_type} "$<$<TARGET_EXISTS:${req_alias}>:${req_interface}>")
+    endforeach()
 endfunction()
 
 #[[
@@ -467,22 +254,10 @@ function(__init_common_components)
 
     idf_build_get_property(idf_target IDF_TARGET)
     idf_build_get_property(idf_target_arch IDF_TARGET_ARCH)
-    idf_build_get_property(explicit_requires_common __COMPONENT_REQUIRES_COMMON)
 
     # Define common components that are included as dependencies for each
     # component.
-    if(explicit_requires_common)
-        set(requires_common "${explicit_requires_common}")
-        # Auto-append the target's arch component when the app overrides
-        # common-requires without it. Lets G0-style apps (which set the property
-        # before project() to a restricted list) avoid hand-rolling a
-        # target -> arch map pre-project, since IDF_TARGET_ARCH isn't known
-        # until after sdkconfig is included. Empty on linux -> no append.
-        if(idf_target_arch AND NOT idf_target_arch IN_LIST requires_common)
-            list(APPEND requires_common "${idf_target_arch}")
-        endif()
-
-    elseif("${idf_target}" STREQUAL "linux")
+    if("${idf_target}" STREQUAL "linux")
         set(requires_common freertos esp_hw_support heap log soc hal esp_rom esp_common esp_system linux
                             esp_stdio)
     else()
@@ -506,89 +281,6 @@ function(__init_common_components)
     endforeach()
 
     idf_build_set_property(__COMMON_COMPONENTS_INITIALIZED YES)
-endfunction()
-
-#[[api
-.. cmakev2:function:: idf_component_mock
-
-    .. code-block:: cmake
-
-        idf_component_mock([INCLUDE_DIRS <dir>...]
-                           [MOCK_HEADER_FILES <file>...]
-                           [REQUIRES <component>...]
-                           [MOCK_SUBDIR <subdir>])
-
-    *INCLUDE_DIRS[in,opt]*
-
-        Include directories for the header files provided in MOCK_HEADER_FILES.
-
-    *MOCK_HEADER_FILES[in,opt]*
-
-        Header files from which CMock generates mock implementations.
-
-    *REQUIRES[in,opt]*
-
-        Additional components required by the mock component.
-
-    *MOCK_SUBDIR[in,opt]*
-
-        Subdirectory under the mocks output where generated files are placed.
-
-    Create a mock component using CMock and register it with the build system.
-    This is a compatibility shim matching the v1 ``idf_component_mock``
-    function in ``tools/cmake/component.cmake``.  It generates Mock*.c and
-    Mock*.h files from the given headers using Ruby + CMock, then delegates to
-    ``idf_component_register`` so the mock participates in normal dependency
-    resolution.
-#]]
-function(idf_component_mock)
-    set(options)
-    set(single_value MOCK_SUBDIR)
-    set(multi_value MOCK_HEADER_FILES INCLUDE_DIRS REQUIRES)
-    cmake_parse_arguments(_ "${options}" "${single_value}" "${multi_value}" ${ARGN})
-
-    list(APPEND __REQUIRES "cmock")
-
-    set(MOCK_GENERATED_HEADERS "")
-    set(MOCK_GENERATED_SRCS "")
-    set(IDF_PATH $ENV{IDF_PATH})
-    set(CMOCK_DIR "${IDF_PATH}/components/cmock/CMock")
-    set(MOCK_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-    list(APPEND __INCLUDE_DIRS "${MOCK_GEN_DIR}/mocks")
-
-    foreach(header_file ${__MOCK_HEADER_FILES})
-        get_filename_component(file_without_dir ${header_file} NAME_WE)
-        if("${__MOCK_SUBDIR}" STREQUAL "")
-            list(APPEND MOCK_GENERATED_HEADERS "${MOCK_GEN_DIR}/mocks/Mock${file_without_dir}.h")
-            list(APPEND MOCK_GENERATED_SRCS "${MOCK_GEN_DIR}/mocks/Mock${file_without_dir}.c")
-        else()
-            list(APPEND MOCK_GENERATED_HEADERS "${MOCK_GEN_DIR}/mocks/${__MOCK_SUBDIR}/Mock${file_without_dir}.h")
-            list(APPEND MOCK_GENERATED_SRCS "${MOCK_GEN_DIR}/mocks/${__MOCK_SUBDIR}/Mock${file_without_dir}.c")
-        endif()
-    endforeach()
-
-    file(MAKE_DIRECTORY "${MOCK_GEN_DIR}/mocks")
-
-    idf_component_register(SRCS "${MOCK_GENERATED_SRCS}"
-                        INCLUDE_DIRS ${__INCLUDE_DIRS}
-                        REQUIRES ${__REQUIRES})
-
-    set(COMPONENT_LIB ${COMPONENT_LIB} PARENT_SCOPE)
-    add_custom_command(
-        OUTPUT ruby_found SYMBOLIC
-        COMMAND "ruby" "-v"
-        COMMENT "Try to find ruby. If this fails, you need to install ruby"
-    )
-
-    add_custom_command(
-        OUTPUT ${MOCK_GENERATED_SRCS} ${MOCK_GENERATED_HEADERS}
-        DEPENDS ruby_found
-        COMMAND ${CMAKE_COMMAND} -E env "UNITY_DIR=${IDF_PATH}/components/unity/unity"
-            ruby
-            ${CMOCK_DIR}/lib/cmock.rb
-            -o${CMAKE_CURRENT_SOURCE_DIR}/mock/mock_config.yaml
-            ${__MOCK_HEADER_FILES}
-    )
 endfunction()
 
 #[[api
@@ -671,13 +363,6 @@ function(idf_component_register)
                     PRIV_REQUIRES REQUIRED_IDF_TARGETS EMBED_FILES EMBED_TXTFILES)
     cmake_parse_arguments(ARG "${options}" "${one_value}" "${multi_value}" ${ARGN})
 
-    # Some managed components pass their REQUIRES / PRIV_REQUIRES as a single
-    # quoted space-separated string (e.g. PRIV_REQUIRES "log esp_eth").
-    # cmake_parse_arguments stores that as one list element.  Normalise the
-    # lists so that each component name is a separate element.
-    separate_arguments(ARG_REQUIRES)
-    separate_arguments(ARG_PRIV_REQUIRES)
-
     # Initialize and include commonly required components.
     __init_common_components()
 
@@ -719,7 +404,7 @@ function(idf_component_register)
     idf_build_get_property(compile_definitions COMPILE_DEFINITIONS GENERATOR_EXPRESSION)
     add_compile_definitions("${compile_definitions}")
 
-    idf_build_get_compile_options(compile_options)
+    __get_compile_options(OUTPUT compile_options)
     add_compile_options("${compile_options}")
 
     idf_build_get_property(common_component_interfaces __COMMON_COMPONENT_INTERFACES)
@@ -738,7 +423,7 @@ function(idf_component_register)
     endforeach()
 
     if(sources OR ARG_EMBED_FILES OR ARG_EMBED_TXTFILES)
-        add_library("${COMPONENT_TARGET}" STATIC ${sources})
+        add_library("${COMPONENT_TARGET}" STATIC "${sources}")
 
         foreach(include_dir IN LISTS include_dirs)
             target_include_directories("${COMPONENT_TARGET}" PUBLIC "${include_dir}")
@@ -748,10 +433,7 @@ function(idf_component_register)
             target_include_directories("${COMPONENT_TARGET}" PRIVATE "${include_dir}")
         endforeach()
 
-        __idf_component_get_linker_language(component_linker_language)
-        set_target_properties(${COMPONENT_TARGET} PROPERTIES
-                              OUTPUT_NAME ${COMPONENT_NAME}
-                              LINKER_LANGUAGE ${component_linker_language})
+        set_target_properties(${COMPONENT_TARGET} PROPERTIES OUTPUT_NAME ${COMPONENT_NAME} LINKER_LANGUAGE C)
 
         set(component_type LIBRARY)
 
@@ -784,47 +466,6 @@ function(idf_component_register)
         target_link_libraries("${COMPONENT_TARGET}" PRIVATE "${req_interface}")
     endforeach()
 
-    # Special treatment for 'main' component is only applied when the project
-    # was entered through the Build system v1 compatibility shim. Native
-    # Build system v2 projects with no REQUIRES on main should remain the
-    # author-declared dependency set rooted at main; forcing every discovered
-    # component into main's link graph in that case contradicts the Build
-    # system v2 contract that the dependency graph is what the author writes.
-    idf_build_get_property(v1_compat_shim __V1_COMPAT_SHIM)
-    if(v1_compat_shim AND COMPONENT_NAME STREQUAL "main"
-       AND NOT ARG_REQUIRES AND NOT ARG_PRIV_REQUIRES)
-        idf_component_get_property(component_source "${COMPONENT_NAME}" COMPONENT_SOURCE)
-        if(component_source STREQUAL "project_components")
-            idf_build_get_property(shim_components __SHIM_COMPONENTS)
-            if(shim_components)
-                # The project explicitly restricted COMPONENTS=<list>. Honor
-                # the restriction literally — do not pull every discovered
-                # component into main's link graph, even when the user's list
-                # collapses to just "main". Apps that need additional
-                # components must enumerate them in COMPONENTS or main's
-                # REQUIRES.
-                set(all_components ${shim_components})
-            else()
-                idf_build_get_property(all_components COMPONENTS_DISCOVERED)
-            endif()
-            list(REMOVE_ITEM all_components "main")
-            # Common components are already linked via link_libraries()
-            idf_build_get_property(common_components __COMPONENT_REQUIRES_COMMON)
-            if(common_components)
-                list(REMOVE_ITEM all_components ${common_components})
-            endif()
-            foreach(req IN LISTS all_components)
-                idf_component_include("${req}")
-                idf_component_get_property(req_interface "${req}" COMPONENT_INTERFACE)
-                if(${component_type} STREQUAL LIBRARY)
-                    target_link_libraries("${COMPONENT_TARGET}" PUBLIC "${req_interface}")
-                else()
-                    target_link_libraries("${COMPONENT_TARGET}" INTERFACE "${req_interface}")
-                endif()
-            endforeach()
-        endif()
-    endif()
-
     # Signal to idf_component_include that this component was included via the
     # backward compatible idf_component_register function.
     idf_component_set_property("${COMPONENT_NAME}" COMPONENT_FORMAT CMAKEV1)
@@ -844,90 +485,11 @@ function(idf_component_register)
     # Embedded files are managed in the idf_component_include function.
     idf_component_set_property("${COMPONENT_NAME}" EMBED_FILES "${ARG_EMBED_FILES}")
     idf_component_set_property("${COMPONENT_NAME}" EMBED_TXTFILES "${ARG_EMBED_TXTFILES}")
-    # The component manager's dependency injection runs before this component's
-    # CMakeLists.txt is evaluated (see idf_component_include() in
-    # component.cmake), and writes the manifest-derived names into both the
-    # MANAGED_* properties and the regular REQUIRES / PRIV_REQUIRES properties.
-    # The latter must not be overwritten by the component's own register call,
-    # else the manifest-derived transitive deps disappear from the build. Union
-    # the two so the persisted property is what the component author wrote
-    # PLUS what the manifest contributed.
-    idf_component_get_property(__existing_requires "${COMPONENT_NAME}" REQUIRES)
-    idf_component_get_property(__existing_priv_requires "${COMPONENT_NAME}" PRIV_REQUIRES)
-    set(__merged_requires "${ARG_REQUIRES}")
-    set(__merged_priv_requires "${ARG_PRIV_REQUIRES}")
-    foreach(__r IN LISTS __existing_requires)
-        if(__r AND NOT __r IN_LIST __merged_requires)
-            list(APPEND __merged_requires "${__r}")
-        endif()
-    endforeach()
-    foreach(__r IN LISTS __existing_priv_requires)
-        if(__r AND NOT __r IN_LIST __merged_priv_requires)
-            list(APPEND __merged_priv_requires "${__r}")
-        endif()
-    endforeach()
-    idf_component_set_property("${COMPONENT_NAME}" REQUIRES "${__merged_requires}")
-    idf_component_set_property("${COMPONENT_NAME}" PRIV_REQUIRES "${__merged_priv_requires}")
+    idf_component_set_property("${COMPONENT_NAME}" REQUIRES "${ARG_REQUIRES}")
+    idf_component_set_property("${COMPONENT_NAME}" PRIV_REQUIRES "${ARG_PRIV_REQUIRES}")
     idf_component_set_property("${COMPONENT_NAME}" REQUIRED_IDF_TARGETS "${ARG_REQUIRED_IDF_TARGETS}")
     idf_component_set_property("${COMPONENT_NAME}" COMPONENT_TYPE "${component_type}")
-    idf_component_set_property("${COMPONENT_NAME}" COMPONENT_REAL_TARGET "${COMPONENT_TARGET}")
-    # Optional requirements need to know whether the backward-compatible
-    # component target is STATIC or INTERFACE before deciding how to link it.
-    if("${component_type}" STREQUAL "CONFIG_ONLY")
-        idf_component_set_property("${COMPONENT_NAME}" COMPONENT_REAL_TARGET_TYPE INTERFACE_LIBRARY)
-    else()
-        idf_component_set_property("${COMPONENT_NAME}" COMPONENT_REAL_TARGET_TYPE STATIC_LIBRARY)
-    endif()
 endfunction()
-
-#[[
-.. cmakev2:function:: idf_component_add_link_dependency
-
-    Backward-compatible shim for ``idf_component_add_link_dependency()`` used
-    by some managed components (e.g. espressif__esp_flash_nor).
-#]]
-function(idf_component_add_link_dependency)
-    set(single_value FROM TO)
-    cmake_parse_arguments(_ "" "${single_value}" "" ${ARGN})
-
-    idf_component_get_property(from_lib ${__FROM} COMPONENT_LIB)
-    if(__TO)
-        idf_component_get_property(to_lib ${__TO} COMPONENT_LIB)
-    else()
-        set(to_lib ${COMPONENT_LIB})
-    endif()
-    set_property(TARGET ${from_lib} APPEND PROPERTY INTERFACE_LINK_LIBRARIES $<LINK_ONLY:${to_lib}>)
-endfunction()
-
-#[[
-.. cmakev2:macro:: register_component
-
-    Backward-compatible shim for the legacy ``register_component()`` macro used
-    by some older ESP-IDF examples (ULP apps, BLE mesh demos, etc.).  It converts
-    the old-style ``COMPONENT_*`` variables to ``idf_component_register()`` calls.
-#]]
-macro(register_component)
-    # Convert space-separated variables to CMake lists.
-    foreach(_var COMPONENT_SRCS COMPONENT_SRCDIRS COMPONENT_ADD_INCLUDEDIRS
-                 COMPONENT_PRIV_INCLUDEDIRS COMPONENT_REQUIRES COMPONENT_PRIV_REQUIRES
-                 COMPONENT_ADD_LDFRAGMENTS COMPONENT_EMBED_FILES COMPONENT_EMBED_TXTFILES
-                 COMPONENT_SRCEXCLUDE)
-        if(DEFINED ${_var})
-            separate_arguments(${_var})
-        endif()
-    endforeach()
-
-    idf_component_register(SRCS "${COMPONENT_SRCS}"
-                        SRC_DIRS "${COMPONENT_SRCDIRS}"
-                        INCLUDE_DIRS "${COMPONENT_ADD_INCLUDEDIRS}"
-                        PRIV_INCLUDE_DIRS "${COMPONENT_PRIV_INCLUDEDIRS}"
-                        REQUIRES "${COMPONENT_REQUIRES}"
-                        PRIV_REQUIRES "${COMPONENT_PRIV_REQUIRES}"
-                        LDFRAGMENTS "${COMPONENT_ADD_LDFRAGMENTS}"
-                        EMBED_FILES "${COMPONENT_EMBED_FILES}"
-                        EMBED_TXTFILES "${COMPONENT_EMBED_TXTFILES}"
-                        EXCLUDE_SRCS "${COMPONENT_SRCEXCLUDE}")
-endmacro()
 
 #[[
 .. cmakev2:function:: idf_build_component
@@ -945,7 +507,6 @@ endmacro()
         Source of the component. One of:
 
         * ``idf_components``
-        * ``idf_managed_components``
         * ``project_managed_components``
         * ``project_extra_components``
         * ``project_components``
@@ -989,28 +550,4 @@ function(idf_build_component component_dir)
     __init_component(DIRECTORY "${component_dir}"
                      PREFIX "${component_prefix}"
                      SOURCE "${component_source}")
-endfunction()
-
-#[[
-    __import_sdkconfig_as_build_properties()
-
-    Mirror every CONFIG_* symbol from the generated sdkconfig.cmake onto the
-    build-properties target so that the
-    `idf_build_get_property(var CONFIG_FOO)` idiom keeps working under the
-    compatibility shim. Called from kconfig.cmake::__generate_sdkconfig after
-    each kconfgen run.
-#]]
-function(__import_sdkconfig_as_build_properties)
-    idf_build_get_property(sdkconfig_cmake __SDKCONFIG_CMAKE)
-    if(NOT sdkconfig_cmake OR NOT EXISTS "${sdkconfig_cmake}")
-        return()
-    endif()
-    include("${sdkconfig_cmake}")
-    if(NOT DEFINED CONFIGS_LIST)
-        return()
-    endif()
-    idf_build_set_property(__CONFIG_VARIABLES "${CONFIGS_LIST}")
-    foreach(config IN LISTS CONFIGS_LIST)
-        idf_build_set_property("${config}" "${${config}}")
-    endforeach()
 endfunction()

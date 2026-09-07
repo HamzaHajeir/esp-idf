@@ -1,4 +1,6 @@
 INPUT += \
+    $(PROJECT_PATH)/components/esp_driver_bitscrambler/include/driver/bitscrambler.h \
+    $(PROJECT_PATH)/components/esp_driver_bitscrambler/include/driver/bitscrambler_loopback.h \
     $(PROJECT_PATH)/components/esp_driver_cam/csi/include/esp_cam_ctlr_csi.h \
     $(PROJECT_PATH)/components/esp_driver_cam/include/esp_cam_ctlr.h \
     $(PROJECT_PATH)/components/esp_driver_cam/include/esp_cam_ctlr_types.h \
@@ -16,12 +18,8 @@ INPUT += \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_ccm.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_color.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_core.h \
-    $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_dma.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_crop.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_demosaic.h \
-    $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_dpc.h \
-    $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_dpc_dynamic.h \
-    $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_dpc_static.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_gamma.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_hist.h \
     $(PROJECT_PATH)/components/esp_driver_isp/include/driver/isp_lsc.h \
@@ -55,6 +53,4 @@ INPUT += \
     $(PROJECT_PATH)/components/ulp/lp_core/lp_core/include/ulp_lp_core_utils.h \
     $(PROJECT_PATH)/components/ulp/lp_core/shared/include/ulp_lp_core_lp_uart_shared.h \
     $(PROJECT_PATH)/components/ulp/lp_core/shared/include/ulp_lp_core_lp_vad_shared.h \
-    $(PROJECT_PATH)/components/ulp/ulp_common/include/ulp_common.h \
-    $(PROJECT_PATH)/components/esp_security/include/esp_key_mgr.h \
-    $(PROJECT_PATH)/components/esp_hal_security/include/hal/key_mgr_types.h
+    $(PROJECT_PATH)/components/ulp/ulp_common/include/ulp_common.h

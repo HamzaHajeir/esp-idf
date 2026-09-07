@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,15 +27,11 @@ static const char *type_pull_vcard_entry = "x-bt/vcard";
 
 static void free_ccb(tBTA_PBA_CLIENT_CCB *p_ccb)
 {
-    UINT8 sdp_seq;
-
-    /* free sdp db (also invalidates in-flight SDP via sdp_seq++) */
+    /* free sdp db */
     bta_pba_client_free_db(p_ccb);
 
-    /* Preserve SDP generation across memset so a reused slot cannot accept a stale callback */
-    sdp_seq = p_ccb->sdp_seq;
+    /* clear all field, set allocated to 0 */
     memset(p_ccb, 0, sizeof(tBTA_PBA_CLIENT_CCB));
-    p_ccb->sdp_seq = sdp_seq;
 }
 
 static void close_goepc_and_report(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_ERR reason)
@@ -51,11 +47,10 @@ static void close_goepc_and_report(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_E
     conn.handle = p_ccb->allocated;
     conn.error = reason;
     bdcpy(conn.bd_addr, p_ccb->bd_addr);
+    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_CONN_CLOSE_EVT, (tBTA_PBA_CLIENT *)&conn);
 
     /* free ccb */
     free_ccb(p_ccb);
-
-    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_CONN_CLOSE_EVT, (tBTA_PBA_CLIENT *)&conn);
 }
 
 static void build_and_send_empty_get_req(tBTA_PBA_CLIENT_CCB *p_ccb)
@@ -160,105 +155,6 @@ static void report_error_data_event(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_
     bta_pba_client_cb.p_cback(event, (tBTA_PBA_CLIENT *)&response);
 }
 
-/*******************************************************************************
-**
-** Function         bta_pba_client_validate_get_headers
-**
-** Description      Walk GET response headers and verify Body / End-of-Body /
-**                  App-Param lengths before any data is reported to BTC.
-**                  Callers must re-run OBEX_ParseResponse before reporting so
-**                  the header iterator is reset.
-**
-** Returns          TRUE if all relevant headers are valid
-**
-*******************************************************************************/
-static BOOLEAN bta_pba_client_validate_get_headers(BT_HDR *pkt, tOBEX_PARSE_INFO *info,
-                                                   tBTA_PBA_CLIENT_ERR *reason)
-{
-    UINT8 *header;
-    UINT8 *pkt_data = (UINT8 *)(pkt + 1) + pkt->offset;
-    UINT8 *pkt_end = pkt_data + pkt->len;
-
-    while ((header = OBEX_GetNextHeader(pkt, info)) != NULL) {
-        switch (*header) {
-        case OBEX_HEADER_ID_BODY:
-        case OBEX_HEADER_ID_END_OF_BODY:
-        case OBEX_HEADER_ID_APP_PARAM: {
-            UINT16 hi_len = OBEX_GetHeaderLength(header, pkt_end);
-            if (hi_len < 3) {
-                *reason = BTA_PBA_CLIENT_BAD_REQUEST;
-                return FALSE;
-            }
-            break;
-        }
-        default:
-            break;
-        }
-    }
-    return TRUE;
-}
-
-/*******************************************************************************
-**
-** Function         bta_pba_client_report_get_headers
-**
-** Description      Report Body / App-Param from a GET response that has already
-**                  been validated. Intermediate body chunks use pkt = NULL;
-**                  the last report transfers pkt ownership to BTC when there is
-**                  any body or app-param data. For a non-final empty response,
-**                  frees pkt locally. For a final empty response, reports with
-**                  pkt ownership transferred.
-**
-** Returns          void
-**
-*******************************************************************************/
-static void bta_pba_client_report_get_headers(tBTA_PBA_CLIENT_CCB *p_ccb, BT_HDR *pkt,
-                                              tOBEX_PARSE_INFO *info, BOOLEAN final)
-{
-    UINT8 *header = NULL;
-    UINT8 *body_data = NULL;
-    UINT16 body_data_len = 0;
-    UINT8 *app_param = NULL;
-    UINT16 app_param_len = 0;
-    UINT8 *pkt_data = (UINT8 *)(pkt + 1) + pkt->offset;
-    UINT8 *pkt_end = pkt_data + pkt->len;
-
-    while ((header = OBEX_GetNextHeader(pkt, info)) != NULL) {
-        switch (*header) {
-        case OBEX_HEADER_ID_BODY:
-        case OBEX_HEADER_ID_END_OF_BODY: {
-            /* Length already validated in bta_pba_client_validate_get_headers */
-            UINT16 hi_len = OBEX_GetHeaderLength(header, pkt_end);
-            if (body_data == NULL) {
-                body_data = header + 3;
-                body_data_len = hi_len - 3;
-            } else {
-                report_data_event(p_ccb, body_data, body_data_len, NULL, 0, FALSE, NULL);
-                body_data = header + 3;
-                body_data_len = hi_len - 3;
-            }
-            break;
-        }
-        case OBEX_HEADER_ID_APP_PARAM: {
-            UINT16 hi_len = OBEX_GetHeaderLength(header, pkt_end);
-            app_param = header + 3;
-            app_param_len = hi_len - 3;
-            break;
-        }
-        default:
-            break;
-        }
-    }
-
-    if (body_data != NULL || app_param != NULL) {
-        report_data_event(p_ccb, body_data, body_data_len, app_param, app_param_len, final, pkt);
-    } else if (final) {
-        report_data_event(p_ccb, NULL, 0, NULL, 0, TRUE, pkt);
-    } else {
-        osi_free(pkt);
-    }
-}
-
 static void ascii_to_utf16(const UINT8 *src, UINT16 len, UINT8 *dst)
 {
     UINT16 pos = 0;
@@ -284,6 +180,8 @@ void bta_pba_client_api_disable(tBTA_PBA_CLIENT_DATA *p_data)
     if (!bta_sys_is_register(BTA_ID_PBC)) {
         return;
     }
+    /* deregister with BTA system manager */
+    bta_sys_deregister(BTA_ID_PBC);
 
     /* close all connections */
     for (int i = 0; i < PBA_CLIENT_MAX_CONNECTION; ++i) {
@@ -295,7 +193,6 @@ void bta_pba_client_api_disable(tBTA_PBA_CLIENT_DATA *p_data)
     /* store and clear callback function */
     tBTA_PBA_CLIENT_CBACK *p_cback = bta_pba_client_cb.p_cback;
     bta_pba_client_cb.p_cback = NULL;
-    bta_sys_deregister(BTA_ID_PBC);
 
     if(p_cback) {
         p_cback(BTA_PBA_CLIENT_DISABLE_EVT, NULL);
@@ -307,9 +204,7 @@ void bta_pba_client_api_register(tBTA_PBA_CLIENT_DATA *p_data)
     /* create SDP records */
     bta_pba_client_create_record(p_data->api_register.name);
 
-    if (bta_pba_client_cb.p_cback) {
-        bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_REGISTER_EVT, NULL);
-    }
+    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_REGISTER_EVT, NULL);
 }
 
 void bta_pba_client_api_deregister(tBTA_PBA_CLIENT_DATA *p_data)
@@ -317,9 +212,7 @@ void bta_pba_client_api_deregister(tBTA_PBA_CLIENT_DATA *p_data)
     /* delete SDP records */
     bta_pba_client_del_record();
 
-    if (bta_pba_client_cb.p_cback) {
-        bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_DEREGISTER_EVT, NULL);
-    }
+    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_DEREGISTER_EVT, NULL);
 }
 
 void bta_pba_client_api_open(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_data)
@@ -387,10 +280,8 @@ void bta_pba_client_api_req(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_
             ret |= GOEPC_RequestAddHeader(p_ccb->goep_handle, OBEX_HEADER_ID_NAME, NULL, 0);
         }
         else {
-            UINT8 *utf16_name = (UINT8 *)osi_malloc(2 * name_len);
-            if (utf16_name == NULL) {
-                goto error;
-            }
+            UINT8 *utf16_name = osi_malloc(2 * name_len);
+            assert(utf16_name != NULL);
             ascii_to_utf16((UINT8 *)p_data->api_req.name, name_len, utf16_name);
             ret |= GOEPC_RequestAddHeader(p_ccb->goep_handle, OBEX_HEADER_ID_NAME, utf16_name, 2 * name_len);
             osi_free(utf16_name);
@@ -417,7 +308,6 @@ void bta_pba_client_api_req(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_
     if (p_data->api_req.app_param) {
         ret |= GOEPC_RequestAddHeader(p_ccb->goep_handle, OBEX_HEADER_ID_APP_PARAM, p_data->api_req.app_param, p_data->api_req.app_param_len);
         osi_free(p_data->api_req.app_param);
-        p_data->api_req.app_param = NULL;
     }
 
     ret |= GOEPC_SendRequest(p_ccb->goep_handle);
@@ -430,11 +320,9 @@ void bta_pba_client_api_req(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_
 error:
     if (p_data->api_req.name) {
         osi_free(p_data->api_req.name);
-        p_data->api_req.name = NULL;
     }
     if (p_data->api_req.app_param) {
         osi_free(p_data->api_req.app_param);
-        p_data->api_req.app_param = NULL;
     }
     close_goepc_and_report(p_ccb, BTA_PBA_CLIENT_GOEP_ERROR);
 }
@@ -447,37 +335,32 @@ static void goep_event_callback(UINT16 handle, UINT8 event, tGOEPC_MSG *p_msg)
     {
     case GOEPC_OPENED_EVT:
         p_data = (tBTA_PBA_CLIENT_DATA *)osi_malloc(sizeof(tBTA_PBA_CLIENT_DATA));
-        if (p_data) {
-            p_data->goep_connect.hdr.event = BTA_PBA_CLIENT_GOEP_CONNECT_EVT;
-            p_data->goep_connect.hdr.layer_specific = handle;
-            p_data->goep_connect.our_mtu = p_msg->opened.our_mtu;
-            p_data->goep_connect.peer_mtu = p_msg->opened.peer_mtu;
-        }
+        assert(p_data != NULL);
+        p_data->goep_connect.hdr.event = BTA_PBA_CLIENT_GOEP_CONNECT_EVT;
+        p_data->goep_connect.hdr.layer_specific = handle;
+        p_data->goep_connect.our_mtu = p_msg->opened.our_mtu;
+        p_data->goep_connect.peer_mtu = p_msg->opened.peer_mtu;
         break;
     case GOEPC_CLOSED_EVT:
         p_data = (tBTA_PBA_CLIENT_DATA *)osi_malloc(sizeof(tBTA_PBA_CLIENT_DATA));
-        if (p_data) {
-            p_data->goep_disconnect.hdr.event = BTA_PBA_CLIENT_GOEP_DISCONNECT_EVT;
-            p_data->goep_disconnect.hdr.layer_specific = handle;
-            p_data->goep_disconnect.reason = p_msg->closed.reason;
-        }
+        assert(p_data != NULL);
+        p_data->goep_disconnect.hdr.event = BTA_PBA_CLIENT_GOEP_DISCONNECT_EVT;
+        p_data->goep_disconnect.hdr.layer_specific = handle;
+        p_data->goep_disconnect.reason = p_msg->closed.reason;
         break;
     case GOEPC_RESPONSE_EVT:
         p_data = (tBTA_PBA_CLIENT_DATA *)osi_malloc(sizeof(tBTA_PBA_CLIENT_DATA));
-        if (p_data) {
-            p_data->goep_response.hdr.layer_specific = handle;
-            p_data->goep_response.pkt = p_msg->response.pkt;
-            p_data->goep_response.opcode = p_msg->response.opcode;
-            p_data->goep_response.srm_en = p_msg->response.srm_en;
-            p_data->goep_response.srm_wait = p_msg->response.srm_wait;
-            if (p_msg->response.final) {
-                p_data->goep_response.hdr.event = BTA_PBA_CLIENT_RESPONSE_FINAL_EVT;
-            }
-            else {
-                p_data->goep_response.hdr.event = BTA_PBA_CLIENT_RESPONSE_EVT;
-            }
-        } else {
-            osi_free(p_msg->response.pkt);
+        assert(p_data != NULL);
+        p_data->goep_response.hdr.layer_specific = handle;
+        p_data->goep_response.pkt = p_msg->response.pkt;
+        p_data->goep_response.opcode = p_msg->response.opcode;
+        p_data->goep_response.srm_en = p_msg->response.srm_en;
+        p_data->goep_response.srm_wait = p_msg->response.srm_wait;
+        if (p_msg->response.final) {
+            p_data->goep_response.hdr.event = BTA_PBA_CLIENT_RESPONSE_FINAL_EVT;
+        }
+        else {
+            p_data->hdr.event = BTA_PBA_CLIENT_RESPONSE_EVT;
         }
         break;
     case GOEPC_MTU_CHANGED_EVT:
@@ -536,10 +419,10 @@ void bta_pba_client_do_connect(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA 
     conn.handle = 0;
     conn.error = reason;
     bdcpy(conn.bd_addr, p_ccb->bd_addr);
+    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_CONN_CLOSE_EVT, (tBTA_PBA_CLIENT *)&conn);
+
     /* free ccb */
     free_ccb(p_ccb);
-
-    bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_CONN_CLOSE_EVT, (tBTA_PBA_CLIENT *)&conn);
 }
 
 void bta_pba_client_authenticate(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_data)
@@ -571,21 +454,47 @@ void bta_pba_client_response(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p
     tOBEX_PARSE_INFO info;
     tBTA_PBA_CLIENT_ERR reason = BTA_PBA_CLIENT_GOEP_ERROR;
 
-    if (OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info) != OBEX_SUCCESS) {
-        goto error;
-    }
+    OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info);
     if (p_data->goep_response.opcode == OBEX_OPCODE_GET_FINAL &&
         (info.response_code == OBEX_RESPONSE_CODE_CONTINUE || info.response_code == (OBEX_RESPONSE_CODE_CONTINUE | OBEX_FINAL_BIT_MASK))) {
-        /* Validate all headers before reporting so we never free pkt while BTC
-         * still holds pointers into it from an earlier report_data_event. */
-        if (!bta_pba_client_validate_get_headers(p_data->goep_response.pkt, &info, &reason)) {
-            goto error;
+        UINT8 *header = NULL;
+        UINT8 *body_data = NULL;
+        UINT16 body_data_len = 0;
+        UINT8 *app_param = NULL;
+        UINT16 app_param_len = 0;
+        while((header = OBEX_GetNextHeader(p_data->goep_response.pkt, &info)) != NULL) {
+            switch (*header)
+            {
+            case OBEX_HEADER_ID_BODY:
+            case OBEX_HEADER_ID_END_OF_BODY:
+                if (body_data == NULL) {
+                    /* first body header */
+                    body_data = header + 3;     /* skip opcode, length */
+                    body_data_len = OBEX_GetHeaderLength(header) - 3;
+                }
+                else {
+                    /* another body header found */
+                    report_data_event(p_ccb, body_data, body_data_len, NULL, 0, FALSE, NULL);
+                    body_data = header + 3;     /* skip opcode, length */
+                    body_data_len = OBEX_GetHeaderLength(header) - 3;
+                }
+                break;
+            case OBEX_HEADER_ID_APP_PARAM:
+                app_param = header + 3;
+                app_param_len = OBEX_GetHeaderLength(header) - 3;
+                break;
+            default:
+                break;
+            }
         }
-        if (OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info) != OBEX_SUCCESS) {
-            goto error;
+        if (body_data != NULL || app_param != NULL) {
+            /* report body data and app param, dont free packet here */
+            report_data_event(p_ccb, body_data, body_data_len, app_param, app_param_len, FALSE, p_data->goep_response.pkt);
         }
-        bta_pba_client_report_get_headers(p_ccb, p_data->goep_response.pkt, &info, FALSE);
-        p_data->goep_response.pkt = NULL;
+        else {
+            /* not any body data or app param */
+            osi_free(p_data->goep_response.pkt);
+        }
 
         /* if SRM not enable, we need to send a empty get request */
         if (!p_data->goep_response.srm_en || p_data->goep_response.srm_wait) {
@@ -612,9 +521,7 @@ void bta_pba_client_response_final(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_D
     UINT8 *header = NULL;
     tBTA_PBA_CLIENT_ERR reason = BTA_PBA_CLIENT_FAIL;
 
-    if (OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info) != OBEX_SUCCESS) {
-        goto error;
-    }
+    OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info);
     if (p_data->goep_response.opcode == OBEX_OPCODE_CONNECT) {
         if (info.response_code == (OBEX_RESPONSE_CODE_OK | OBEX_FINAL_BIT_MASK)) {
             /* obex connect success */
@@ -625,13 +532,8 @@ void bta_pba_client_response_final(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_D
                 p_ccb->max_tx = info.max_packet_length;
             }
             BOOLEAN cid_found = false;
-            UINT8 *pkt_data = (UINT8 *)(p_data->goep_response.pkt + 1) + p_data->goep_response.pkt->offset;
-            UINT8 *pkt_end = pkt_data + p_data->goep_response.pkt->len;
             while((header = OBEX_GetNextHeader(p_data->goep_response.pkt, &info)) != NULL) {
                 if (*header == OBEX_HEADER_ID_CONNECTION_ID) {
-                    if (OBEX_GetHeaderLength(header, pkt_end) != 5) {
-                        goto error;
-                    }
                     cid_found = true;
                     memcpy((UINT8 *)(&p_ccb->goep_cid), header + 1, 4);
                     break;
@@ -642,10 +544,7 @@ void bta_pba_client_response_final(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_D
             }
 
             BT_HDR *p_buf = (BT_HDR *)osi_malloc(sizeof(BT_HDR));
-            if (p_buf == NULL) {
-                APPL_TRACE_ERROR("pba_client_response_final: ENOMEM");
-                goto error;
-            }
+            assert(p_buf != NULL);
             p_buf->event = BTA_PBA_CLIENT_CONNECT_EVT;
             p_buf->layer_specific = p_ccb->allocated;
             bta_sys_sendmsg(p_buf);
@@ -671,22 +570,47 @@ void bta_pba_client_response_final(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_D
     else if (p_data->goep_response.opcode == OBEX_OPCODE_GET_FINAL) {
         /* check response code is success */
         if (info.response_code == (OBEX_RESPONSE_CODE_OK | OBEX_FINAL_BIT_MASK)) {
-            /* Validate before reporting to avoid UAF if a later header is bad */
-            if (!bta_pba_client_validate_get_headers(p_data->goep_response.pkt, &info, &reason)) {
-                goto error;
+            UINT8 *body_data = NULL;
+            UINT16 body_data_len = 0;
+            UINT8 *app_param = NULL;
+            UINT16 app_param_len = 0;
+            while((header = OBEX_GetNextHeader(p_data->goep_response.pkt, &info)) != NULL) {
+                switch (*header)
+                {
+                /* actually, BODY should not in this final response */
+                case OBEX_HEADER_ID_BODY:
+                case OBEX_HEADER_ID_END_OF_BODY:
+                    if (body_data == NULL) {
+                        /* first body header */
+                        body_data = header + 3;     /* skip opcode, length */
+                        body_data_len = OBEX_GetHeaderLength(header) - 3;
+                    }
+                    else {
+                        /* another body header found */
+                        report_data_event(p_ccb, body_data, body_data_len, NULL, 0, FALSE, NULL);
+                        body_data = header + 3;     /* skip opcode, length */
+                        body_data_len = OBEX_GetHeaderLength(header) - 3;
+                    }
+                    break;
+                case OBEX_HEADER_ID_APP_PARAM:
+                    app_param = header + 3;
+                    app_param_len = OBEX_GetHeaderLength(header) - 3;
+                    break;
+                default:
+                    break;
+                }
             }
-            if (OBEX_ParseResponse(p_data->goep_response.pkt, p_data->goep_response.opcode, &info) != OBEX_SUCCESS) {
-                goto error;
+            if (body_data != NULL || app_param != NULL) {
+                /* report body data and app param, dont free packet here */
+                report_data_event(p_ccb, body_data, body_data_len, app_param, app_param_len, TRUE, p_data->goep_response.pkt);
+                /* done, return */
+                return;
             }
-            bta_pba_client_report_get_headers(p_ccb, p_data->goep_response.pkt, &info, TRUE);
-            p_data->goep_response.pkt = NULL;
-            return;
         }
         /* unexpected response code or body data not found */
         reason = calculate_response_error(info.response_code);
         report_error_data_event(p_ccb, reason);
         osi_free(p_data->goep_response.pkt);
-        p_data->goep_response.pkt = NULL;
 
         /* state machine is good, don't goto error */
     }
@@ -763,8 +687,8 @@ void bta_pba_client_goep_disconnect(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_
     conn.handle = p_ccb->allocated;
     bdcpy(conn.bd_addr, p_ccb->bd_addr);
     conn.error = BTA_PBA_CLIENT_GOEP_ERROR;
-    free_ccb(p_ccb);
     bta_pba_client_cb.p_cback(BTA_PBA_CLIENT_CONN_CLOSE_EVT, (tBTA_PBA_CLIENT *)&conn);
+    free_ccb(p_ccb);
 }
 
 void bta_pba_client_free_response(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_data)
@@ -773,16 +697,6 @@ void bta_pba_client_free_response(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DA
         osi_free(p_data->goep_response.pkt);
     }
     close_goepc_and_report(p_ccb, BTA_PBA_CLIENT_GOEP_ERROR);
-}
-
-void bta_pba_client_free_req(tBTA_PBA_CLIENT_CCB *p_ccb, tBTA_PBA_CLIENT_DATA *p_data)
-{
-    if (p_data->api_req.name != NULL) {
-        osi_free(p_data->api_req.name);
-    }
-    if (p_data->api_req.app_param != NULL) {
-        osi_free(p_data->api_req.app_param);
-    }
 }
 
 #endif

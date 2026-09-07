@@ -49,7 +49,6 @@ int tc_cbc_mode_encrypt(uint8_t *out, unsigned int outlen, const uint8_t *in,
 	/* input sanity check: */
 	if (out == (uint8_t *) 0 ||
 	    in == (const uint8_t *) 0 ||
-	    iv == (const uint8_t *) 0 ||
 	    sched == (TCAesKeySched_t) 0 ||
 	    inlen == 0 ||
 	    outlen == 0 ||
@@ -91,7 +90,6 @@ int tc_cbc_mode_decrypt(uint8_t *out, unsigned int outlen, const uint8_t *in,
 	/* sanity check the inputs */
 	if (out == (uint8_t *) 0 ||
 	    in == (const uint8_t *) 0 ||
-	    iv == (const uint8_t *) 0 ||
 	    sched == (TCAesKeySched_t) 0 ||
 	    inlen == 0 ||
 	    outlen == 0 ||
@@ -107,7 +105,7 @@ int tc_cbc_mode_decrypt(uint8_t *out, unsigned int outlen, const uint8_t *in,
 	 * that would not otherwise be possible.
 	 */
 	p = iv;
-	for (n = m = 0; n < outlen; ++n) {
+	for (n = m = 0; n < inlen; ++n) {
 		if ((n % TC_AES_BLOCK_SIZE) == 0) {
 			(void)tc_aes_decrypt(buffer, in, sched);
 			in += TC_AES_BLOCK_SIZE;

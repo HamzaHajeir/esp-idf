@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -18,30 +17,14 @@
 #include "ble_spp_server.h"
 #include "driver/uart.h"
 
-static const char *tag = "NimBLE_SPP_SERVER";
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t own_addr_type;
 int gatt_svr_register(void);
 QueueHandle_t spp_common_uart_queue = NULL;
 static bool conn_handle_subs[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
 static uint16_t ble_spp_svc_gatt_read_val_handle;
-static char device_name[32] = "nimble-ble-spp-svr";
 
 void ble_store_config_init(void);
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_ble_spp_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 /**
  * Logs information about a connection to the console.
@@ -106,20 +89,17 @@ ble_spp_server_advertise(void)
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
-    fields.name = (uint8_t *)device_name;
-    fields.name_len = strlen(device_name);
+    const char *name;
+    name = ble_svc_gap_device_name();
+    fields.name = (uint8_t *)name;
+    fields.name_len = strlen(name);
     fields.name_is_complete = 1;
-#endif
 
-#if !(CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
-    static const ble_uuid16_t adv_uuids16[] = {
+    fields.uuids16 = (ble_uuid16_t[]) {
         BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)
     };
-    fields.uuids16 = adv_uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
-#endif
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
@@ -170,11 +150,6 @@ ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
             ble_spp_server_print_conn_desc(&desc);
-            ESP_LOGI(tag, "Connected, conn_handle %d, remote %02x:%02x:%02x:%02x:%02x:%02x",
-                     event->connect.conn_handle,
-                     desc.peer_ota_addr.val[5], desc.peer_ota_addr.val[4],
-                     desc.peer_ota_addr.val[3], desc.peer_ota_addr.val[2],
-                     desc.peer_ota_addr.val[1], desc.peer_ota_addr.val[0]);
         }
         MODLOG_DFLT(INFO, "\n");
         if (event->connect.status != 0 || CONFIG_BT_NIMBLE_MAX_CONNECTIONS > 1) {
@@ -188,9 +163,7 @@ ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         ble_spp_server_print_conn_desc(&event->disconnect.conn);
         MODLOG_DFLT(INFO, "\n");
 
-        if (event->disconnect.conn.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            conn_handle_subs[event->disconnect.conn.conn_handle] = false;
-        }
+        conn_handle_subs[event->disconnect.conn.conn_handle] = false;
 
         /* Connection terminated; resume advertising. */
         ble_spp_server_advertise();
@@ -229,9 +202,7 @@ ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
                     event->subscribe.cur_notify,
                     event->subscribe.prev_indicate,
                     event->subscribe.cur_indicate);
-        if (event->subscribe.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            conn_handle_subs[event->subscribe.conn_handle] = true;
-        }
+        conn_handle_subs[event->subscribe.conn_handle] = true;
         return 0;
 
     default:
@@ -273,7 +244,7 @@ ble_spp_server_on_sync(void)
 
 void ble_spp_server_host_task(void *param)
 {
-    ESP_LOGI(tag, "BLE Host Task Started");
+    MODLOG_DFLT(INFO, "BLE Host Task Started");
     /* This function will return only when nimble_port_stop() is executed */
     nimble_port_run();
 
@@ -357,12 +328,9 @@ gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
 int gatt_svr_init(void)
 {
     int rc = 0;
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     ble_svc_gap_init();
-#endif
-#if MYNEWT_VAL(BLE_GATTS)
     ble_svc_gatt_init();
-#endif
+
     rc = ble_gatts_count_cfg(new_ble_svc_gatt_defs);
 
     if (rc != 0) {
@@ -392,10 +360,6 @@ void ble_server_uart_task(void *pvParameters)
                 if (event.size) {
                     uint8_t *ntf;
                     ntf = (uint8_t *)malloc(sizeof(uint8_t) * event.size);
-                    if (ntf == NULL) {
-                        MODLOG_DFLT(ERROR, "malloc failed for UART data, size=%u", event.size);
-                        continue;
-                    }
                     memset(ntf, 0x00, event.size);
                     uart_read_bytes(UART_NUM_0, ntf, event.size, portMAX_DELAY);
 
@@ -427,8 +391,7 @@ void ble_server_uart_task(void *pvParameters)
 static void ble_spp_uart_init(void)
 {
     uart_config_t uart_config = {
-        /* Keep console baud (e.g. 74880 on ESP32-C2 26MHz XTAL) when sharing UART0. */
-        .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+        .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -437,11 +400,7 @@ static void ble_spp_uart_init(void)
         .source_clk = UART_SCLK_DEFAULT,
     };
     //Install UART driver, and get the queue.
-    esp_err_t err = uart_driver_install(UART_NUM_0, 4096, 8192, 10, &spp_common_uart_queue, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE("SPP_SERVER", "uart_driver_install failed: %d", err);
-        return;
-    }
+    uart_driver_install(UART_NUM_0, 4096, 8192, 10, &spp_common_uart_queue, 0);
     //Set UART parameters
     uart_param_config(UART_NUM_0, &uart_config);
     //Set UART pins
@@ -504,18 +463,9 @@ app_main(void)
     rc = gatt_svr_init();
     assert(rc == 0);
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(device_name, esp_ble_spp_get_example_name(), sizeof(device_name) - 1);
-    device_name[sizeof(device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
-
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
-    rc = ble_svc_gap_device_name_set(device_name);
+    rc = ble_svc_gap_device_name_set("nimble-ble-spp-svr");
     assert(rc == 0);
-#endif
 #endif
 
     /* XXX Need to have template for store */

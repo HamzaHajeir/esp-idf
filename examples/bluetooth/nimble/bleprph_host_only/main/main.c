@@ -1,25 +1,27 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
+#include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "bleprph.h"
 #include "uart_driver.h"
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x18, 0x11,
-    0x11, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x18, 0x11,
+    0x11, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
 };
 #endif
 
@@ -85,8 +87,8 @@ ext_bleprph_advertise(void)
     /* enable connectable advertising */
     params.connectable = 1;
 
-    /* advertise using configured/inferred addr type */
-    params.own_addr_type = own_addr_type;
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
 
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
@@ -155,18 +157,15 @@ bleprph_advertise(void)
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     const char *name;
     name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
-#endif
 
-    static const ble_uuid16_t adv_uuids16[] = {
+    fields.uuids16 = (ble_uuid16_t[]) {
         BLE_UUID16_INIT(GATT_SVR_SVC_ALERT_UUID)
     };
-    fields.uuids16 = adv_uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
@@ -194,16 +193,11 @@ static void bleprph_power_control(uint16_t conn_handle)
 {
     int rc;
 
-    rc = ble_gap_read_remote_transmit_power_level(conn_handle, 0x01);
-    if (rc != 0) {
-        MODLOG_DFLT(WARN, "ble_gap_read_remote_transmit_power_level failed; rc=%d\n", rc);
-        return;
-    }
+    rc = ble_gap_read_remote_transmit_power_level(conn_handle, 0x01 );  // Attempting on LE 1M phy
+    assert (rc == 0);
 
     rc = ble_gap_set_transmit_power_reporting_enable(conn_handle, 0x1, 0x1);
-    if (rc != 0) {
-        MODLOG_DFLT(WARN, "ble_gap_set_transmit_power_reporting_enable failed; rc=%d\n", rc);
-    }
+    assert (rc == 0);
 }
 #endif
 
@@ -251,9 +245,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         }
 
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
-        if (event->connect.status == 0) {
-            bleprph_power_control(event->connect.conn_handle);
-        }
+	bleprph_power_control(event->connect.conn_handle);
 #endif
         return 0;
 
@@ -351,8 +343,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
 
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
             pkey.action = event->passkey.params.action;
-            /* WARNING: Hardcoded passkey for demonstration only.
-             * In production, generate a random passkey per pairing. */
             pkey.passkey = 123456; // This is the passkey to be entered on peer
             ESP_LOGI(tag, "Enter passkey %" PRIu32 "on the peer side", pkey.passkey);
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
@@ -427,21 +417,17 @@ bleprph_on_reset(int reason)
 static void
 ble_app_set_addr(void)
 {
-    ble_addr_t addr = {0};
+    ble_addr_t addr;
     int rc;
 
     /* generate new non-resolvable private address */
     rc = ble_hs_id_gen_rnd(0, &addr);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_gen_rnd failed; rc=%d\n", rc);
-        return;
-    }
+    assert(rc == 0);
 
     /* set generated address */
     rc = ble_hs_id_set_rnd(addr.val);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_set_rnd failed; rc=%d\n", rc);
-    }
+
+    assert(rc == 0);
 }
 #endif
 
@@ -511,7 +497,6 @@ app_main(void)
     ret = nimble_port_init();
     if (ret != ESP_OK) {
         ESP_LOGE(tag, "Failed to init nimble %d ", ret);
-        hci_uart_close();
         return;
     }
     /* Initialize the NimBLE host configuration. */
@@ -546,9 +531,7 @@ app_main(void)
 #if MYNEWT_VAL(BLE_GATTS)
     rc = gatt_svr_init();
     assert(rc == 0);
-#endif
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("nimble-bleprph");
     assert(rc == 0);

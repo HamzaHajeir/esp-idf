@@ -47,9 +47,9 @@ ULP FSM 协处理器代码由汇编语言编写，使用 `binutils-esp32ulp 工�
     set(ulp_s_sources ulp/ulp_assembly_source_file.S)
     set(ulp_exp_dep_srcs "ulp_c_source_file.c")
 
-    ulp_embed_binary(${ulp_app_name} "${ulp_s_sources}" "${ulp_exp_dep_srcs}" TYPE fsm)
+    ulp_embed_binary(${ulp_app_name} "${ulp_s_sources}" "${ulp_exp_dep_srcs}")
 
-``ulp_embed_binary`` 的第一个参数用于指定 ULP FSM 二进制文件的名称，该名称也用于生成的其他文件，如：ELF 文件、.map 文件、头文件和链接器导出文件。第二个参数指定 ULP FSM 汇编源文件。第三个参数指定组件源文件列表，这些源文件中会包含要生成的头文件。此列表用于建立正确的依赖项，并确保在编译这些文件之前先创建生成的头文件。第四个参数 ``TYPE`` 为可选项，但在 menuconfig 的 ``ULP Coprocessor types`` 中同时勾选 ``CONFIG_ULP_COPROC_TYPE_FSM`` 与 ``CONFIG_ULP_COPROC_TYPE_RISCV`` 时，必须填写为 ``TYPE fsm`` 才能使用 FSM 工具链编译。有关 ULP FSM 应用程序生成的头文件等相关概念，请参考下文。
+``ulp_embed_binary`` 的第一个参数用于指定 ULP FSM 二进制文件的名称，该名称也用于生成的其他文件，如：ELF 文件、.map 文件、头文件和链接器导出文件。第二个参数指定 ULP FSM 汇编源文件。最后，第三个参数指定组件源文件列表，这些源文件中会包含要生成的头文件。此列表用于建立正确的依赖项，并确保在编译这些文件之前先创建生成的头文件。有关 ULP FSM 应用程序生成的头文件等相关概念，请参考下文。
 
 在这个生成的头文件中，ULP 代码中的变量默认以 ``ulp_`` 作为前缀。
 
@@ -135,7 +135,7 @@ ULP FSM 协处理器代码由汇编语言编写，使用 `binutils-esp32ulp 工�
 
 要运行 ULP FSM 程序，主应用程序需要调用 :cpp:func:`ulp_load_binary` 函数将 ULP 程序加载到 RTC 内存中，然后调用 :cpp:func:`ulp_run` 函数，启动 ULP 程序。
 
-注意，在 menuconfig 中必须启用 ``Enable Ultra Low Power (ULP) Coprocessor`` 选项才能使用 ULP。要选择 ULP 的 FSM 类型，请进入 menu 选项 ``ULP Coprocessor types`` 并勾选 ``CONFIG_ULP_COPROC_TYPE_FSM``。``RTC slow memory reserved for coprocessor`` 选项设置的值必须足够储存 ULP 代码和数据。如果应用程序组件包含多个 ULP 程序，则 RTC 内存必须足以容纳最大的程序。
+注意，在 menuconfig 中必须启用 ``Enable Ultra Low Power (ULP) Coprocessor`` 选项，以便正常运行 ULP，并且必须设置 ``ULP Co-processor type`` 选项，以便选择要使用的 ULP 类型。 ``RTC slow memory reserved for coprocessor`` 选项设置的值必须足够储存 ULP 代码和数据。如果应用程序组件包含多个 ULP 程序，则 RTC 内存必须足以容纳最大的程序。
 
 每个 ULP 程序均以二进制 BLOB 的形式嵌入到 ESP-IDF 应用程序中。应用程序可以引用此 BLOB，并以下面的方式加载此 BLOB（假设 ULP_APP_NAME 已被定义为 ``ulp_app_name``）::
 
@@ -199,10 +199,6 @@ ULP FSM 协处理器代码由汇编语言编写，使用 `binutils-esp32ulp 工�
 .. only:: esp32 or esp32s3
 
     * :example:`system/ulp/ulp_fsm/ulp_adc` 展示了主处理器处于 Deep-sleep 状态时，ULP FSM 协处理器测量特定 ADC 通道上的输入电压，将其与设定的阈值进行比较，电压超出阈值时唤醒系统。
-
-.. only:: esp32s2 or esp32s3
-
-    * :example:`system/ulp/ulp_fsm_riscv_combined/counter` 展示了如何在同一个应用程序中依次使用 ULP FSM 和 ULP RISC-V 协处理器：使用 FSM 从 0 计数到 100，再使用 RISC-V 协处理器从 100 计数到 500。期间，HP 内核保持休眠模式，直到计数完成。
 
 API 参考
 -------------

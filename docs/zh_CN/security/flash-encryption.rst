@@ -26,7 +26,7 @@ flash 加密功能用于加密与 {IDF_TARGET_NAME} 搭载使用的片外 flash 
 
 .. important::
 
-    对于生产用途，flash 加密仅应在量产模式下启用。
+    对于生产用途，flash 加密仅应在“发布”模式下启用。
 
 .. important::
 
@@ -52,8 +52,8 @@ flash 加密功能用于加密与 {IDF_TARGET_NAME} 搭载使用的片外 flash 
 
 .. _flash-encryption-efuse:
 
-相关 eFuse
-----------
+相关 eFuses
+------------------------------
 
 flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse 名称及其描述请参见下表。``espefuse`` 工具和基于 ``idf.py`` 的 eFuse 指令也会使用下表中的 eFuse 名。为了能在 eFuse API 中使用，请在名称前加上 ``ESP_EFUSE_``，如：esp_efuse_read_field_bit (ESP_EFUSE_DISABLE_DL_ENCRYPT)。
 
@@ -61,7 +61,7 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
 
 .. only:: not SOC_FLASH_ENCRYPTION_XTS_AES
 
-    .. list-table:: 用于 flash 加密的 eFuse
+    .. list-table:: flash 加密过程中使用的 eFuses
        :widths: 25 40 10
        :header-rows: 0
 
@@ -69,7 +69,7 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
          - **描述**
          - **位深**
        * - ``CODING_SCHEME``
-         - 控制用于产生最终 256 位 AES 密钥的 block1 的实际位数。可选值：``0`` 代表 256 位，``1`` 代表 192 位，``2`` 代表 128 位。最终的 AES 密钥根据 ``FLASH_CRYPT_CONFIG`` 值得出。
+         - 控制用于产生最终 256 位 AES 密钥的 block1 的实际位数。可能的值：``0`` 代表 256 位，``1`` 代表 192 位，``2`` 代表 128 位。最终的 AES 密钥根据 ``FLASH_CRYPT_CONFIG`` 值得出。
          - 2
        * - ``flash_encryption`` (block1)
          - AES 密钥存储。
@@ -86,16 +86,16 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
        * - ``{IDF_TARGET_CRYPT_CNT}``
          - 通过 :math:`2^n` 数字来表示 flash 的内容是否已被加密.
 
-           * 如果设置了奇数个比特位（例如 ``0b0000001`` 或 ``0b0000111``），表示 flash 的内容已加密。读取时，内容需要进行透明解密。
-           * 如果设置了偶数个比特位（例如 ``0b0000000`` 或 ``0b0000011``），表示 flash 的内容未被加密（即明文）。
+           * 如果设置了奇数个比特位（例如 ``0b0000001`` 或 ``0b0000111``）, 表示 flash 的内容已加密。读取时，内容需要进行透明解密。
+           * 如果设置了偶数个比特位（例如 ``0b0000000`` 或 ``0b0000011``）, 表示 flash 的内容未被加密 (即明文)。
 
-           每次进行未加密的 flash 更新（例如烧录新的未加密二进制文件），并通过 :menuitem:`启动时启用 flash 加密功能 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项对 flash 进行加密后，``{IDF_TARGET_CRYPT_CNT}`` 的下一个最高有效位 (MSB) 会被置为 1。
+           随着每次连续的 flash 未加密（例如烧录一个新的未加密二进制文件）与进行 flash 加密（通过 :ref:`启动时启用 flash 加密功能 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项）, ``{IDF_TARGET_CRYPT_CNT}`` 的下一个的最高有效位 (MSB) 会被设置。
          - 7
 
 
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256 and SOC_KEY_MANAGER_SUPPORTED
+.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
-    .. list-table:: 用于 flash 加密的 eFuse
+    .. list-table:: flash 加密过程中使用的 eFuses
        :widths: 25 40 10
        :header-rows: 0
 
@@ -103,27 +103,21 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
          - **描述**
          - **位深**
        * - ``BLOCK_KEYN``
-         - AES 密钥存储，其中 N 在 0~5 之间。使用基于密钥管理器的密钥时，不会使用此 eFuse。
+         - AES 密钥存储，N 在 0-5 之间。
          - XTS_AES_128 有一个 256 位密钥块，XTS_AES_256 有两个 256 位密钥块（共 512 位）。
        * - ``KEY_PURPOSE_N``
-         - 控制 eFuse 块 ``BLOCK_KEYN`` 的用途，其中 N 在 0~5 之间。可选值：``2`` 代表 ``XTS_AES_256_KEY_1``；``3`` 代表 ``XTS_AES_256_KEY_2``；``4`` 代表 ``XTS_AES_128_KEY``。最终 AES 密钥通过其中一个或两个用于指定密钥用途的 eFuse 字段值推导得出。有关各种可能的组合，请参阅 **《{IDF_TARGET_NAME} 技术参考手册》** > **片外存储器加密与解密 (XTS_AES)** [`PDF <{IDF_TARGET_TRM_CN_URL}#extmemencr>`__]。若使用基于密钥管理器的密钥启用 flash 加密，则不会使用此 eFuse 字段。
+         - 控制 eFuse 块 ``BLOCK_KEYN`` 的目的，其中 N 在 0-5 之间。可能的值：``2`` 代表 ``XTS_AES_256_KEY_1``，``3`` 代表 ``XTS_AES_256_KEY_2``，``4`` 代表 ``XTS_AES_128_KEY``。最终 AES 密钥是基于其中一个或两个目的 eFuses 值推导。有关各种可能的组合，请参阅 *{IDF_TARGET_NAME} 技术参考手册* > *外部内存加密和解密（XTS_AES)* [`PDF <{IDF_TARGET_TRM_CN_URL}#extmemencr>`__]。
          - 4
-       * - ``KM_XTS_KEY_LENGTH_256``
-         - 使用基于密钥管理器的密钥启用 flash 加密时，此 eFuse 字段用于控制 XTS-AES 密钥的长度。将此 eFuse 字段设置为 1 表示使用 128 位密钥，设置为 0 表示使用 256 位密钥。若使用基于 eFuse 的密钥启用 flash 加密，则不会使用此 eFuse 字段。
-         - 1
-       * - ``FORCE_USE_KEY_MANAGER_KEY``
-         - 使用基于密钥管理器的密钥启用 flash 加密时，此 eFuse 用于强制密钥管理器使用 XTS-AES 密钥。将此 eFuse 的位 1 置为 1 以使用基于密钥管理器的密钥。若使用基于 eFuse 的密钥启用 flash 加密，则不会使用此 eFuse 字段。
-         - 1
        * - ``DIS_DOWNLOAD_MANUAL_ENCRYPT``
          - 设置后，在下载启动模式下禁用 flash 加密。
          - 1
        * - ``{IDF_TARGET_CRYPT_CNT}``
-         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了一个或三个位，则启用此功能，否则将禁用。
+         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了 1 或 3 个比特位，则启用该功能，否则将禁用。
          - 3
 
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_KEY_MANAGER_SUPPORTED
+.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-    .. list-table:: 用于 flash 加密的 eFuse
+    .. list-table:: flash 加密过程中使用的 eFuses
        :widths: 25 40 10
        :header-rows: 0
 
@@ -131,71 +125,21 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
          - **描述**
          - **位深**
        * - ``BLOCK_KEYN``
-         - AES 密钥存储，其中 N 在 0~5 之间。
-         - XTS_AES_128 有一个 256 位密钥块，XTS_AES_256 有两个 256 位密钥块（共 512 位）。
-       * - ``KEY_PURPOSE_N``
-         - 控制 eFuse 块 ``BLOCK_KEYN`` 的用途，其中 N 在 0~5 之间。可选值：``2`` 代表 ``XTS_AES_256_KEY_1``；``3`` 代表 ``XTS_AES_256_KEY_2``；``4`` 代表 ``XTS_AES_128_KEY``。最终 AES 密钥通过其中一个或两个用于指定密钥用途的 eFuse 字段值推导得出。有关各种可能的组合，请参阅 **《{IDF_TARGET_NAME} 技术参考手册》** > **片外存储器加密与解密 (XTS_AES)** [`PDF <{IDF_TARGET_TRM_CN_URL}#extmemencr>`__]。
-         - 4
-       * - ``DIS_DOWNLOAD_MANUAL_ENCRYPT``
-         - 设置后，在下载启动模式下禁用 flash 加密。
-         - 1
-       * - ``{IDF_TARGET_CRYPT_CNT}``
-         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了一个或三个位，则启用此功能，否则将禁用。
-         - 3
-
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK and SOC_KEY_MANAGER_SUPPORTED
-
-    .. list-table:: 用于 flash 加密的 eFuse
-       :widths: 25 40 10
-       :header-rows: 0
-
-       * - **eFuse**
-         - **描述**
-         - **位深**
-       * - ``BLOCK_KEYN``
-         - AES 密钥存储，其中 N 在 0~5 之间。使用基于密钥管理器的密钥时，不会使用此 eFuse。
-         - 256 位密钥块。
-       * - ``KEY_PURPOSE_N``
-         - 控制 eFuse 块 ``BLOCK_KEYN`` 的用途，其中 N 在 0~5 之间。对于 flash 加密，唯一的有效值是 ``4``，代表 ``XTS_AES_128_KEY``。若使用基于密钥管理器的密钥启用 flash 加密，则不会使用此 eFuse 字段。
-         - 4
-       * - ``KM_XTS_KEY_LENGTH_256``
-         - 使用基于密钥管理器的密钥启用 flash 加密时，此 eFuse 字段用于控制 XTS-AES 密钥的长度。将此 eFuse 字段设置为 1 表示使用 128 位密钥，设置为 0 表示使用 256 位密钥。若使用基于 eFuse 的密钥启用 flash 加密，则不会使用此 eFuse 字段。
-         - 1
-       * - ``FORCE_USE_KEY_MANAGER_KEY``
-         - 使用基于密钥管理器的密钥启用 flash 加密时，此 eFuse 用于强制密钥管理器使用 XTS-AES 密钥。将此 eFuse 的位 1 置为 1 以使用基于密钥管理器的密钥。若使用基于 eFuse 的密钥启用 flash 加密，则不会使用此 eFuse 字段。
-         - 1
-       * - ``DIS_DOWNLOAD_MANUAL_ENCRYPT``
-         - 设置后，在下载启动模式下禁用 flash 加密。
-         - 1
-       * - ``{IDF_TARGET_CRYPT_CNT}``
-         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了一个或三个位，则启用此功能，否则将禁用。
-         - 3
-
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK and not SOC_KEY_MANAGER_SUPPORTED
-
-    .. list-table:: 用于 flash 加密的 eFuse
-       :widths: 25 40 10
-       :header-rows: 0
-
-       * - **eFuse**
-         - **描述**
-         - **位深**
-       * - ``BLOCK_KEYN``
-         - AES 密钥存储，N 在 0~5 之间。
+         - AES 密钥存储，N 在 0-5 之间。
          - 256 位密钥块
        * - ``KEY_PURPOSE_N``
-         - 控制 eFuse 块 ``BLOCK_KEYN`` 的用途，其中 N 在 0~5 之间。对于 flash 加密，唯一的有效值是 ``4``，代表 ``XTS_AES_128_KEY``。
+         - 控制 eFuse 块 ``BLOCK_KEYN`` 的目的，其中 N 在 0 到 5 之间。对于 flash 加密，唯一的有效值是 4，代表 ``XTS_AES_128_KEY``。
          - 4
        * - ``DIS_DOWNLOAD_MANUAL_ENCRYPT``
-         - 设置后，在下载引导模式时禁用 flash 加密。
+         - 设置后，则在下载引导模式时禁用 flash 加密。
          - 1
        * - ``{IDF_TARGET_CRYPT_CNT}``
-         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了一个或三个位，则启用此功能，否则将禁用。
+         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置 1 或 3 个比特位，则启用该功能，否则将禁用。
          - 3
 
 .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-    .. list-table:: 用于 flash 加密的 eFuse
+    .. list-table:: flash 加密过程中使用的 eFuses
        :widths: 25 40 10
        :header-rows: 0
 
@@ -203,16 +147,16 @@ flash 加密操作由 {IDF_TARGET_NAME} 上的多个 eFuse 控制，具体 eFuse
          - **描述**
          - **位深**
        * - ``XTS_KEY_LENGTH_256``
-         - 控制用于产生最终 256 位 AES 密钥的 eFuse 位的实际数量。可选值：``1`` 使用 eFuse 块的全部 256 位作为密钥，``0`` 使用 eFuse 块的低 128 位作为密钥（高 128 位保留给安全启动密钥）。对于 128 位选项，最终的 AES 密钥会以 SHA256 (EFUSE_KEY0_FE_128BIT) 的形式得出。
+         - 控制用于得出最终 256 位 AES 密钥的 eFuse 比特的实际数量。可能的值：``1`` 使用 eFuse 块的全部 256 位作为密钥，``0`` 使用 eFuse 块的低 128 位作为密钥（高 128 位保留给安全启动密钥）。对于 128 位选项，最终的 AES 密钥会以 SHA256 (EFUSE_KEY0_FE_128BIT) 的形式得出。
          - 1
        * - ``BLOCK_KEY0``
          - AES 密钥存储
          - 256 位或 128 位密钥块
        * - ``DIS_DOWNLOAD_MANUAL_ENCRYPT``
-         - 设置后，在下载引导模式时禁用 flash 加密。
+         - 设置后，则在下载引导模式时禁用 flash 加密。
          - 1
        * - ``{IDF_TARGET_CRYPT_CNT}``
-         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置了一个或三个位，则启用此功能，否则将禁用。
+         - 设置 SPI 启动模式后，可启用加密和解密。如果在 eFuse 中设置 1 或 3 个比特位，则启用该功能，否则将禁用。
          - 3
 
 .. note::
@@ -237,11 +181,11 @@ flash 的加密过程
 
   1. 第一次开机复位时，flash 中的所有数据都是未加密的（明文）。一级 (ROM) 引导加载程序加载二级引导加载程序。
 
-  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b0000000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块，同时将 ``FLASH_CRYPT_CONFIG`` eFuse 的值编程为 0xF。关于 flash 加密块的更多信息，请参考 **《{IDF_TARGET_NAME} 技术参考手册》** > **eFuse 控制器 (eFuse)** > **flash 加密块** [`PDF <{IDF_TARGET_TRM_CN_URL}#efuse>`__]。
+  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b0000000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块，同时将 ``FLASH_CRYPT_CONFIG`` eFuse 的值编程为 0xF。关于 flash 加密块的更多信息，请参考 *{IDF_TARGET_NAME} 技术参考手册* > *eFuse 控制器 (eFuse)* > *flash 加密块* [`PDF <{IDF_TARGET_TRM_CN_URL}#efuse>`__]。
 
   3. 二级引导加载程序首先检查 eFuse 中是否已经存在有效密钥（例如用 espefuse 工具烧写的密钥），如果存在，则会跳过密钥生成，并将该密钥用于 flash 加密过程。否则，二级引导加载程序会使用 RNG（随机数发生器）模块生成一个 AES-256 位密钥，并将其写入 ``flash_encryption`` eFuse 中。由于已设置了 ``flash_encryption`` eFuse 的读保护位和写保护位，因此无法通过软件访问密钥。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。
 
-  4. flash 加密块会加密 flash 中的内容，包括二级引导加载程序、应用程序、以及带有 ``encrypted`` 标志的分区。就地加密需要一定时间，对于大分区来说最多需要一分钟。
+  4. flash 加密块将加密 flash 的内容（二级引导加载程序、应用程序、以及标有 ``加密`` 标志的分区）。就地加密可能会耗些时间（对于大分区最多需要一分钟）。
 
   5. 二级引导加载程序将在 ``{IDF_TARGET_CRYPT_CNT}`` (0b0000001) 中设置第一个可用位来对已加密的 flash 内容进行标记。设置奇数个比特位。
 
@@ -251,48 +195,15 @@ flash 的加密过程
 
   8. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密的内容加载到 IRAM 中。
 
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256 and SOC_KEY_MANAGER_SUPPORTED
+.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
   1. 第一次开机复位时，flash 中的所有数据都是未加密的（明文）。一级 (ROM) 引导加载程序加载二级引导加载程序。
 
-  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参阅 **《{IDF_TARGET_NAME} 技术参考手册》** > **eFuse 控制器 (eFuse)** > **手动加密块** [`PDF <{IDF_TARGET_TRM_CN_URL}#efuse>`__]。
+  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参考 *{IDF_TARGET_NAME} 技术参考手册* > *eFuse 控制器 (eFuse)* > *自动加密块* [`PDF <{IDF_TARGET_TRM_CN_URL}#efuse>`__]。
 
-  3. 第二阶段引导加载程序会先判断是否已存在可用的密钥，从而决定是否跳过密钥生成步骤：
+  3. 二级引导加载程序首先检查 eFuse 中是否已经存在有效密钥（例如用 espefuse 工具烧写的密钥），如果存在，则会跳过密钥生成，并将该密钥用于 flash 加密过程。否则，二级引导加载程序使用 RNG（随机数发生器）模块生成一个 256 位或 512 位的密钥，具体位数取决于 :ref:`生成的 XTS-AES 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`，然后将其分别写入一个或两个 `BLOCK_KEYN` eFuse 中。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。由于上述一个或两个 ``BLOCK_KEYN`` eFuse 已设置了读保护和写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。
 
-    - 若使用基于 eFuse 的密钥启用 flash 加密，则检查 eFuse 中是否已存在有效密钥（例如通过 espefuse 工具烧录的密钥）。
-    - 若使用基于密钥管理器的密钥启用 flash 加密，则检查 flash 存储器的地址 0x0 和 0x1000 处是否存在有效的密钥恢复信息。
-
-    检查通过，则跳过密钥生成过程，直接使用现有密钥进行 flash 加密。
-
-  4. 如果使用基于 eFuse 的密钥，二级引导加载程序将使用 RNG（随机数发生器）模块生成 256 位或 512 位的密钥（具体位数取决于 :menuitem:`生成的 XTS-AES 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`），然后将其分别写入一个或两个 ``BLOCK_KEYN`` eFuse 块中。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。由于上述一个或两个 ``BLOCK_KEYN`` eFuse 块已设置了读写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。如果使用基于密钥管理器的密钥，二级引导加载程序则将密钥恢复信息写入 flash 内存地址 0x0，随后烧录 ``KM_XTS_KEY_LENGTH_256`` 和 ``FORCE_USE_KEY_MANAGER_KEY`` eFuse 字段。flash 加密操作全部在硬件中完成，因此无法通过软件访问密钥。
-
-  5. flash 加密块会加密 flash 中的内容，包括二级引导加载程序、应用程序、以及带有 ``encrypted`` 标志的分区。就地加密需要一定时间，对于大分区来说最多需要一分钟。
-
-  6. 二级引导加载程序将 ``{IDF_TARGET_CRYPT_CNT}`` (0b001) 中的第一个可用位设置为 1，以标记 flash 内容为加密状态，此时位数为奇数。
-
-  7. 对于 :ref:`flash-enc-development-mode`，二级引导加载程序允许 UART 引导加载程序重新烧录加密后的二进制文件。同时，``{IDF_TARGET_CRYPT_CNT}`` eFuse 位不受写入保护。此外，二级引导加载程序默认置位以下 eFuse 位：
-
-    .. list::
-
-      :esp32s2: - ``DIS_BOOT_REMAP``
-      - ``DIS_DOWNLOAD_ICACHE``
-      - ``DIS_DOWNLOAD_DCACHE``
-      - ``HARD_DIS_JTAG``
-      - ``DIS_LEGACY_SPI_BOOT``
-
-  8. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位以及 ``DIS_DOWNLOAD_MANUAL_ENCRYPT``，同时写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。若要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
-
-  9. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密后的内容加载到 IRAM 中。
-
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_KEY_MANAGER_SUPPORTED
-
-  1. 第一次开机复位时，flash 中的所有数据都是未加密的（明文）。一级 (ROM) 引导加载程序加载二级引导加载程序。
-
-  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参考 **《{IDF_TARGET_NAME} 技术参考手册》** > **eFuse 控制器 (eFuse)** > **自动加密块** [`PDF <{IDF_TARGET_TRM_CN_URL}#efuse>`__]。
-
-  3. 二级引导加载程序首先检查 eFuse 中是否已经存在有效密钥（例如用 espefuse 工具烧写的密钥），如果存在，则会跳过密钥生成，并将该密钥用于 flash 加密过程。否则，二级引导加载程序使用 RNG（随机数发生器）模块生成一个 256 位或 512 位的密钥，具体位数取决于 :menuitem:`生成的 XTS-AES 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`，然后将其分别写入一个或两个 `BLOCK_KEYN` eFuse 中。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。由于上述一个或两个 ``BLOCK_KEYN`` eFuse 已设置了读保护和写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。
-
-  4. flash 加密块将加密 flash 的内容（二级引导加载程序、应用程序、以及标有”加密”标志的分区）。就地加密可能会耗些时间（对于大分区最多需要一分钟）。
+  4. flash 加密块将加密 flash 的内容（二级引导加载程序、应用程序、以及标有“加密”标志的分区）。就地加密可能会耗些时间（对于大分区最多需要一分钟）。
 
   5. 二级引导加载程序将在 ``{IDF_TARGET_CRYPT_CNT}`` (0b001) 中设置第一个可用位来对已加密的 flash 内容进行标记。设置奇数位。
 
@@ -306,54 +217,27 @@ flash 的加密过程
       - ``HARD_DIS_JTAG``
       - ``DIS_LEGACY_SPI_BOOT``
 
-  7. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位以及 ``DIS_DOWNLOAD_MANUAL_ENCRYPT``。它还写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
+  7. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位。它还写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
 
   8. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密的内容加载到 IRAM 中。
-
-.. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK and SOC_KEY_MANAGER_SUPPORTED
-
-  1. 第一次开机复位时，flash 中的所有数据都是未加密的（明文）。一级 (ROM) 引导加载程序加载二级引导加载程序。
-
-  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参阅 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_CN_URL}>`_。
-
-  3. 第二阶段引导加载程序会先判断是否已存在可用的密钥，从而决定是否跳过密钥生成步骤：
-
-    - 若使用基于 eFuse 的密钥启用 flash 加密，则检查 eFuse 中是否已存在有效密钥（例如通过 espefuse 工具烧录的密钥）。
-    - 若使用基于密钥管理器的密钥启用 flash 加密，则检查 flash 存储器的地址 0x0 和 0x1000 处是否存在有效的密钥恢复信息。
-
-    检查通过，则跳过密钥生成过程，直接使用现有密钥进行 flash 加密。
-
-  4. 如果使用基于 eFuse 的密钥，二级引导加载程序将使用 RNG（随机数发生器）模块生成一个 256 位密钥，然后将其写入 ``BLOCK_KEYN`` eFuse 块。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。该 ``BLOCK_KEYN`` eFuse 已设置了读写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。如果使用基于密钥管理器的密钥，二级引导加载程序则将密钥恢复信息写入 flash 内存地址 0x0，随后烧录 ``KM_XTS_KEY_LENGTH_256`` 和 ``FORCE_USE_KEY_MANAGER_KEY`` eFuse 字段。flash 加密操作全部在硬件中完成，因此无法通过软件访问密钥。
-
-  5. flash 加密块会加密 flash 中的内容，包括二级引导加载程序、应用程序、以及带有 ``encrypted`` 标志的分区。就地加密需要一定时间，对于大分区来说最多需要一分钟。
-
-  6. 二级引导加载程序将 ``{IDF_TARGET_CRYPT_CNT}`` (0b001) 中的第一个可用位设置为 1，以标记 flash 内容为加密状态，此时位数为奇数。
-
-  7. 对于 :ref:`flash-enc-development-mode`，二级引导加载程序允许 UART 引导加载程序重新烧录加密后的二进制文件。同时，``{IDF_TARGET_CRYPT_CNT}`` eFuse 位不受写入保护。此外，二级引导加载程序默认置位 ``DIS_DOWNLOAD_ICACHE``、 ``DIS_PAD_JTAG``、 ``DIS_USB_JTAG`` 和 ``DIS_LEGACY_SPI_BOOT``。
-
-  8. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位以及 ``DIS_DOWNLOAD_MANUAL_ENCRYPT``，同时写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
-
-  9. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密后的内容加载到 IRAM 中。
 
 .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
   1. 第一次开机复位时，flash 中的所有数据都是未加密的（明文）。一级 (ROM) 引导加载程序加载二级引导加载程序。
 
-  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参阅 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_CN_URL}>`_。
+  2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参考 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_CN_URL}>`_。
 
-  3. 二级引导加载程序会先判断 eFuse 中是否已经存在有效密钥（例如用 espefuse 工具烧录的密钥），如果存在，则会跳过密钥生成，直接使用现有密钥进行 flash 加密。
+  3. 二级引导加载程序使用 RNG（随机数发生器）模块生成 256 位密钥，然后将其写入 `BLOCK_KEYN` eFuse。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。由于 ``BLOCK_KEYN`` eFuse 已设置了读保护和写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。如果 eFuse 中已经存在有效密钥（例如用 espefuse 工具烧写的密钥），则会跳过密钥生成，并将该密钥用于 flash 加密过程。
 
-  4. 如果 eFuse 中不存在可用密钥，则二级引导加载程序使用 RNG（随机数发生器）模块生成 256 位密钥，然后将其写入 ``BLOCK_KEYN`` eFuse。软件也为存储密钥的块更新了 ``KEY_PURPOSE_N``。``BLOCK_KEYN`` eFuse 已设置了读写保护位，因此无法通过软件访问密钥。``KEY_PURPOSE_N`` 字段也受写保护。flash 加密操作全部在硬件中完成，因此无法通过软件访问密钥。
+  4. flash 加密块将加密 flash 的内容（二级引导加载程序、应用程序、以及标有“加密”标志的分区）。就地加密可能会耗些时间（对于大分区最多需要一分钟）。
 
-  5. flash 加密块会加密 flash 中的内容，包括二级引导加载程序、应用程序、以及带有 ``encrypted`` 标志的分区。就地加密需要一定时间，对于大分区来说最多需要一分钟。
+  5. 二级引导加载程序将在 ``{IDF_TARGET_CRYPT_CNT}`` (0b001) 中设置第一个可用位来对已加密的 flash 内容进行标记。设置奇数位。
 
-  6. 二级引导加载程序将 ``{IDF_TARGET_CRYPT_CNT}`` (0b001) 中的第一个可用位设置为 1，以标记 flash 内容为加密状态，此时位数为奇数。
+  6. 对于 :ref:`flash-enc-development-mode`，二级引导加载程序允许 UART 引导加载程序重新烧录加密后的二进制文件。同时，``{IDF_TARGET_CRYPT_CNT}`` eFuse 位不受写入保护。此外，默认情况下，二级引导加载程序设置 ``DIS_DOWNLOAD_ICACHE``、 ``DIS_PAD_JTAG``、 ``DIS_USB_JTAG`` 和 ``DIS_LEGACY_SPI_BOOT`` eFuse 位。
 
-  7. 对于 :ref:`flash-enc-development-mode`，二级引导加载程序允许 UART 引导加载程序重新烧录加密后的二进制文件。同时，``{IDF_TARGET_CRYPT_CNT}`` eFuse 位不受写入保护。此外，二级引导加载程序默认置位 ``DIS_DOWNLOAD_ICACHE``、 ``DIS_PAD_JTAG``、 ``DIS_USB_JTAG`` 和 ``DIS_LEGACY_SPI_BOOT``。
+  7. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位以及 ``DIS_DOWNLOAD_MANUAL_ENCRYPT``。它还写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
 
-  8. 对于 :ref:`flash-enc-release-mode`，二级引导加载程序设置所有在开发模式下设置的 eFuse 位以及 ``DIS_DOWNLOAD_MANUAL_ENCRYPT``，同时写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 位。要修改此行为，请参阅 :ref:`uart-bootloader-encryption`。
-
-  9. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密后的内容加载到 IRAM 中。
+  8. 重新启动设备以开始执行加密镜像。二级引导加载程序调用 flash 解密块来解密 flash 内容，然后将解密的内容加载到 IRAM 中。
 
 .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
@@ -361,7 +245,7 @@ flash 的加密过程
 
   2. 二级引导加载程序将读取 ``{IDF_TARGET_CRYPT_CNT}`` eFuse 值 (``0b000``)。因为该值为 0（偶数位），二级引导加载程序将配置并启用 flash 加密块。关于 flash 加密块的更多信息，请参考 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_CN_URL}>`_。
 
-  3. 二级引导加载程序使用 RNG（随机数发生器）模块生成 256 位或 128 位密钥（具体位数取决于 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`），然后将其写入 `BLOCK_KEY0` eFuse。同时，根据所选选项，软件对 ``XTS_KEY_LENGTH_256`` 进行更新。由于 ``BLOCK_KEY0`` eFuse 已设置写保护和读保护位，故无法通过软件访问密钥。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。若使用 128 位 flash 加密密钥，则整个 eFuse 密钥块都受写保护，但只有低 128 位受读保护，高 128 位是可读的，以满足安全启动的需要。如果 flash 加密密钥是 256 位，那么 ``XTS_KEY_LENGTH_256`` 为 1，否则为 0。为防止意外将 eFuse 从 0 改为 1，为 RELEASE 模式设置了一个写保护位。如果 eFuse 中已经存在有效密钥（例如用 espefuse 工具烧写的密钥），则跳过密钥生成，并将该密钥用于 flash 加密过程。
+  3. 二级引导加载程序使用 RNG（随机数发生器）模块生成 256 位或 128 位密钥（具体位数取决于 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`），然后将其写入 `BLOCK_KEY0` eFuse。同时，根据所选选项，软件对 ``XTS_KEY_LENGTH_256`` 进行更新。由于 ``BLOCK_KEY0`` eFuse 已设置写保护和读保护位，故无法通过软件访问密钥。flash 加密操作完全在硬件中完成，无法通过软件访问密钥。若使用 128 位 flash 加密密钥，则整个 eFuse 密钥块都受写保护，但只有低 128 位受读保护，高 128 位是可读的，以满足安全启动的需要。如果 flash 加密密钥是 256 位，那么 ``XTS_KEY_LENGTH_256`` 为 1，否则为 0。为防止意外将 eFuse 从 0 改为 1，为 RELEASE 模式设置了一个写保护位。如果 eFuse 中已经存在有效密钥（例如用 espefuse 工具烧写的密钥），则跳过密钥生成，并将该密钥用于 flash 加密过程。
 
   4. flash 加密块将加密 flash 的内容（二级引导加载程序、应用程序、以及标有“加密”标志的分区）。就地加密可能会耗些时间（对于大分区最多需要一分钟）。
 
@@ -412,16 +296,15 @@ flash 加密设置
 
   .. list::
 
-    - :menuitem:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
-    - :menuitem:`选择加密模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （默认是 **开发模式**）。
-    :esp32: - :menuitem:`选择 UART ROM 下载模式 <CONFIG_SECURE_UART_ROM_DL_MODE>` （默认是 **启用**）。请注意，对于 ESP32 芯片，该选项仅在 :menuitem:`CONFIG_ESP32_REV_MIN` 级别设置为 3 时 (ESP32 V3) 可用。
-    :not esp32: - :menuitem:`选择 UART ROM 下载模式 <CONFIG_SECURE_UART_ROM_DL_MODE>` （默认是 **启用**）。
-    :SOC_FLASH_ENCRYPTION_XTS_AES_OPTIONS: - 设置 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`。
-    :SOC_KEY_MANAGER_SUPPORTED: - :menuitem:`选择 flash 加密密钥的来源 <CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE>`。
-    - :menuitem:`选择适当详细程度的引导加载程序日志 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
+    - :ref:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
+    - :ref:`选择加密模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （默认是 **开发模式**）。
+    :esp32: - :ref:`选择 UART ROM 下载模式 <CONFIG_SECURE_UART_ROM_DL_MODE>` （默认是 **启用**）。请注意，对于 ESP32 芯片，该选项仅在 :ref:`CONFIG_ESP32_REV_MIN` 级别设置为 3 时 (ESP32 V3) 可用。
+    :not esp32: - :ref:`选择 UART ROM 下载模式 <CONFIG_SECURE_UART_ROM_DL_MODE>` （默认是 **启用**）。
+    :SOC_FLASH_ENCRYPTION_XTS_AES_OPTIONS: - 设置 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>`。
+    - :ref:`选择适当详细程度的引导加载程序日志 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
     - 保存配置并退出。
 
-  启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
+启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
 
 3. 运行以下命令来构建和烧录完整的镜像。
 
@@ -433,29 +316,15 @@ flash 加密设置
 
        这个命令不包括任何应该写入 flash 分区的用户文件。请在运行此命令前手动写入这些文件，否则在写入前应单独对这些文件进行加密。
 
-  该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为 ``encrypted`` 分区，然后复位。就地加密可能需要时间，对于大分区最多需要一分钟。之后，应用程序在运行时解密并执行。
+该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为“加密”的分区，然后复位。就地加密可能需要时间，对于大分区最多需要一分钟。之后，应用程序在运行时解密并执行命令。
 
-.. only:: SOC_KEY_MANAGER_FE_KEY_DEPLOY
-
-  下面是使用基于密钥管理器的密钥启用 flash 加密后，{IDF_TARGET_NAME} 首次启动时的样例输出：
-
-  .. include:: {IDF_TARGET_PATH_NAME}_log.inc
-    :start-after: first_boot_enc_km
-    :end-before: ------
-
-  下面是 {IDF_TARGET_NAME} 后续启动时的样例输出，说明 flash 加密已启用（ESP-ROM 日志会提示正在使用基于密钥管理器的密钥）：
-
-  .. include:: {IDF_TARGET_PATH_NAME}_log.inc
-    :start-after: already_en_enc_km
-    :end-before: ------
-
-下面是使用基于 eFuse 的密钥启用 flash 加密后，{IDF_TARGET_NAME} 首次启动时的样例输出：
+下面是启用 flash 加密后 {IDF_TARGET_NAME} 首次启动时的样例输出：
 
 .. include:: {IDF_TARGET_PATH_NAME}_log.inc
    :start-after: first_boot_enc
    :end-before: ------
 
-下面是 {IDF_TARGET_NAME} 后续启动时的样例输出，说明 flash 加密已启用
+启用 flash 加密后，在下次启动时输出将显示已启用 flash 加密，样例输出如下：
 
 .. include:: {IDF_TARGET_PATH_NAME}_log.inc
    :start-after: already_en_enc
@@ -469,7 +338,7 @@ flash 加密设置
 使用主机生成的密钥
 """"""""""""""""""""""""
 
-可在主机中预生成 flash 加密密钥，并将其烧录到设备中。这样，无需明文 flash 更新便可以在主机上预加密数据并将其烧录。该功能可在 :ref:`flash-enc-development-mode` 和 :ref:`flash-enc-release-mode` 两模式下使用。如果没有预生成的密钥，数据将以明文形式烧录，然后 {IDF_TARGET_NAME} 对数据进行就地加密。
+可在主机中预生成 flash 加密密钥，并将其烧录到 eFuse 密钥块中。这样，无需明文 flash 更新便可以在主机上预加密数据并将其烧录。该功能可在 :ref:`flash-enc-development-mode` 和 :ref:`flash-enc-release-mode` 两模式下使用。如果没有预生成的密钥，数据将以明文形式烧录，然后 {IDF_TARGET_NAME} 对数据进行就地加密。
 
 .. note::
 
@@ -481,7 +350,7 @@ flash 加密设置
 
        请注意， {IDF_TARGET_NAME} 只有一个 eFuse 密钥块，同时用于安全启动和 flash 加密密钥。因此，如果使用了安全启动密钥，则主机生成的 flash 加密密钥必须与安全启动密钥一起写入，否则将无法使用安全启动。
 
-如需使用主机生成的密钥并将其烧录至设备的 eFuse 中，请完成以下步骤：
+使用主机生成的密钥需完成以下步骤：
 
 1. 确保你的 {IDF_TARGET_NAME} 设备有 :ref:`flash-encryption-efuse` 中所示的 flash 加密 eFuse 的默认设置。
 
@@ -497,13 +366,13 @@ flash 加密设置
 
   .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
-    如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-128（256 位密钥）：
+    如果 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-128（256 位密钥）：
 
       .. code-block:: bash
 
           idf.py secure-generate-flash-encryption-key my_flash_encryption_key.bin
 
-    如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-256（512 位密钥）：
+    如果 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-256（512 位密钥）：
 
       .. code-block:: bash
 
@@ -518,13 +387,13 @@ flash 加密设置
 
 .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-      如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-128（256 位密钥）:
+      如果 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-128（256 位密钥）:
 
      .. code-block:: bash
 
           idf.py secure-generate-flash-encryption-key my_flash_encryption_key.bin
 
-      或者如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是由 128 位导出的 AES-128 密钥（SHA256（128 位））:
+      或者如果 :ref:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是由 128 位导出的 AES-128 密钥（SHA256（128 位））:
 
       .. code-block:: bash
 
@@ -600,12 +469,12 @@ flash 加密设置
 
 4. 在 :ref:`项目配置菜单 <project-configuration-menu>` 中进行如下设置：
 
-   - :menuitem:`启动时启用 flash 加密功能 <CONFIG_SECURE_FLASH_ENC_ENABLED>`
-   - :menuitem:`选择加密模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （默认为 **开发模式**）
-   - :menuitem:`选择适当详细程度的引导加载程序日志 <CONFIG_BOOTLOADER_LOG_LEVEL>`
-   - 保存配置并退出
+    - :ref:`启动时启用 flash 加密功能 <CONFIG_SECURE_FLASH_ENC_ENABLED>`
+    - :ref:`选择加密模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （默认为 **开发模式**）
+    - :ref:`选择适当详细程度的引导加载程序日志 <CONFIG_BOOTLOADER_LOG_LEVEL>`
+    - 保存配置并退出
 
-  启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
+启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
 
 5. 运行以下命令来构建并烧录完整的镜像：
 
@@ -617,73 +486,7 @@ flash 加密设置
 
       这个命令不包括任何应该被写入 flash 上的分区的用户文件。请在运行此命令前手动写入这些文件，否则在写入前应单独对这些文件进行加密。
 
-  该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为 ``encrypted`` 的分区，然后复位。就地加密可能需要时间，对于大的分区来说可能耗时一分钟。之后，应用程序在运行时被解密并执行。
-
-.. only:: SOC_KEY_MANAGER_SUPPORTED
-
-  如需使用主机生成的密钥并将其部署至设备的密钥管理器，请完成以下步骤：
-
-  1. 确保你的 {IDF_TARGET_NAME} 设备有 :ref:`flash-encryption-efuse` 中所示的 flash 加密 eFuse 的默认设置。
-
-    请参考如何检查 :ref:`flash-encryption-status`。
-
-  2. 通过运行以下命令生成一个随机密钥：
-
-    .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
-
-        如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-128（256 位密钥）：
-
-        .. code-block:: bash
-
-            idf.py secure-generate-flash-encryption-key my_flash_encryption_key.bin
-
-        如果 :menuitem:`生成的 XTS-AES 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是 AES-256（512 位密钥）：
-
-        .. code-block:: bash
-
-            idf.py secure-generate-flash-encryption-key --keylen 512 my_flash_encryption_key.bin
-
-
-    .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
-
-        .. code-block:: bash
-
-            idf.py secure-generate-flash-encryption-key my_flash_encryption_key.bin
-
-
-  3. **在首次加密启动前**，使用密钥管理器的 AES 部署模式，通过初始化密钥和辅助密钥将密钥部署到设备的密钥管理器中。
-
-  4. 部署过程将为已部署的密钥生成密钥恢复信息。使用以下命令将该信息存储到 flash 地址 0x0 处：
-
-    .. code-block:: bash
-
-        esptool --port PORT --baud BAUD write-flash 0x0 key_recovery_info.bin
-
-    如果未部署密钥就在启用 flash 加密后启动设备，{IDF_TARGET_NAME} 将生成并部署一个软件无法访问或修改的随机密钥。
-
-    .. note::
-
-        上述命令不包括任何应该被写入 flash 分区的用户文件。请在运行此命令前手动写入这些文件，或者在写入前单独对这些文件进行加密。
-
-  5. 在 :ref:`project-configuration-menu` 中进行如下设置：
-
-     - :menuitem:`启动时启用 flash 加密功能 <CONFIG_SECURE_FLASH_ENC_ENABLED>`
-     - :menuitem:`选择加密模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （默认为 **开发模式**）
-     - :menuitem:`选择 flash 加密密钥来源为密钥管理器 <CONFIG_SECURE_FLASH_ENCRYPTION_KEY_SOURCE>`
-     - :menuitem:`选择适当详细程度的引导加载程序日志 <CONFIG_BOOTLOADER_LOG_LEVEL>`
-     - 保存配置并退出。
-
-    启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。详情请参阅 :ref:`bootloader-size`。
-
-  6. 运行以下命令来构建并烧录完整的镜像：
-
-    .. code-block:: bash
-
-        idf.py flash monitor
-
-    .. note::
-
-        上述命令不包括任何应该被写入 flash 分区的用户文件。请在运行此命令前手动写入这些文件，或者在写入前单独对这些文件进行加密。
+  该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为 ``加密`` 的分区，然后复位。就地加密可能需要时间，对于大的分区来说可能耗时一分钟。之后，应用程序在运行时被解密并执行。
 
 如果使用开发模式，那么更新和重新烧录二进制文件最简单的方法是 :ref:`encrypt-partitions`。
 
@@ -718,9 +521,7 @@ flash 加密设置
 
 在量产模式下，UART 引导加载程序无法执行 flash 加密操作，**只能** 使用 OTA 方案下载新的明文镜像，该方案将在写入 flash 前加密明文镜像。
 
-若此前已在开发模式下启用 flash 加密，现需切换至量产模式，请参阅 :ref:`flash-enc-transition-dev-to-release`。
-
-首次启用并选择量产模式时，请按以下步骤操作：
+使用该模式需要执行以下步骤：
 
 1. 确保你的 {IDF_TARGET_NAME} 设备有 :ref:`flash-encryption-efuse` 中所示的 flash 加密 eFuse 的默认设置。
 
@@ -730,16 +531,16 @@ flash 加密设置
 
   .. list::
 
-    - :menuitem:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
-    :esp32: - :menuitem:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>`。（注意一旦选择了量产模式，``DISABLE_DL_ENCRYPT`` 和 ``DISABLE_DL_DECRYPT`` eFuse 位将被编程为在 ROM 下载模式下禁用 flash 加密硬件）
-    :esp32: - :menuitem:`选择 UART ROM 下载模式（推荐永久性禁用）<CONFIG_SECURE_UART_ROM_DL_MODE>` （注意该选项仅在 :menuitem:`CONFIG_ESP32_REV_MIN` 级别设置为 3 时 (ESP32 V3) 可用。）默认选项是保持启用 UART ROM 下载模式，然而建议永久禁用该模式，以减少攻击者可用的选项。
-    :not esp32: - :menuitem:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>`。（注意一旦选择了量产模式，``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse 位将被编程为在 ROM 下载模式下禁用 flash 加密硬件）
-    :not esp32: - :menuitem:`选择 UART ROM 下载（推荐永久性的切换到安全模式）<CONFIG_SECURE_UART_ROM_DL_MODE>`。这是默认且推荐使用的选项。如果不需要该模式，也可以改变此配置设置永久地禁用 UART ROM 下载模式。
-    :SOC_FLASH_ENCRYPTION_XTS_AES_SUPPORT_PSEUDO_ROUND: - :menuitem:`启用 XTS-AES 伪轮次功能 <CONFIG_SECURE_FLASH_PSEUDO_ROUND_FUNC>`。该选项已默认启用，且配置为最低强度等级，以降低对 flash 加密/解密操作的性能影响。如需了解每个安全等级对性能影响的更多信息，请参考 :ref:`xts-aes-pseudo-round-func`。
-    - :menuitem:`选择适当详细程度的引导加载程序日志级别 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
+    - :ref:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
+    :esp32: - :ref:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>`。（注意一旦选择了量产模式，``DISABLE_DL_ENCRYPT`` 和 ``DISABLE_DL_DECRYPT`` eFuse 位将被编程为在 ROM 下载模式下禁用 flash 加密硬件）
+    :esp32: - :ref:`选择 UART ROM 下载模式（推荐永久性禁用）<CONFIG_SECURE_UART_ROM_DL_MODE>` （注意该选项仅在 :ref:`CONFIG_ESP32_REV_MIN` 级别设置为 3 时 (ESP32 V3) 可用。）默认选项是保持启用 UART ROM 下载模式，然而建议永久禁用该模式，以减少攻击者可用的选项。
+    :not esp32: - :ref:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>`。（注意一旦选择了量产模式，``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse 位将被编程为在 ROM 下载模式下禁用 flash 加密硬件）
+    :not esp32: - :ref:`选择 UART ROM 下载（推荐永久性的切换到安全模式）<CONFIG_SECURE_UART_ROM_DL_MODE>`。这是默认且推荐使用的选项。如果不需要该模式，也可以改变此配置设置永久地禁用 UART ROM 下载模式。
+    :SOC_FLASH_ENCRYPTION_XTS_AES_SUPPORT_PSEUDO_ROUND: - :ref:`启用 XTS-AES 伪轮次功能 <CONFIG_SECURE_FLASH_PSEUDO_ROUND_FUNC>`。该选项已默认启用，且配置为最低强度等级，以降低对 flash 加密/解密操作的性能影响。如需了解每个安全等级对性能影响的更多信息，请参考 :ref:`xts-aes-pseudo-round-func`。
+    - :ref:`选择适当详细程度的引导加载程序日志级别 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
     - 保存配置并退出。
 
-    启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
+启用 flash 加密将增大引导加载程序，因而可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
 
 3. 运行以下命令来构建并烧录完整的镜像：
 
@@ -752,7 +553,7 @@ flash 加密设置
 
       这个命令不包括任何应该被写入 flash 分区的用户文件。请在运行此命令前手动写入这些文件，否则在写入前应单独对这些文件进行加密。
 
-  该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为 ``encrypted`` 的分区，然后复位。就地加密可能需要时间，对于大的分区来说可能耗时一分钟。之后，应用程序在运行时被解密并执行。
+  该命令将向 flash 写入未加密的镜像：二级引导加载程序、分区表和应用程序。烧录完成后，{IDF_TARGET_NAME} 将复位。在下一次启动时，二级引导加载程序会加密：二级引导加载程序、应用程序分区和标记为 ``加密`` 的分区，然后复位。就地加密可能需要时间，对于大的分区来说可能耗时一分钟。之后，应用程序在运行时被解密并执行。
 
 一旦在量产模式下启用 flash 加密，引导加载程序将写保护 ``{IDF_TARGET_CRYPT_CNT}`` eFuse。
 
@@ -760,25 +561,7 @@ flash 加密设置
 
 .. note::
 
-    如果用户已经预先生成了 flash 加密密钥并存储了一个副本，并且 UART 下载模式没有通过 :menuitem:`CONFIG_SECURE_UART_ROM_DL_MODE` {IDF_TARGET_ESP32_V3_ONLY} 永久禁用，那么可以通过使用 ``{IDF_TARGET_ENCRYPT_COMMAND}`` 预加密文件，从而在在本地更新 flash，然后烧录密文。请参考 :ref:`manual-encryption`。
-
-.. _flash-enc-transition-dev-to-release:
-
-从开发模式过渡到量产模式
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-若 flash 加密是在 :ref:`flash-enc-development-mode` 下启用的，设备会一直处于开发模式，直到烧录对应的量产模式 eFuse。在 menuconfig 中选择 **量产模式** （:menuitem:`CONFIG_SECURE_FLASH_ENCRYPTION_MODE`）仅更新构建配置，并 **不会** 烧录 eFuse。
-要将设备永久切换到量产模式，必须在应用程序代码中显式调用一次 :cpp:func:`esp_flash_encryption_set_release_mode` 来烧录相关 eFuse。
-
-.. code-block:: c
-
-    #include "esp_flash_encrypt.h"
-
-    if (!esp_flash_encryption_cfg_verify_release_mode()) {
-        esp_flash_encryption_set_release_mode();
-    }
-
-也可参考 :example:`security/security_features_app` 示例，其已包含上述逻辑。
+    如果用户已经预先生成了 flash 加密密钥并存储了一个副本，并且 UART 下载模式没有通过 :ref:`CONFIG_SECURE_UART_ROM_DL_MODE` {IDF_TARGET_ESP32_V3_ONLY} 永久禁用，那么可以通过使用 ``{IDF_TARGET_ENCRYPT_COMMAND}`` 预加密文件，从而在在本地更新 flash，然后烧录密文。请参考 :ref:`manual-encryption`。
 
 .. _flash-encrypt-best-practices:
 
@@ -790,8 +573,8 @@ flash 加密设置
 .. list::
 
    - 不要在多个设备之间重复使用同一个 flash 加密密钥，这样攻击者就无法从一台设备上复制加密数据后再将其转移到第二台设备上。
-   :esp32: - 在使用 ESP32 V3 时，如果生产设备不需要 UART ROM 下载模式，那么则该禁用该模式以增加设备安全性。这可以通过在应用程序启动时调用 :cpp:func:`esp_efuse_disable_rom_download_mode` 来实现。或者，可将项目 :menuitem:`CONFIG_ESP32_REV_MIN` 级别配置为 3（仅针对 ESP32 V3），然后选择 :menuitem:`CONFIG_SECURE_UART_ROM_DL_MODE` 为“永久性的禁用 ROM 下载模式（推荐）”。在早期的 ESP32 版本上无法禁用 ROM 下载模式。
-   :not esp32: - 如果不需要 UART ROM 下载模式，则应完全禁用该模式，或者永久设置为“安全下载模式”。安全下载模式永久性地将可用的命令限制在更新 SPI 配置、更改波特率、基本的 flash 写入和使用 `get-security-info` 命令返回当前启用的安全功能摘要。默认在量产模式下第一次启动时设置为安全下载模式。要完全禁用下载模式，请选择 :menuitem:`CONFIG_SECURE_UART_ROM_DL_MODE` 为“永久禁用 ROM 下载模式（推荐）”或在运行时调用 :cpp:func:`esp_efuse_disable_rom_download_mode`。
+   :esp32: - 在使用 ESP32 V3 时，如果生产设备不需要 UART ROM 下载模式，那么则该禁用该模式以增加设备安全性。这可以通过在应用程序启动时调用 :cpp:func:`esp_efuse_disable_rom_download_mode` 来实现。或者，可将项目 :ref:`CONFIG_ESP32_REV_MIN` 级别配置为 3（仅针对 ESP32 V3），然后选择 :ref:`CONFIG_SECURE_UART_ROM_DL_MODE` 为“永久性的禁用 ROM 下载模式（推荐）”。在早期的 ESP32 版本上无法禁用 ROM 下载模式。
+   :not esp32: - 如果不需要 UART ROM 下载模式，则应完全禁用该模式，或者永久设置为“安全下载模式”。安全下载模式永久性地将可用的命令限制在更新 SPI 配置、更改波特率、基本的 flash 写入和使用 `get-security-info` 命令返回当前启用的安全功能摘要。默认在量产模式下第一次启动时设置为安全下载模式。要完全禁用下载模式，请选择 :ref:`CONFIG_SECURE_UART_ROM_DL_MODE` 为“永久禁用 ROM 下载模式（推荐）”或在运行时调用 :cpp:func:`esp_efuse_disable_rom_download_mode`。
    - 启用 :doc:`安全启动<secure-boot-v2>` 作为额外的保护层，防止攻击者在启动前有选择地破坏 flash 中某部分。
 
 外部启用 flash 加密
@@ -806,55 +589,55 @@ flash 加密设置
 
 1. 如果通过 **明文二级引导加载程序镜像** 重新烧录了引导加载程序分区，则 ROM 加载器将无法加载二级引导加载程序，并会显示以下错误类型：
 
-  .. only:: esp32
+.. only:: esp32
 
-    .. code-block:: bash
+  .. code-block:: bash
 
-        rst:0x3 (SW_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        flash read err, 1000
-        ets_main.c 371
-        ets Jun  8 2016 00:22:57
+      rst:0x3 (SW_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      flash read err, 1000
+      ets_main.c 371
+      ets Jun  8 2016 00:22:57
 
-        rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        flash read err, 1000
-        ets_main.c 371
-        ets Jun  8 2016 00:22:57
+      rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      flash read err, 1000
+      ets_main.c 371
+      ets Jun  8 2016 00:22:57
 
-        rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        flash read err, 1000
-        ets_main.c 371
-        ets Jun  8 2016 00:22:57
+      rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      flash read err, 1000
+      ets_main.c 371
+      ets Jun  8 2016 00:22:57
 
-        rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        flash read err, 1000
-        ets_main.c 371
-        ets Jun  8 2016 00:22:57
+      rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      flash read err, 1000
+      ets_main.c 371
+      ets Jun  8 2016 00:22:57
 
-        rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        flash read err, 1000
-        ets_main.c 371
-        ets Jun  8 2016 00:22:57
+      rst:0x7 (TG0WDT_SYS_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      flash read err, 1000
+      ets_main.c 371
+      ets Jun  8 2016 00:22:57
 
-  .. only:: not esp32
+.. only:: not esp32
 
-    .. code-block:: bash
+  .. code-block:: bash
 
-        rst:0x3 (SW_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
-        invalid header: 0xb414f76b
+      rst:0x3 (SW_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
+      invalid header: 0xb414f76b
 
-    .. note::
+  .. note::
 
-      不同应用程序中无效头文件的值不同。
+    不同应用程序中无效头文件的值不同。
 
-    .. note::
+.. note::
 
-      如果 flash 内容被擦除或损坏，也会出现这个错误。
+    如果 flash 内容被擦除或损坏，也会出现这个错误。
 
 2. 如果二级引导加载程序已加密，但通过 **明文分区表镜像** 重新烧录了分区表，引导加载程序将无法读取分区表，从而出现以下错误：
 
@@ -917,7 +700,7 @@ flash 加密设置
 {IDF_TARGET_NAME} flash 加密状态
 -----------------------------------------
 
-确保你的 {IDF_TARGET_NAME} 设备有 :ref:`flash-encryption-efuse` 中所示的 flash 加密 eFuse 的默认设置。
+1. 确保你的 {IDF_TARGET_NAME} 设备有 :ref:`flash-encryption-efuse` 中所示的 flash 加密 eFuse 的默认设置。
 
 要检查你的 {IDF_TARGET_NAME} 设备上是否启用了 flash 加密，请执行以下操作之一：
 
@@ -935,7 +718,7 @@ flash 加密设置
 在加密的 flash 中读写数据
 -------------------------------------
 
-{IDF_TARGET_NAME} 应用程序代码可以通过调用函数 :cpp:func:`esp_efuse_is_flash_encryption_enabled` 来检查当前是否启用了 flash 加密。此外，设备可以通过调用函数 :cpp:func:`esp_get_flash_encryption_mode` 来识别 flash 加密模式。
+{IDF_TARGET_NAME} 应用程序代码可以通过调用函数 :cpp:func:`esp_flash_encryption_enabled` 来检查当前是否启用了 flash 加密。此外，设备可以通过调用函数 :cpp:func:`esp_get_flash_encryption_mode` 来识别 flash 加密模式。
 
 一旦启用 flash 加密，使用代码访问 flash 内容时要更加小心。
 
@@ -975,7 +758,7 @@ flash 加密范围
 
 也可以使用函数 :cpp:func:`esp_flash_write_encrypted` 预加密和写入数据。
 
-此外，ESP-IDF 应用程序中存在但不支持以下 ROM 函数：
+此外，esp-idf 应用程序中存在但不支持以下 ROM 函数：
 
 - ``esp_rom_spiflash_write_encrypted`` 预加密并将数据写入 flash
 - ``SPIWrite`` 将未加密的数据写入 flash
@@ -995,7 +778,7 @@ OTA 更新
 
 如果使用函数 :cpp:func:`esp_partition_write`，对加密分区的 OTA 更新将自动以加密形式写入。
 
-在为已加密设备的 OTA 更新构建应用程序镜像之前，启用项目配置菜单中的 :menuitem:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项。
+在为已加密设备的 OTA 更新构建应用程序镜像之前，启用项目配置菜单中的 :ref:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项。
 
 请参考 :doc:`OTA <../api-reference/system/ota>` 获取更多关于 ESP-IDF OTA 更新的信息。
 
@@ -1024,7 +807,7 @@ OTA 更新
 
   对于开发模式下的 flash 加密，可以通过烧录 ``{IDF_TARGET_CRYPT_CNT}`` efuse 来关闭加密。每个芯片仅有 1 次机会，请执行以下步骤：
 
-#. 在 :ref:`项目配置菜单 <project-configuration-menu>` 中，禁用 :menuitem:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项，然后保存并退出。
+#. 在 :ref:`项目配置菜单 <project-configuration-menu>` 中，禁用 :ref:`启动时使能 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>` 选项，然后保存并退出。
 #. 再次打开项目配置菜单，再次检查你是否已经禁用了该选项，如果这个选项仍被启用，引导加载程序在启动时将立即重新启用加密功能。
 #. 在禁用 flash 加密后，通过运行 ``idf.py flash`` 来构建和烧录新的引导加载程序和应用程序。
 #. 使用 ``idf.py`` 来关闭 ``{IDF_TARGET_CRYPT_CNT}``，请运行以下命令：
@@ -1045,13 +828,11 @@ flash 加密的要点
 
   :esp32: - flash 加密算法采用的是 AES-256，其中密钥随着 flash 的每个 32 字节块的偏移地址“调整”。这意味着，每个 32 字节块（2 个连续的 16 字节 AES 块）使用从 flash 加密密钥中产生的一个特殊密钥进行加密。
 
-  :SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_KEY_MANAGER_SUPPORTED: - 使用 XTS-AES-128 或 XTS-AES-256 加密 flash。flash 加密密钥分别为 256 位和 512 位，存储于芯片内部的一个或两个 ``BLOCK_KEYN`` eFuse 块中。默认情况下，这些密钥受硬件保护，软件无法访问。
+  :esp32s2 or esp32s3: - 使用 XTS-AES-128 或 XTS-AES-256 加密 flash。flash 加密密钥分别为 256 位和 512 位，存储于芯片内部一个或两个 ``BLOCK_KEYN`` eFuse 中，并（默认）受保护，防止软件访问。
 
-  :SOC_FLASH_ENCRYPTION_XTS_AES_256 and SOC_KEY_MANAGER_SUPPORTED: - 使用 XTS-AES-128 或 XTS-AES-256 加密 flash。flash 加密密钥分别为 256 位和 512 位。若 flash 加密使用基于 eFuse 的密钥启用，则密钥存储于芯片内部的一个或两个 ``BLOCK_KEYN`` eFuse 块中；若 flash 加密使用基于密钥管理器的密钥启用，则 flash 加密密钥存储于密钥管理器中。默认情况下，这些密钥受硬件保护，软件无法访问。
+  :esp32c3: - 使用 XTS-AES-128 加密 flash。 flash 加密密钥为 256 位，存储于芯片内部的 ``BLOCK_KEYN`` eFuse 中，并（默认）受保护，防止软件访问。
 
-  :SOC_FLASH_ENCRYPTION_XTS_AES_128 and not SOC_FLASH_ENCRYPTION_XTS_AES_256 and not SOC_FLASH_ENCRYPTION_XTS_AES_128_DERIVED: - 使用 XTS-AES-128 加密 flash。flash 加密密钥为 256 位，存储于芯片内部的 ``BLOCK_KEYN`` eFuse 块中。默认情况下，该密钥受硬件保护，软件无法访问。
-
-  :SOC_FLASH_ENCRYPTION_XTS_AES_128_DERIVED: - 使用 XTS-AES-128 加密 flash。 flash 加密密钥为 128 位或 256 位，存储于芯片内部的 ``BLOCK_KEY0`` eFuse 块中。默认情况下，该密钥受硬件保护，软件无法访问。
+  :esp32c2: - 使用 XTS-AES-128 加密 flash。 flash 加密密钥为 128 位或 256 位，存储于芯片内部的 ``BLOCK_KEY0`` eFuse 中，并（默认）受保护，防止软件访问。
 
   - 通过 {IDF_TARGET_NAME} 的 flash 缓存映射功能，flash 可支持透明访问——任何映射到地址空间的 flash 区域在读取时都将被透明地解密。
 
@@ -1061,11 +842,11 @@ flash 加密的要点
 
   - 如果已启用安全启动，重新烧录加密设备的引导加载程序则需要“可重新烧录”的安全启动摘要（可参考 :ref:`flash-encryption-and-secure-boot`）。
 
-启用 flash 加密将增大引导加载程序，因此可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
+  启用 flash 加密将增大引导加载程序，因此可能需更新分区表偏移量。请参考 :ref:`引导加载程序大小 <bootloader-size>`。
 
-.. important::
+    .. important::
 
-    在首次启动加密过程中，请勿切断 {IDF_TARGET_NAME} 的电源。如果电源被切断，flash 的内容将受到破坏，并需要重新烧录未加密数据。而这类重新烧录将不计入烧录限制次数。
+        在首次启动加密过程中，请勿切断 {IDF_TARGET_NAME} 的电源。如果电源被切断，flash 的内容将受到破坏，并需要重新烧录未加密数据。而这类重新烧录将不计入烧录限制次数。
 
 
 .. _flash-encryption-limitations:
@@ -1094,15 +875,15 @@ flash 加密与安全启动
 
 .. only:: esp32
 
-    - 只有当选择 :menuitem:`可再次烧录 <CONFIG_SECURE_BOOTLOADER_MODE>` 安全启动模式，且安全启动密钥已预生成并烧录至 {IDF_TARGET_NAME} 时（可参见 :ref:`安全启动 <secure-boot-reflashable>`），:ref:`明文串行 flash 更新 <updating-encrypted-flash-serial>` 才可能实现。在该配置下，``idf.py bootloader`` 将生成简化的引导加载程序和安全启动摘要文件，在偏移量 0x0 处进行烧录。当进行明文串行重新烧录步骤时，需在烧录其他明文数据前重新烧录此文件。
+    - 只有当选择 :ref:`可再次烧录 <CONFIG_SECURE_BOOTLOADER_MODE>` 安全启动模式，且安全启动密钥已预生成并烧录至 {IDF_TARGET_NAME} 时（可参见 :ref:`安全启动 <secure-boot-reflashable>`），:ref:`明文串行 flash 更新 <updating-encrypted-flash-serial>` 才可能实现。在该配置下，``idf.py bootloader`` 将生成简化的引导加载程序和安全启动摘要文件，在偏移量 0x0 处进行烧录。当进行明文串行重新烧录步骤时，需在烧录其他明文数据前重新烧录此文件。
 
-    - 如果未重新烧录引导加载程序，则仍然可以 :ref:`使用预生成的 flash 加密密钥重新烧录 <pregenerated-flash-encryption-key>`。重新烧录引导加载程序时，需在安全启动配置中启用相同的 :menuitem:`可重新烧录 <CONFIG_SECURE_BOOTLOADER_MODE>` 选项。
+    - 如果未重新烧录引导加载程序，则仍然可以 :ref:`使用预生成的 flash 加密密钥重新烧录 <pregenerated-flash-encryption-key>`。重新烧录引导加载程序时，需在安全启动配置中启用相同的 :ref:`可重新烧录 <CONFIG_SECURE_BOOTLOADER_MODE>` 选项。
 
 .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_SUPPORT_PSEUDO_ROUND and SOC_ECDSA_SUPPORT_CURVE_P384
 
-  - 在启用 flash 加密量产模式时，建议在首次启动时就设置 :ref:`xts-aes-pseudo-round-func` 所需的强度。如果你的工作流程需要在首次启动后更新该函数的强度，则应启用 :menuitem:`CONFIG_SECURE_BOOT_SKIP_WRITE_PROTECTION_SCA`，避免在启动过程中对该位进行写保护。
+  - 在启用 flash 加密量产模式时，建议在首次启动时就设置 :ref:`xts-aes-pseudo-round-func` 所需的强度。如果你的工作流程需要在首次启动后更新该函数的强度，则应启用 :ref:`CONFIG_SECURE_BOOT_SKIP_WRITE_PROTECTION_SCA`，避免在启动过程中对该位进行写保护。
 
-.. _flash-encryption-advanced-features:
+.. _flash-encryption-without-secure-boot:
 
 flash 加密的高级功能
 --------------------------------
@@ -1153,11 +934,11 @@ flash 加密的高级功能
   .. list::
 
     - ``DIS_DOWNLOAD_MANUAL_ENCRYPT`` 在 UART 引导加载程序启动模式下运行时，禁止 flash 加密操作。
-    :SOC_EFUSE_DIS_DOWNLOAD_ICACHE and SOC_EFUSE_DIS_DOWNLOAD_DCACHE: - ``DIS_DOWNLOAD_ICACHE`` 和 ``DIS_DOWNLOAD_DCACHE`` 在 UART 引导加载程序模式下运行时禁止整个 MMU flash 缓存。
-    :SOC_EFUSE_DIS_DOWNLOAD_ICACHE and not SOC_EFUSE_DIS_DOWNLOAD_DCACHE: - ``DIS_DOWNLOAD_ICACHE`` 在 UART 引导加载程序模式下运行时禁止整个 MMU flash 缓存。
+    :esp32s2 or esp32s3: - ``DIS_DOWNLOAD_ICACHE`` 和 ``DIS_DOWNLOAD_DCACHE`` 在 UART 引导加载程序模式下运行时禁止整个 MMU flash 缓存。
+    :esp32c3 or esp32c2: - ``DIS_DOWNLOAD_ICACHE`` 在 UART 引导加载程序模式下运行时禁止整个 MMU flash 缓存。
     :esp32s2: - ``HARD_DIS_JTAG`` 禁用 JTAG。
-    :SOC_EFUSE_DIS_PAD_JTAG and SOC_EFUSE_DIS_USB_JTAG: - ``DIS_PAD_JTAG`` 和 ``DIS_USB_JTAG`` 禁用 JTAG。
-    :SOC_EFUSE_HARD_DIS_JTAG and SOC_EFUSE_DIS_USB_JTAG: - ``HARD_DIS_JTAG`` 和 ``DIS_USB_JTAG`` 禁用 JTAG。
+    :esp32c3: - ``DIS_PAD_JTAG`` 和 ``DIS_USB_JTAG`` 禁用 JTAG。
+    :esp32s3: - ``HARD_DIS_JTAG`` 和 ``DIS_USB_JTAG`` 禁用 JTAG。
     - ``DIS_DIRECT_BOOT``（即之前的 ``DIS_LEGACY_SPI_BOOT``）禁用传统的 SPI 启动模式。
     :SOC_EFUSE_DIS_DOWNLOAD_MSPI: - ``DIS_DOWNLOAD_MSPI`` 在下载模式下禁用 MSPI 访问
 
@@ -1222,13 +1003,7 @@ JTAG 调试
 手动加密文件
 ^^^^^^^^^^^^^^^^^^^^
 
-.. only:: SOC_KEY_MANAGER_SUPPORTED
-
-  手动加密或解密文件需要将 flash 加密密钥部署到密钥管理器或在 eFuse 中预烧录（请参阅 :ref:`pregenerated-flash-encryption-key`）并在主机上保留一份副本。如果 flash 加密配置在开发模式下，则不需要保留密钥的副本或遵循以下步骤，可以使用更简单的 :ref:`encrypt-partitions` 步骤。
-
-.. only:: not SOC_KEY_MANAGER_SUPPORTED
-
-  手动加密或解密文件需要在 eFuse 中预烧录 flash 加密密钥（请参阅 :ref:`pregenerated-flash-encryption-key`）并在主机上保留一份副本。如果 flash 加密配置在开发模式下，则不需要保留密钥的副本或遵循以下步骤，可以使用更简单的 :ref:`encrypt-partitions` 步骤。
+手动加密或解密文件需要在 eFuse 中预烧录 flash 加密密钥（请参阅 :ref:`pregenerated-flash-encryption-key`）并在主机上保留一份副本。 如果 flash 加密配置在开发模式下，那么则不需要保留密钥的副本或遵循这些步骤，可以使用更简单的 :ref:`encrypt-partitions` 步骤。
 
 密钥文件应该是单个原始二进制文件（例如：``key.bin``）。
 
@@ -1250,7 +1025,7 @@ JTAG 调试
 
 .. note::
 
-  如果 {IDF_TARGET_NAME} 在启动时无法识别烧录进去的密文文件，请检查密钥是否匹配以及命令行参数是否完全匹配，包括偏移量是否正确。
+    如果 {IDF_TARGET_NAME} 在启动时无法识别烧录进去的密文文件，请检查密钥是否匹配以及命令行参数是否完全匹配，包括偏移量是否正确。
 
   .. only:: esp32
 
@@ -1264,21 +1039,11 @@ JTAG 调试
     片外 RAM
     ------------
 
-    .. only:: SOC_PSRAM_ENCRYPTION_PAGE_CONFIGURABLE
-
-      启用 flash 加密后，任何通过缓存从片外 SPI RAM 读取和写入的数据也可以被加密/解密。在 {IDF_TARGET_NAME} 上，PSRAM 加密可以按 MMU 页面粒度进行控制，允许对单个 PSRAM 页面选择性地加密或不加密。但在默认配置下，启用 flash 加密时所有 PSRAM 页面都会被加密。
-
-    .. only:: not SOC_PSRAM_ENCRYPTION_PAGE_CONFIGURABLE
-
-      启用 flash 加密后，任何通过缓存从片外 SPI RAM 读取和写入的数据也将被加密/解密。如果启用 flash 加密，则片外 SPI RAM 的加密也会自动启用。
-
-    .. only:: SOC_PSRAM_ENCRYPTION_SEPARATE_KEY
-
-      在 {IDF_TARGET_NAME} 上，PSRAM 加密可以使用独立的加密密钥。如果未烧录 PSRAM 加密密钥，则会使用 flash 加密密钥作为 PSRAM 加密密钥。
+    启用 flash 加密后，任何通过缓存从片外 SPI RAM 读取和写入的数据也将被加密/解密。这个实现的方式以及使用的密钥与 flash 加密相同。如果启用 flash 加密，则片外 SPI RAM 的加密也会被启用，无法单独控制此功能。
 
 
 技术细节
---------
+-----------
 
 以下章节将提供 flash 加密操作的相关信息。
 
@@ -1376,7 +1141,7 @@ JTAG 调试
   {IDF_TARGET_NAME} 在 XTS-AES 外设中引入了伪轮次功能，使该外设可以在原始操作轮次之前和之后随机插入伪轮次，并生成伪密钥以执行这些虚拟操作。
   这些操作不会改变原始结果，但通过随机化功率曲线，增加了实施侧信道分析攻击的复杂性。
 
-  可以通过 :menuitem:`CONFIG_SECURE_FLASH_PSEUDO_ROUND_FUNC_STRENGTH` 选择伪轮次功能的强度。提高强度会增强该功能所提供的安全性，但也会降低 XTS-AES 操作的速度。
+  可以通过 :ref:`CONFIG_SECURE_FLASH_PSEUDO_ROUND_FUNC_STRENGTH` 选择伪轮次功能的强度。提高强度会增强该功能所提供的安全性，但也会降低 XTS-AES 操作的速度。
 
   .. list-table:: 不同强度的伪轮次对 XTS-AES 操作性能的影响
       :widths: 10 10
@@ -1392,7 +1157,7 @@ JTAG 调试
       * - 高
         - 18 %
 
-  .. [#] 上述性能数据由 HAL 加密测试应用中的 XTS-AES 测试程序 :component_file:`test_xts_aes.c <esp_hal_security/test_apps/crypto/main/xts_aes/test_xts_aes.c>` 计算得出。
+  .. [#] 上述性能数据由 HAL 加密测试应用中的 XTS-AES 测试程序 :component_file:`test_xts_aes.c <hal/test_apps/crypto/main/xts_aes/test_xts_aes.c>` 计算得出。
 
   可以根据实际用例需求配置伪轮次功能的强度。例如，提高强度以提供更高的安全性，同时减慢 flash 加解密操作的速度。
 

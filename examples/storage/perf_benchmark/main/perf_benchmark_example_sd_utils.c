@@ -60,10 +60,6 @@ void init_sd_config(sdmmc_host_t *out_host, sdspi_device_config_t *out_slot_conf
     ESP_LOGI(TAG, "Using SDMMC peripheral");
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.max_freq_khz = freq_khz;
-    // Set the chunk size for unaligned multi-block read/write operations to N blocks.
-    // This is to improve performance when the buffer is not aligned or the size is not a multiple of the SD card's block size.
-    // I.e. performance uplift for "write/read more/less than..." test cases - e.g. an equivalent situation to appending to a file.
-    host.unaligned_multi_block_rw_max_chunk_size = CONFIG_EXAMPLE_SD_UNALIGNED_MULTI_BLOCK_RW_MAX_CHUNK_SIZE;
 
     // This initializes the slot without card detect (CD) and write protect (WP) signals.
     // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
@@ -105,10 +101,6 @@ void init_sd_config(sdmmc_host_t *out_host, sdspi_device_config_t *out_slot_conf
     ESP_LOGI(TAG, "Using SPI peripheral");
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.max_freq_khz = freq_khz;
-    // Set the chunk size for unaligned multi-block read/write operations to N blocks.
-    // This is to improve performance when the buffer is not aligned or the size is not a multiple of the SD card's block size.
-    // I.e. performance uplift for "write/read more/less than..." test cases - e.g. an equivalent situation to appending to a file.
-    host.unaligned_multi_block_rw_max_chunk_size = CONFIG_EXAMPLE_SD_UNALIGNED_MULTI_BLOCK_RW_MAX_CHUNK_SIZE;
 
     spi_bus_config_t bus_cfg = {
         .mosi_io_num = CONFIG_EXAMPLE_PIN_MOSI,
@@ -174,7 +166,6 @@ esp_err_t init_sd_card(sdmmc_card_t **out_card)
 
 void deinit_sd_card(sdmmc_card_t **card)
 {
-    ESP_ERROR_CHECK(sdmmc_card_deinit(*card));
 // Unmount SD card
 #ifdef CONFIG_EXAMPLE_USE_SDMMC
     sdmmc_host_deinit();

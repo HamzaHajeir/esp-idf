@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -106,7 +106,7 @@ hf_local_param_t *hf_local_param_ptr = NULL;
 #endif
 #endif
 
-/* Wideband synchronous */
+/* wide band synchronous */
 #ifndef BTC_HF_WBS_PREFERRED
 #define BTC_HF_WBS_PREFERRED   TRUE
 #endif
@@ -159,14 +159,6 @@ do {                                                                            
 ************************************************************************************/
 static int btc_hf_idx_by_bdaddr(bt_bdaddr_t *bd_addr)
 {
-#if HFP_DYNAMIC_MEMORY == TRUE
-    if (hf_local_param_ptr == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
-#endif
-    if (bd_addr == NULL || !hf_local_param.initialized || hf_local_param.btc_hf_cb == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
     for (int i = 0; i < btc_max_hf_clients; ++i) {
         if (bdcmp(bd_addr->address, hf_local_param.btc_hf_cb[i].connected_bda.address) == 0) {
             return i;
@@ -177,16 +169,9 @@ static int btc_hf_idx_by_bdaddr(bt_bdaddr_t *bd_addr)
 
 static int btc_hf_find_free_idx(void)
 {
-#if HFP_DYNAMIC_MEMORY == TRUE
-    if (hf_local_param_ptr == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
-#endif
-    if (!hf_local_param.initialized || hf_local_param.btc_hf_cb == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
     for (int idx = 0; idx < btc_max_hf_clients; ++idx) {
-        if (hf_local_param.btc_hf_cb[idx].connection_state == ESP_HF_CONNECTION_STATE_DISCONNECTED) {
+        if (hf_local_param.initialized &&
+            hf_local_param.btc_hf_cb[idx].connection_state == ESP_HF_CONNECTION_STATE_DISCONNECTED) {
             return idx;
         }
     }
@@ -203,50 +188,10 @@ static BOOLEAN is_connected(int idx, bt_bdaddr_t *bd_addr)
     return FALSE;
 }
 
-static esp_hf_codec_mode_t btc_hf_bta_codec_to_esp(tBTA_AG_PEER_CODEC codec)
-{
-    if (codec == BTA_AG_CODEC_NONE) {
-        return ESP_HF_CODEC_NONE;
-    }
-    if (codec & BTA_AG_CODEC_LC3) {
-        return ESP_HF_CODEC_LC3;
-    }
-    if (codec & BTA_AG_CODEC_MSBC) {
-        return ESP_HF_CODEC_MSBC;
-    }
-    if (codec & BTA_AG_CODEC_CVSD) {
-        return ESP_HF_CODEC_CVSD;
-    }
-    return ESP_HF_CODEC_NONE;
-}
-
-static tBTA_AG_PEER_CODEC btc_hf_esp_codec_to_bta(esp_hf_codec_mode_t mode)
-{
-    switch (mode) {
-    case ESP_HF_CODEC_CVSD:
-        return BTA_AG_CODEC_CVSD;
-    case ESP_HF_CODEC_MSBC:
-        return BTA_AG_CODEC_MSBC;
-    case ESP_HF_CODEC_LC3:
-        return BTA_AG_CODEC_LC3;
-    case ESP_HF_CODEC_NONE:
-    default:
-        return BTA_AG_CODEC_NONE;
-    }
-}
-
 static int btc_hf_latest_connected_idx(void)
 {
     struct timespec   now, conn_time_delta;
     int latest_conn_idx = BTC_HF_INVALID_IDX;
-#if HFP_DYNAMIC_MEMORY == TRUE
-    if (hf_local_param_ptr == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
-#endif
-    if (!hf_local_param.initialized || hf_local_param.btc_hf_cb == NULL) {
-        return BTC_HF_INVALID_IDX;
-    }
     clock_gettime(CLOCK_MONOTONIC, &now);
     conn_time_delta.tv_sec = now.tv_sec;
 
@@ -297,8 +242,7 @@ static void bte_hf_evt(tBTA_AG_EVT event, tBTA_AG *param)
     else if (BTA_AG_CONN_EVT == event) {
         param_len = sizeof(tBTA_AG_CONN);
     }
-    else if ((BTA_AG_AUDIO_OPEN_EVT == event) || (BTA_AG_AUDIO_CLOSE_EVT == event) ||
-             (BTA_AG_AUDIO_MSBC_OPEN_EVT == event) || (BTA_AG_AUDIO_LC3_OPEN_EVT == event)) {
+    else if ((BTA_AG_AUDIO_OPEN_EVT == event) || (BTA_AG_AUDIO_CLOSE_EVT == event) || (BTA_AG_AUDIO_MSBC_OPEN_EVT == event)) {
         param_len = sizeof(tBTA_AG_AUDIO_STAT);
     }
     else if (param) {
@@ -428,7 +372,7 @@ bt_status_t btc_hf_init(void)
     clear_phone_state();
 
 // set audio path
-#if (BR_EDR_SET_CTRL_SCO_DATAPATH == TRUE)
+#if (BT_CONTROLLER_INCLUDED == TRUE)
 #if BTM_SCO_HCI_INCLUDED
     uint8_t data_path = ESP_SCO_DATA_PATH_HCI;
 #else
@@ -496,22 +440,6 @@ bt_status_t btc_hf_disconnect(bt_bdaddr_t *bd_addr)
         return BT_STATUS_SUCCESS;
     }
     return BT_STATUS_FAIL;
-}
-
-bt_status_t btc_hf_set_codec(bt_bdaddr_t *bd_addr, esp_hf_codec_mode_t mode)
-{
-    int idx = btc_hf_idx_by_bdaddr(bd_addr);
-    if ((idx < 0) || (idx >= BTC_HF_NUM_CB) || !hf_local_param.initialized) {
-        return BT_STATUS_FAIL;
-    }
-    /* AT+BAC may arrive before SLC_CONNECTED; allow CONNECTED or SLC_CONNECTED */
-    if (!is_connected(idx, bd_addr)) {
-        BTIF_TRACE_WARNING("%s: HF AG not connected", __FUNCTION__);
-        return BT_STATUS_NOT_READY;
-    }
-
-    BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle, btc_hf_esp_codec_to_bta(mode));
-    return BT_STATUS_SUCCESS;
 }
 
 bt_status_t btc_hf_connect_audio(bt_bdaddr_t *bd_addr)
@@ -670,7 +598,7 @@ static bt_status_t btc_hf_cind_response(bt_bdaddr_t *bd_addr,
     if (is_connected(idx, bd_addr)) {
         tBTA_AG_RES_DATA    ag_res;
         memset(&ag_res, 0, sizeof (ag_res));
-        snprintf(ag_res.str, sizeof(ag_res.str), "%d,%d,%d,%d,%d,%d,%d",
+        sprintf(ag_res.str, "%d,%d,%d,%d,%d,%d,%d",
                 call_status,                                           /* Call state*/
                 call_setup_status,                                     /* Callsetup state */
                 ntk_state,                                             /* network service */
@@ -695,7 +623,7 @@ static bt_status_t btc_hf_cops_response(bt_bdaddr_t *bd_addr, const char *name)
         tBTA_AG_RES_DATA    ag_res;
         memset (&ag_res, 0, sizeof (ag_res));
         /* Format the response */
-        snprintf(ag_res.str, sizeof(ag_res.str), "0,0,\"%s\"", name);
+        sprintf(ag_res.str, "0,0,\"%s\"", name);
         ag_res.ok_flag = BTA_AG_OK_DONE;
         BTA_AgResult(hf_local_param.btc_hf_cb[idx].handle, BTA_AG_COPS_RES, &ag_res);
         return BT_STATUS_SUCCESS;
@@ -720,12 +648,12 @@ static bt_status_t btc_hf_clcc_response(bt_bdaddr_t *bd_addr, int index, esp_hf_
         } else {
             BTC_TRACE_EVENT("clcc_response: [%d] dir: %d current_call_state: %d mode: %d number: %s type: %d",
                             index, dir, current_call_state, mode, number, type);
-            int loc = snprintf(ag_res.str, sizeof(ag_res.str), "%d,%d,%d,%d,%d", index, dir, current_call_state, mode, mpty);
-            if (number && loc >= 0 && (size_t)loc < sizeof(ag_res.str)) {
+            int loc = sprintf (ag_res.str, "%d,%d,%d,%d,%d", index, dir, current_call_state, mode, mpty);
+            if (number) {
                if ((type == ESP_HF_CALL_ADDR_TYPE_INTERNATIONAL) && (*number != '+')) {
-                    snprintf(ag_res.str + loc, sizeof(ag_res.str) - (size_t)loc, ",\"+%s\",%d", number, type);
+                    sprintf(&ag_res.str[loc], ",\"+%s\",%d", number, type);
                 } else {
-                    snprintf(ag_res.str + loc, sizeof(ag_res.str) - (size_t)loc, ",\"%s\",%d", number, type);
+                    sprintf(&ag_res.str[loc], ",\"%s\",%d", number, type);
                 }
             }
         }
@@ -746,9 +674,9 @@ static bt_status_t btc_hf_cnum_response(bt_bdaddr_t *bd_addr, const char *number
         memset(&ag_res, 0, sizeof (ag_res));
         BTC_TRACE_EVENT("cnum_response: number = %s, number type = %d, service type = %d", number, number_type, service_type);
         if (service_type) {
-            snprintf(ag_res.str, sizeof(ag_res.str), ",\"%s\",%d,,%d", number, number_type, service_type);
+            sprintf(ag_res.str, ",\"%s\",%d,,%d",number, number_type, service_type);
         } else {
-            snprintf(ag_res.str, sizeof(ag_res.str), ",\"%s\",%d,,", number, number_type);
+            sprintf(ag_res.str, ",\"%s\",%d,,",number, number_type);
         }
         ag_res.ok_flag = BTA_AG_OK_DONE;
         BTA_AgResult(hf_local_param.btc_hf_cb[idx].handle, BTA_AG_CNUM_RES, &ag_res);
@@ -907,13 +835,13 @@ static bt_status_t btc_hf_phone_state_update(bt_bdaddr_t *bd_addr,int num_active
                 if (number) {
                     int loc = 0;
                     if ((type == ESP_HF_CALL_ADDR_TYPE_INTERNATIONAL) && (*number != '+')) {
-                        loc = snprintf(ag_res.str, sizeof(ag_res.str), "\"+%s\"", number);
+                        loc = sprintf (ag_res.str, "\"+%s\"", number);
                     } else {
-                        loc = snprintf(ag_res.str, sizeof(ag_res.str), "\"%s\"", number);
+                        loc = sprintf (ag_res.str, "\"%s\"", number);
                     }
                     ag_res.num = type;
-                    if (res == BTA_AG_CALL_WAIT_RES && loc >= 0 && (size_t)loc < sizeof(ag_res.str)) {
-                        snprintf(ag_res.str + loc, sizeof(ag_res.str) - (size_t)loc, ",%d", type);
+                    if (res == BTA_AG_CALL_WAIT_RES) {
+                        sprintf(&ag_res.str[loc], ",%d", type);
                     }
                 }
                 break;
@@ -1010,7 +938,7 @@ bt_status_t btc_hf_ci_sco_data(void)
     return status;
 }
 
-bt_status_t btc_hf_ag_audio_data_send(uint16_t sync_conn_hdl, uint8_t *p_buff_start, uint8_t *p_data, uint8_t data_len)
+bool btc_hf_ag_audio_data_send(uint16_t sync_conn_hdl, uint8_t *p_buff_start, uint8_t *p_data, uint8_t data_len)
 {
 #if (BTM_SCO_HCI_INCLUDED == TRUE) && (BTA_HFP_EXT_CODEC == TRUE)
     /* currently, sync_conn_hdl is not used */
@@ -1018,10 +946,10 @@ bt_status_t btc_hf_ag_audio_data_send(uint16_t sync_conn_hdl, uint8_t *p_buff_st
     CHECK_HF_SLC_CONNECTED(idx);
     if (idx != BTC_HF_INVALID_IDX) {
         BTA_AgAudioDataSend(hf_local_param.btc_hf_cb[idx].handle, p_buff_start, p_data, data_len);
-        return BT_STATUS_SUCCESS;
+        return true;
     }
 #endif
-    return BT_STATUS_FAIL;
+    return false;
 }
 
 /************************************************************************************
@@ -1348,12 +1276,6 @@ void btc_hf_call_handler(btc_msg_t *msg)
             break;
         }
 
-        case BTC_HF_SET_CODEC_EVT:
-        {
-            btc_hf_set_codec(&arg->set_codec.remote_addr, arg->set_codec.mode);
-            break;
-        }
-
         default:
             BTC_TRACE_WARNING("%s : unhandled event: %d\n", __FUNCTION__, msg->act);
     }
@@ -1501,20 +1423,6 @@ void btc_hf_cb_handler(btc_msg_t *msg)
             CHECK_HF_IDX(idx);
             do {
                 param.audio_stat.state = ESP_HF_AUDIO_STATE_CONNECTED_MSBC;
-                memcpy(param.audio_stat.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
-                hf_local_param.btc_hf_cb[idx].sync_conn_hdl = p_data->hdr.sync_conn_handle;
-                param.audio_stat.sync_conn_handle = p_data->hdr.sync_conn_handle;
-                param.audio_stat.preferred_frame_size = p_data->audio_stat.preferred_frame_size;
-                btc_hf_cb_to_app(ESP_HF_AUDIO_STATE_EVT, &param);
-            } while (0);
-            break;
-        }
-        case BTA_AG_AUDIO_LC3_OPEN_EVT:
-        {
-            idx = p_data->hdr.handle - 1;
-            CHECK_HF_IDX(idx);
-            do {
-                param.audio_stat.state = ESP_HF_AUDIO_STATE_CONNECTED_LC3;
                 memcpy(param.audio_stat.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
                 hf_local_param.btc_hf_cb[idx].sync_conn_hdl = p_data->hdr.sync_conn_handle;
                 param.audio_stat.sync_conn_handle = p_data->hdr.sync_conn_handle;
@@ -1677,11 +1585,9 @@ void btc_hf_cb_handler(btc_msg_t *msg)
                     memcpy(param.out_call.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
                     param.out_call.type = p_data->val.value;
                     param.out_call.num_or_loc = osi_malloc((strlen(p_data->val.str) + 1) * sizeof(char));
-                    if (param.out_call.num_or_loc) {
-                        snprintf(param.out_call.num_or_loc, strlen(p_data->val.str) + 1, "%s", p_data->val.str);
-                        btc_hf_cb_to_app(ESP_HF_DIAL_EVT, &param);
-                        osi_free(param.out_call.num_or_loc);
-                    }
+                    sprintf(param.out_call.num_or_loc, "%s", p_data->val.str);
+                    btc_hf_cb_to_app(ESP_HF_DIAL_EVT, &param);
+                    osi_free(param.out_call.num_or_loc);
                 } else if (event == BTA_AG_AT_BLDN_EVT) {                    //dial_last
                     memcpy(param.out_call.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
                     param.out_call.num_or_loc = NULL;
@@ -1710,24 +1616,18 @@ void btc_hf_cb_handler(btc_msg_t *msg)
             CHECK_HF_IDX(idx);
             BTC_TRACE_DEBUG("AG Bitmap of peer-codecs %d", p_data->val.num);
 #if (BTM_WBS_INCLUDED == TRUE)
-            /* Default stack preference; application may override in ESP_HF_BAC_RESPONSE_EVT */
-#if UC_BT_HFP_LC3_ENABLE
-            if (p_data->val.num & BTA_AG_CODEC_LC3) {
-                BTC_TRACE_DEBUG("%s btc_hf override-Preferred Codec to LC3", __FUNCTION__);
-                BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle, BTA_AG_CODEC_LC3);
-            } else
-#endif
+            /* If the peer supports mSBC and the BTC preferred codec is also mSBC, then
+            ** we should set the BTA AG Codec to mSBC. This would trigger a +BCS to mSBC at the time
+            ** of SCO connection establishment */
             if ((btc_conf_hf_force_wbs == TRUE) && (p_data->val.num & BTA_AG_CODEC_MSBC)) {
                   BTC_TRACE_DEBUG("%s btc_hf override-Preferred Codec to MSBC", __FUNCTION__);
-                  BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle, BTA_AG_CODEC_MSBC);
-            } else {
+                  BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle,BTA_AG_CODEC_MSBC);
+            }
+            else {
                   BTC_TRACE_DEBUG("%s btc_hf override-Preferred Codec to CVSD", __FUNCTION__);
-                  BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle, BTA_AG_CODEC_CVSD);
+                  BTA_AgSetCodec(hf_local_param.btc_hf_cb[idx].handle,BTA_AG_CODEC_CVSD);
             }
 #endif
-            memcpy(param.bac_rep.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda, sizeof(esp_bd_addr_t));
-            param.bac_rep.peer_codecs = p_data->val.num;
-            btc_hf_cb_to_app(ESP_HF_BAC_RESPONSE_EVT, &param);
             break;
         }
 #if (BTM_WBS_INCLUDED == TRUE)
@@ -1736,11 +1636,9 @@ void btc_hf_cb_handler(btc_msg_t *msg)
             idx = p_data->hdr.handle - 1;
             CHECK_HF_IDX(idx);
             do {
-                BTC_TRACE_DEBUG("Set codec status %d codec %d", p_data->val.hdr.status, p_data->val.num);
-                memcpy(param.wbs_rep.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda, sizeof(esp_bd_addr_t));
-                param.wbs_rep.status = (p_data->val.hdr.status == BTA_AG_SUCCESS) ?
-                                       ESP_BT_STATUS_SUCCESS : ESP_BT_STATUS_FAIL;
-                param.wbs_rep.codec = btc_hf_bta_codec_to_esp(p_data->val.num);
+                BTC_TRACE_DEBUG("Set codec status %d codec %d 1=CVSD 2=MSBC", p_data->val.hdr.status, p_data->val.num);
+                memcpy(param.wbs_rep.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
+                param.wbs_rep.codec = p_data->val.num;
                 btc_hf_cb_to_app(ESP_HF_WBS_RESPONSE_EVT, &param);
             } while (0);
             break;
@@ -1751,9 +1649,10 @@ void btc_hf_cb_handler(btc_msg_t *msg)
             idx = p_data->hdr.handle - 1;
             CHECK_HF_IDX(idx);
             do {
-                BTC_TRACE_DEBUG("AG final selected codec is %d", p_data->val.num);
-                memcpy(param.bcs_rep.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda, sizeof(esp_bd_addr_t));
-                param.bcs_rep.mode = btc_hf_bta_codec_to_esp(p_data->val.num);
+                BTC_TRACE_DEBUG("AG final seleded codec is %d 1=CVSD 2=MSBC", p_data->val.num);
+                memcpy(param.bcs_rep.remote_addr, &hf_local_param.btc_hf_cb[idx].connected_bda,sizeof(esp_bd_addr_t));
+                param.bcs_rep.mode = p_data->val.num;
+                /* No ESP_HF_WBS_NONE case, because HFP 1.6 supported device can send BCS */
                 btc_hf_cb_to_app(ESP_HF_BCS_RESPONSE_EVT, &param);
             } while (0);
             break;

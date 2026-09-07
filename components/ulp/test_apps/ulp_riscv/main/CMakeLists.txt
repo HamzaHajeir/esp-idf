@@ -1,4 +1,4 @@
-set(app_sources "test_app_main.c" "test_ulp_riscv.c" "test_ulp_riscv_i2c.c" "test_ulp_riscv_i2c_config_cpp.cpp")
+set(app_sources "test_app_main.c" "test_ulp_riscv.c" "test_ulp_riscv_i2c.c")
 set(ulp_sources "ulp/test_main.c")
 set(ulp_sources2 "ulp/test_main_second_cocpu_firmware.c")
 set(ulp_sources3 "ulp/test_main_cocpu_crash.c")
@@ -6,8 +6,7 @@ set(ulp_sources4 "ulp/test_main_i2c.c")
 
 idf_component_register(SRCS ${app_sources}
                        INCLUDE_DIRS "ulp"
-                       REQUIRES ulp unity test_utils esp_timer
-                       PRIV_REQUIRES esp_driver_i2c
+                       REQUIRES ulp unity test_utils driver
                        WHOLE_ARCHIVE)
 
 set(ulp_app_name ulp_test_app)

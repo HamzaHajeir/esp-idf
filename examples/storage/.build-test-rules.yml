@@ -1,16 +1,13 @@
 # Documentation: .gitlab/ci/README.md#manifest-file-to-control-the-buildtest-apps
 
 examples/storage/custom_flash_driver:
-  disable_test:
-    - if: IDF_TARGET == "esp32h4"
-      temporary: true
-      reason: cannot pass # TODO: IDF-15601
   depends_components:
     - spi_flash
 
 examples/storage/emmc:
   depends_components:
     - fatfs
+    - vfs
     - sdmmc
     - esp_driver_sdmmc
     - esp_driver_sdspi
@@ -52,32 +49,37 @@ examples/storage/perf_benchmark:
     - fatfs
     - spi_flash
     - vfs
+    - sdmmc
     - spiffs
     - wear_levelling
+    - esp_partition
+    - esp_driver_sdmmc
   disable:
     - if: SOC_GPSPI_SUPPORTED != 1
       temporary: true
       reason: not supported yet
   disable_test:
-    - if: IDF_TARGET == "esp32s31"
+    - if: IDF_TARGET == "esp32p4" and CONFIG_NAME in ["sdmmc_1line", "sdmmc_4line", "sdspi_1line"]
       temporary: true
-      reason: lack of runners, but spi_flash not supported yet
+      reason: lack of runners, build only # TODO: IDF-8970
 
 examples/storage/sd_card/sdmmc:
   depends_components:
-    - fatfs
+    - vfs
     - sdmmc
+    - esp_driver_sdmmc
   disable:
     - if: SOC_SDMMC_HOST_SUPPORTED != 1
   disable_test:
-    - if: IDF_TARGET not in ["esp32", "esp32p4", "esp32s31"]
+    - if: IDF_TARGET not in ["esp32", "esp32p4"]
       temporary: true
       reason: lack of runners
 
 examples/storage/sd_card/sdspi:
   depends_components:
-    - fatfs
+    - vfs
     - sdmmc
+    - esp_driver_sdspi
   disable:
     - if: SOC_GPSPI_SUPPORTED != 1
   disable_test:
@@ -111,6 +113,7 @@ examples/storage/spiffsgen:
 
 examples/storage/wear_levelling:
   depends_components:
+    - vfs
     - wear_levelling
     - fatfs
   disable_test:

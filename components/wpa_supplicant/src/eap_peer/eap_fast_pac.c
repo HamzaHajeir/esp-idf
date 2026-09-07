@@ -414,8 +414,7 @@ int eap_fast_load_pac(struct eap_sm *sm, struct eap_fast_pac **pac_root,
 {
 	struct eap_fast_read_ctx rc;
 	struct eap_fast_pac *pac = NULL;
-	/* count is only consumed by debug logging */
-	int count __attribute__((unused)) = 0;
+	int count = 0;
 	char *pos;
 	const char *err = NULL;
 
@@ -624,9 +623,7 @@ int eap_fast_save_pac(struct eap_sm *sm, struct eap_fast_pac *pac_root,
 		      const char *pac_file)
 {
 	struct eap_fast_pac *pac;
-	int ret;
-	/* count is only consumed by debug logging */
-	int count __attribute__((unused)) = 0;
+	int ret, count = 0;
 	char *buf, *pos;
 	size_t buf_len;
 
@@ -757,9 +754,7 @@ int eap_fast_load_pac_bin(struct eap_sm *sm, struct eap_fast_pac **pac_root,
 {
 	const struct wpa_config_blob *blob = NULL;
 	u8 *buf, *end, *pos;
-	size_t len;
-	/* count is only consumed by debug logging */
-	size_t count __attribute__((unused)) = 0;
+	size_t len, count = 0;
 	struct eap_fast_pac *pac, *prev;
 
 	*pac_root = NULL;
@@ -881,9 +876,7 @@ parse_fail:
 int eap_fast_save_pac_bin(struct eap_sm *sm, struct eap_fast_pac *pac_root,
 			  const char *pac_file)
 {
-	size_t len;
-	/* count is only consumed by debug logging */
-	size_t count __attribute__((unused)) = 0;
+	size_t len, count = 0;
 	struct eap_fast_pac *pac;
 	u8 *buf, *pos;
 

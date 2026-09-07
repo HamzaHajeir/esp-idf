@@ -6,7 +6,7 @@
 重大变更
 --------
 
-本次更新从 ESP-IDF 中移除了组件 ``wifi_provisioning``，更名为 ``network_provisioning`` 并作为一个独立组件受到支持。该组件增加了对 Thread 配网的支持。可在乐鑫组件注册表中，查看更多有关 ``network_provisioning`` 的信息：
+本次更新从 ESP-IDF 中移除了组件 ``wifi_provisioning``，更名为 ``network_provisioning`` 并作为一个独立组件受到支持。该组件增加了对Thread 配网的支持。可在乐鑫组件注册表中，查看更多有关 ``network_provisioning`` 的信息：
 
 * `network_provisioning 组件 <https://components.espressif.com/component/espressif/network_provisioning>`__
 
@@ -43,12 +43,12 @@ Protocomm 安全配置
 
 为了默认提高安全性，protocomm 安全配置选项的默认值已更改：
 
-- :menuitem:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0` 现在默认为 ``n`` （原为 ``y`` ）
-- :menuitem:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1` 现在默认为 ``n`` （原为 ``y`` ）
+- :ref:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0` 现在默认为 ``n`` （原为 ``y`` ）
+- :ref:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1` 现在默认为 ``n`` （原为 ``y`` ）
 
 依赖 protocomm 安全版本 0 或 1 的项目需要在其配置中显式启用这些选项。如果您的应用程序使用 protocomm 安全版本 0（无安全）或版本 1（Curve25519 + AES-CTR），则必须在项目的 ``sdkconfig`` 中或通过 ``menuconfig`` 显式启用相应的配置选项：
 
-- 对于安全版本 0：启用 :menuitem:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0`
-- 对于安全版本 1：启用 :menuitem:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1`
+- 对于安全版本 0：启用 :ref:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0`
+- 对于安全版本 1：启用 :ref:`CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1`
 
 此项变更旨在默认减少代码大小，并鼓励使用更安全的 protocomm 实现。

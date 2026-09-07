@@ -215,8 +215,7 @@ The general procedure to create, start, stop, and delete a timer is as follows:
 
 3. Stop the timer
 
-    - To stop the running timer, call the function :cpp:func:`esp_timer_stop`. But it does not guarantee that after this call, the callback will not be running one or more times. To check if the callback is not running after stopping the timer, you can use :cpp:func:`esp_timer_is_active`. Another approach is to use a blocking stop API.
-    - To block the timer stop operation until any in-flight callback completes, use :cpp:func:`esp_timer_stop_blocking`.
+    - To stop the running timer, call the function :cpp:func:`esp_timer_stop`.
 
 4. Delete the timer
 
@@ -232,7 +231,7 @@ Out of the available :ref:`callback dispatch methods <Callback Methods>`, if you
 
 1. Set Kconfig options
 
-    - Enable :menuitem:`CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD`.
+    - Enable :ref:`CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD`.
 
 2. Create a timer
 
@@ -273,7 +272,7 @@ To debug timers, use the following procedure:
 
 1. Set Kconfig options for more detailed output:
 
-    - Enable :menuitem:`CONFIG_ESP_TIMER_PROFILING`.
+    - Enable :ref:`CONFIG_ESP_TIMER_PROFILING`.
 
     .. note::
 
@@ -281,7 +280,7 @@ To debug timers, use the following procedure:
 
 2. Wherever required in your code, call the function :cpp:func:`esp_timer_dump` to print the information and use it to debug your timers.
 
-3. Once debugging is complete, consider disabling :menuitem:`CONFIG_ESP_TIMER_PROFILING`.
+3. Once debugging is complete, consider disabling :ref:`CONFIG_ESP_TIMER_PROFILING`.
 
 
 Troubleshooting
@@ -295,7 +294,7 @@ While dispatching the same callback function repeatedly, if the response time va
 .. list::
 
     - Use the :ref:`Interrupt Dispatch method <Using ESP_TIMER_ISR Callback Method>`.
-    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - Use the Kconfig option :menuitem:`CONFIG_ESP_TIMER_TASK_AFFINITY` to run the ESP Timer task on any of the available cores.
+    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - Use the Kconfig option :ref:`CONFIG_ESP_TIMER_TASK_AFFINITY` to run the ESP Timer task on any of the available cores.
 
 
 Significant Delays while Dispatching Callbacks
@@ -315,7 +314,7 @@ If the callback functions are executed repeatedly upon wakeup from sleep, see :r
 Stack Overflow While Dispatching Callbacks
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you see a stack overflow error when executing a callback function, consider reducing the stack usage within your callback function. Alternatively, try increasing the size of the ESP Timer task stack by adjusting :menuitem:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`.
+If you see a stack overflow error when executing a callback function, consider reducing the stack usage within your callback function. Alternatively, try increasing the size of the ESP Timer task stack by adjusting :ref:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`.
 
 
 Application Examples

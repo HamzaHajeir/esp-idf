@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -155,12 +155,12 @@ static esp_err_t esp_vfs_fat_mount_internal(const esp_vfs_fat_mount_config_t *mo
         .fat_drive = drv,
         .max_files = mount_config->max_files,
     };
-    err = esp_vfs_fat_register(&conf, &fs);
+    err = esp_vfs_fat_register_cfg(&conf, &fs);
     *out_fs = fs;
     if (err == ESP_ERR_INVALID_STATE) {
         // it's okay, already registered with VFS
     } else if (err != ESP_OK) {
-        ESP_LOGD(TAG, "esp_vfs_fat_register failed 0x(%x)", err);
+        ESP_LOGD(TAG, "esp_vfs_fat_register_cfg failed 0x(%x)", err);
         goto fail;
     }
 
@@ -278,7 +278,6 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
     esp_err_t err;
     sdmmc_card_t* card = NULL;
     bool host_inited = false;
-    bool card_inited = false;
 
     // not using ff_memalloc here, as allocation in internal RAM is preferred
     card = (sdmmc_card_t*) malloc(sizeof(sdmmc_card_t));
@@ -290,7 +289,6 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
 
     err = esp_vfs_fat_sdmmc_sdcard_init(host_config, slot_config, card, &host_inited);
     CHECK_EXECUTE_RESULT(err, "esp_vfs_fat_sdmmc_sdcard_init failed");
-    card_inited = true;
 
     err = esp_vfs_fat_mount_initialized(card, base_path, mount_config);
     CHECK_EXECUTE_RESULT(err, "esp_vfs_fat_mount_initialized failed");
@@ -300,9 +298,6 @@ esp_err_t esp_vfs_fat_sdmmc_mount(const char* base_path,
 cleanup:
     if (host_inited) {
         call_host_deinit(host_config);
-    }
-    if (card_inited) {
-        sdmmc_card_deinit(card);
     }
     free(card);
     return err;
@@ -386,7 +381,6 @@ esp_err_t esp_vfs_fat_sdspi_mount(const char* base_path,
     const sdmmc_host_t* host_config = host_config_input;
     esp_err_t err;
     bool host_inited = false;
-    bool card_inited = false;
     sdmmc_card_t* card = NULL;
 
     // not using ff_memalloc here, as allocation in internal RAM is preferred
@@ -399,7 +393,6 @@ esp_err_t esp_vfs_fat_sdspi_mount(const char* base_path,
 
     err = esp_vfs_fat_sdspi_sdcard_init(host_config_input, slot_config, card, &host_inited);
     CHECK_EXECUTE_RESULT(err, "esp_vfs_fat_sdspi_sdcard_init failed");
-    card_inited = true;
 
     err = esp_vfs_fat_mount_initialized(card, base_path, mount_config);
     CHECK_EXECUTE_RESULT(err, "esp_vfs_fat_mount_initialized failed");
@@ -410,9 +403,6 @@ esp_err_t esp_vfs_fat_sdspi_mount(const char* base_path,
 cleanup:
     if (host_inited) {
         call_host_deinit(host_config);
-    }
-    if (card_inited) {
-        sdmmc_card_deinit(card);
     }
     free(card);
     return err;
@@ -425,8 +415,6 @@ esp_err_t esp_vfs_fat_mount_initialized(sdmmc_card_t* card,
     if (card == NULL || base_path == NULL || mount_config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_RETURN_ON_FALSE(!(mount_config->read_only && mount_config->format_if_mount_failed),
-                         ESP_ERR_INVALID_ARG, TAG, "read_only and format_if_mount_failed are mutually exclusive");
 
     esp_err_t err;
 
@@ -447,10 +435,6 @@ esp_err_t esp_vfs_fat_mount_initialized(sdmmc_card_t* card,
 
     err = esp_vfs_fat_save_ctx(ldrv, mount_config, card, dup_path, fs, flags);
     CHECK_EXECUTE_RESULT(err, "esp_vfs_fat_save_ctx failed");
-
-    if (mount_config->read_only) {
-        esp_vfs_set_readonly_flag(base_path);
-    }
 
     return ESP_OK;
 cleanup:
@@ -482,7 +466,6 @@ static esp_err_t unmount_card_core(const char *base_path, sdmmc_card_t *card)
     ff_diskio_unregister(pdrv);
 
     if (pdrv_num == 1) {
-        sdmmc_card_deinit(card);
         call_host_deinit(&card->host);
         free(card);
     }

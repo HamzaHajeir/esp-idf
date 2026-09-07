@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,19 +37,20 @@
 #include "esp32c6/rom/secure_boot.h"
 #endif
 #endif
-#define DECLARE_PRIVATE_IDENTIFIERS
-#include "psa/crypto.h"
+
+#include "mbedtls/sha256.h"
+
 #include "bootloader_flash_priv.h"
 #include "esp_attestation_utils.h"
-#include "esp_macros.h"
 
 #define SECURE_BOOT_V2       (0x02)
+#define ALIGN_UP(num, align) (((num) + ((align)-1)) & ~((align)-1))
 
 static const char *TAG = "esp_att_utils";
 
 /* Forward declaration */
 static esp_err_t read_partition(uint32_t offset, void *buf, size_t size);
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len);
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest);
 static esp_err_t get_active_app_part_pos(esp_partition_pos_t *pos);
 static esp_err_t get_active_tee_part_pos(esp_partition_pos_t *pos);
 
@@ -71,28 +72,13 @@ static size_t digest_type_to_len(esp_att_part_digest_type_t digest)
 }
 
 #if ESP_TEE_BUILD
-#define DIGEST_CHUNK_LEN (1024)
-
-static psa_status_t hash_update_chunked(psa_hash_operation_t *hash_op, const void *data, uint32_t len)
-{
-    psa_status_t status = PSA_SUCCESS;
-
-    for (uint32_t offset = 0; offset < len; offset += DIGEST_CHUNK_LEN) {
-        status = psa_hash_update(hash_op, (const uint8_t *)data + offset, MIN(DIGEST_CHUNK_LEN, len - offset));
-        if (status != PSA_SUCCESS) {
-            break;
-        }
-    }
-
-    return status;
-}
 
 static esp_err_t read_partition(uint32_t offset, void *buf, size_t size)
 {
     return (esp_err_t)esp_tee_flash_read(offset, buf, size, true);
 }
 
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len)
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest)
 {
     if (digest == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -101,9 +87,12 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
     uint32_t mmu_free_pages_count = esp_tee_flash_mmap_get_free_pages();
     uint32_t partial_image_len = mmu_free_pages_count * CONFIG_MMU_PAGE_SIZE;
 
-    psa_hash_operation_t hash_op = PSA_HASH_OPERATION_INIT;
-    psa_status_t status = psa_hash_setup(&hash_op, PSA_ALG_SHA_256);
-    if (status != PSA_SUCCESS) {
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+
+    int ret = mbedtls_sha256_starts(&ctx, false);
+    if (ret != 0) {
+        mbedtls_sha256_free(&ctx);
         return ESP_FAIL;
     }
 
@@ -111,27 +100,18 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
         uint32_t mmap_len = MIN(len, partial_image_len);
         const void *image = esp_tee_flash_mmap(flash_offset, mmap_len);
         if (image == NULL) {
-            psa_hash_abort(&hash_op);
+            mbedtls_sha256_free(&ctx);
             return ESP_FAIL;
         }
-        status = hash_update_chunked(&hash_op, image, mmap_len);
+        mbedtls_sha256_update(&ctx, image, mmap_len);
         esp_tee_flash_munmap(image);
-        if (status != PSA_SUCCESS) {
-            psa_hash_abort(&hash_op);
-            return ESP_FAIL;
-        }
 
         flash_offset += mmap_len;
         len -= mmap_len;
     }
 
-    size_t digest_size = 0;
-    status = psa_hash_finish(&hash_op, digest, digest_len, &digest_size);
-    if (status != PSA_SUCCESS) {
-        psa_hash_abort(&hash_op);
-        return ESP_FAIL;
-    }
-
+    mbedtls_sha256_finish(&ctx, digest);
+    mbedtls_sha256_free(&ctx);
     return ESP_OK;
 }
 
@@ -174,7 +154,7 @@ static esp_err_t read_partition(uint32_t offset, void *buf, size_t size)
     return esp_flash_read(NULL, buf, offset, size);
 }
 
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len)
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest)
 {
     if (digest == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -185,10 +165,11 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
     uint32_t mmu_free_pages_count = bootloader_mmap_get_free_pages();
     uint32_t partial_image_len = mmu_free_pages_count * CONFIG_MMU_PAGE_SIZE;
 
-    psa_hash_operation_t hash_op = PSA_HASH_OPERATION_INIT;
-    psa_status_t status = psa_hash_setup(&hash_op, PSA_ALG_SHA_256);
-    if (status != PSA_SUCCESS) {
-        return ESP_FAIL;
+    mbedtls_sha256_context sha256_ctx;
+    mbedtls_sha256_init(&sha256_ctx);
+
+    if (mbedtls_sha256_starts(&sha256_ctx, false) != 0) {
+        goto exit;
     }
 
     while (len > 0) {
@@ -197,9 +178,7 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
         if (image == NULL) {
             goto exit;
         }
-        status = psa_hash_update(&hash_op, image, mmap_len);
-        if (status != PSA_SUCCESS) {
-            psa_hash_abort(&hash_op);
+        if (mbedtls_sha256_update(&sha256_ctx, image, mmap_len) != 0) {
             goto exit;
         }
         bootloader_munmap(image);
@@ -208,16 +187,13 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
         len -= mmap_len;
     }
 
-    size_t digest_size = 0;
-    status = psa_hash_finish(&hash_op, digest, digest_len, &digest_size);
-    if (status != PSA_SUCCESS) {
-        psa_hash_abort(&hash_op);
+    if (mbedtls_sha256_finish(&sha256_ctx, digest) != 0) {
         goto exit;
     }
 
     err = ESP_OK;
 exit:
-    psa_hash_abort(&hash_op);
+    mbedtls_sha256_free(&sha256_ctx);
     return err;
 }
 
@@ -307,7 +283,7 @@ static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_di
         return ESP_ERR_NO_MEM;
     }
 
-    err = get_flash_contents_sha256(pos->offset, image_len, digest, digest_len);
+    err = get_flash_contents_sha256(pos->offset, image_len, digest);
     if (err != ESP_OK) {
         goto exit;
     }
@@ -320,7 +296,7 @@ static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_di
     memcpy(part_digest->calc_digest, digest, digest_len);
 
 #if CONFIG_SECURE_BOOT_V2_ENABLED
-    uint32_t signed_image_len = ESP_ALIGN_UP(metadata.image_len, FLASH_SECTOR_SIZE);
+    uint32_t signed_image_len = ALIGN_UP(metadata.image_len, FLASH_SECTOR_SIZE);
 
     if (signed_image_len % CONFIG_MMU_PAGE_SIZE == 0) {
         part_digest->secure_padding = true;

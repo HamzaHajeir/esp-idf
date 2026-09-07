@@ -84,23 +84,11 @@ function(__init_project_configuration)
     set(link_options)
 
     idf_build_get_property(idf_ver IDF_VER)
-    idf_build_get_property(idf_path IDF_PATH)
     idf_build_get_property(idf_target IDF_TARGET)
-    idf_build_get_property(component_interfaces COMPONENT_INTERFACES)
+    idf_build_get_property(components_discovered COMPONENTS_DISCOVERED)
     idf_build_get_property(build_dir BUILD_DIR)
     idf_build_get_property(project_dir PROJECT_DIR)
     idf_build_get_property(project_name PROJECT_NAME)
-    get_property(enabled_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
-
-    set(c_enabled OFF)
-    if(C IN_LIST enabled_languages)
-        set(c_enabled ON)
-    endif()
-
-    set(cxx_enabled OFF)
-    if(CXX IN_LIST enabled_languages)
-        set(cxx_enabled ON)
-    endif()
 
     # Set the LINKER_TYPE build property. Different linkers may have varying
     # options, so it's important to identify the linker type to configure the
@@ -155,43 +143,38 @@ function(__init_project_configuration)
     if(IDF_TARGET STREQUAL "linux")
         # Building for Linux target, fall back to an older version of the standard
         # if the preferred one is not supported by the compiler.
-        if(c_enabled)
-            set(preferred_c_versions gnu23 gnu17 gnu11 gnu99)
-            set(ver_found FALSE)
-            foreach(c_version ${preferred_c_versions})
-                check_c_compiler_flag("-std=${c_version}" ver_${c_version}_supported)
-                if(ver_${c_version}_supported)
-                    set(c_std ${c_version})
-                    set(ver_found TRUE)
-                    break()
-                endif()
-            endforeach()
-            if(NOT ver_found)
-                idf_die("Failed to set C language standard to one of the supported versions: "
-                        "${preferred_c_versions}. Please upgrade the host compiler.")
+        set(preferred_c_versions gnu23 gnu17 gnu11 gnu99)
+        set(ver_found FALSE)
+        foreach(c_version ${preferred_c_versions})
+            check_c_compiler_flag("-std=${c_version}" ver_${c_version}_supported)
+            if(ver_${c_version}_supported)
+                set(c_std ${c_version})
+                set(ver_found TRUE)
+                break()
             endif()
-
-            list(APPEND c_compile_options "-std=${c_std}")
+        endforeach()
+        if(NOT ver_found)
+            idf_die("Failed to set C language standard to one of the supported versions: "
+                    "${preferred_c_versions}. Please upgrade the host compiler.")
         endif()
 
-        if(cxx_enabled)
-            set(preferred_cxx_versions gnu++26 gnu++2b gnu++20 gnu++2a gnu++17 gnu++14)
-            set(ver_found FALSE)
-            foreach(cxx_version ${preferred_cxx_versions})
-                check_cxx_compiler_flag("-std=${cxx_version}" ver_${cxx_version}_supported)
-                if(ver_${cxx_version}_supported)
-                    set(cxx_std ${cxx_version})
-                    set(ver_found TRUE)
-                    break()
-                endif()
-            endforeach()
-            if(NOT ver_found)
-                idf_die("Failed to set C++ language standard to one of the supported versions: "
-                        "${preferred_cxx_versions}. Please upgrade the host compiler.")
+        set(preferred_cxx_versions gnu++26 gnu++2b gnu++20 gnu++2a gnu++17 gnu++14)
+        set(ver_found FALSE)
+        foreach(cxx_version ${preferred_cxx_versions})
+            check_cxx_compiler_flag("-std=${cxx_version}" ver_${cxx_version}_supported)
+            if(ver_${cxx_version}_supported)
+                set(cxx_std ${cxx_version})
+                set(ver_found TRUE)
+                break()
             endif()
-
-            list(APPEND cxx_compile_options "-std=${cxx_std}")
+        endforeach()
+        if(NOT ver_found)
+            idf_die("Failed to set C++ language standard to one of the supported versions: "
+                    "${preferred_cxx_versions}. Please upgrade the host compiler.")
         endif()
+
+        list(APPEND c_compile_options   "-std=${c_std}")
+        list(APPEND cxx_compile_options "-std=${cxx_std}")
     else()
         # Building for chip targets: we use a known version of the toolchain.
         # Use latest supported versions.
@@ -199,55 +182,41 @@ function(__init_project_configuration)
         # function, which must be called after project().
         # Please update docs/en/api-guides/c.rst, docs/en/api-guides/cplusplus.rst and
         # tools/test_apps/system/cxx_build_test/main/test_cxx_standard.cpp when changing this.
-        if(c_enabled)
-            list(APPEND c_compile_options "-std=gnu23")
-        endif()
-        if(cxx_enabled)
-            list(APPEND cxx_compile_options "-std=gnu++26")
-        endif()
+        list(APPEND c_compile_options   "-std=gnu23")
+        list(APPEND cxx_compile_options "-std=gnu++26")
     endif()
 
-    # Subprojects that handle their own compiler optimization flags can set the
-    # SET_COMPILER_OPTIMIZATION build property to NO before idf_project_init().
-    idf_build_get_property(set_compiler_optimization SET_COMPILER_OPTIMIZATION)
-    if(NOT DEFINED set_compiler_optimization OR set_compiler_optimization STREQUAL "")
-        set(set_compiler_optimization YES)
-    endif()
-    if(set_compiler_optimization)
-        if(CONFIG_COMPILER_OPTIMIZATION_SIZE)
-            if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-                list(APPEND compile_options "-Oz")
-            else()
-                list(APPEND compile_options "-Os")
-            endif()
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU")
-                list(APPEND compile_options "-freorder-blocks")
-            endif()
-        elseif(CONFIG_COMPILER_OPTIMIZATION_DEBUG)
-            list(APPEND compile_options "-Og")
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" AND NOT CONFIG_IDF_TARGET_LINUX)
-                list(APPEND compile_options "-fno-shrink-wrap")  # Disable shrink-wrapping to reduce binary size
-            endif()
-        elseif(CONFIG_COMPILER_OPTIMIZATION_NONE)
-            list(APPEND compile_options "-O0")
-        elseif(CONFIG_COMPILER_OPTIMIZATION_PERF)
-            list(APPEND compile_options "-O2")
-        endif()
-    endif()
-
-    if(cxx_enabled)
-        if(CONFIG_COMPILER_CXX_EXCEPTIONS)
-            list(APPEND cxx_compile_options "-fexceptions")
+    if(CONFIG_COMPILER_OPTIMIZATION_SIZE)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+            list(APPEND compile_options "-Oz")
         else()
-            list(APPEND cxx_compile_options "-fno-exceptions")
+            list(APPEND compile_options "-Os")
         endif()
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU")
+            list(APPEND compile_options "-freorder-blocks")
+        endif()
+    elseif(CONFIG_COMPILER_OPTIMIZATION_DEBUG)
+        list(APPEND compile_options "-Og")
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU" AND NOT CONFIG_IDF_TARGET_LINUX)
+            list(APPEND compile_options "-fno-shrink-wrap")  # Disable shrink-wrapping to reduce binary size
+        endif()
+    elseif(CONFIG_COMPILER_OPTIMIZATION_NONE)
+        list(APPEND compile_options "-O0")
+    elseif(CONFIG_COMPILER_OPTIMIZATION_PERF)
+        list(APPEND compile_options "-O2")
+    endif()
 
-        if(CONFIG_COMPILER_CXX_RTTI)
-            list(APPEND cxx_compile_options "-frtti")
-        else()
-            list(APPEND cxx_compile_options "-fno-rtti")
-            list(APPEND link_options "-fno-rtti")  # used to invoke correct multilib variant (no-rtti) during linking
-        endif()
+    if(CONFIG_COMPILER_CXX_EXCEPTIONS)
+        list(APPEND cxx_compile_options "-fexceptions")
+    else()
+        list(APPEND cxx_compile_options "-fno-exceptions")
+    endif()
+
+    if(CONFIG_COMPILER_CXX_RTTI)
+        list(APPEND cxx_compile_options "-frtti")
+    else()
+        list(APPEND cxx_compile_options "-fno-rtti")
+        list(APPEND link_options "-fno-rtti")  # used to invoke correct multilib variant (no-rtti) during linking
     endif()
 
     if(CONFIG_COMPILER_SAVE_RESTORE_LIBCALLS)
@@ -256,30 +225,6 @@ function(__init_project_configuration)
 
     if(CMAKE_C_COMPILER_ID MATCHES "GNU")
         list(APPEND c_compile_options "-Wno-old-style-declaration")
-    endif()
-
-    if(c_enabled)
-        # TODO IDF-15784: remove in IDF v7.0 ?
-        check_c_compiler_flag("-Wunused-but-set-variable=1" compiler_supports_wunused_but_set_variable_eq_1)
-        if(compiler_supports_wunused_but_set_variable_eq_1)
-            list(APPEND compile_options "-Wunused-but-set-variable=1")
-        endif()
-    endif()
-
-    if(CONFIG_COMPILER_CXX_TRIVIAL_AUTO_VAR_INIT_UNINITIALIZED)
-        set(compiler_cxx_trivial_auto_var_init "uninitialized")
-    elseif(CONFIG_COMPILER_CXX_TRIVIAL_AUTO_VAR_INIT_PATTERN)
-        set(compiler_cxx_trivial_auto_var_init "pattern")
-    elseif(CONFIG_COMPILER_CXX_TRIVIAL_AUTO_VAR_INIT_ZERO)
-        set(compiler_cxx_trivial_auto_var_init "zero")
-    endif()
-    if(NOT IDF_CUSTOM_TOOLCHAIN AND cxx_enabled AND compiler_cxx_trivial_auto_var_init)
-        idf_toolchain_remove_flags(CXX_COMPILE_OPTIONS "-ftrivial-auto-var-init")
-        check_cxx_compiler_flag("-ftrivial-auto-var-init=${compiler_cxx_trivial_auto_var_init}"
-            compiler_supports_ftrivial_auto_var_init)
-        if(compiler_supports_ftrivial_auto_var_init)
-            idf_toolchain_add_flags(CXX_COMPILE_OPTIONS "-ftrivial-auto-var-init=${compiler_cxx_trivial_auto_var_init}")
-        endif()
     endif()
 
     # Clang finds some warnings in IDF code which GCC doesn't.
@@ -356,31 +301,6 @@ function(__init_project_configuration)
         list(APPEND compile_options "-fstack-protector-all")
     endif()
 
-    # Kernel Address Sanitizer (CONFIG_COMPILER_KASAN): instrument every memory
-    # load and store with a shadow-memory check. The flag goes into the C and C++
-    # options rather than the language-agnostic list because the assembler does
-    # not accept -fsanitize. Low-level components are de-instrumented again in
-    # idf_build_library(), see __kasan_exclude_components().
-    #
-    # A subproject that must never be instrumented (for example the bootloader,
-    # which runs before the sanitizer shadow is initialised) sets the
-    # SET_COMPILER_KASAN build property to NO before idf_project_init(), the
-    # same way it uses SET_COMPILER_LTO and SET_COMPILER_OPTIMIZATION; an unset
-    # property means instrumentation is allowed.
-    idf_build_get_property(set_compiler_kasan SET_COMPILER_KASAN)
-    if(NOT DEFINED set_compiler_kasan OR set_compiler_kasan STREQUAL "")
-        set(set_compiler_kasan YES)
-    endif()
-    if(CONFIG_COMPILER_KASAN AND set_compiler_kasan)
-        list(APPEND c_compile_options "-fsanitize=kernel-address")
-        list(APPEND cxx_compile_options "-fsanitize=kernel-address")
-        if(NOT CONFIG_KASAN_STACK)
-            list(APPEND c_compile_options "--param" "asan-stack=0")
-            list(APPEND cxx_compile_options "--param" "asan-stack=0")
-        endif()
-        list(APPEND link_options "-fsanitize=kernel-address")
-    endif()
-
     if(CONFIG_COMPILER_DUMP_RTL_FILES)
         list(APPEND compile_options "-fdump-rtl-expand")
     endif()
@@ -434,26 +354,7 @@ function(__init_project_configuration)
         endif()
     endif()
 
-    # A subproject that must not use LTO (for example the bootloader) opts out by
-    # setting the SET_COMPILER_LTO build property to NO, the same way it uses
-    # SET_COMPILER_OPTIMIZATION; an unset property means LTO is allowed.
-    idf_build_get_property(set_compiler_lto SET_COMPILER_LTO)
-    if(NOT DEFINED set_compiler_lto OR set_compiler_lto STREQUAL "")
-        set(set_compiler_lto YES)
-    endif()
-    if(CONFIG_COMPILER_LTO_LINKTIME AND set_compiler_lto)
-        list(APPEND link_options "-flto=auto")
-        # LTO generates code at link time, so the -ffunction-sections/-fdata-sections
-        # applied to compile_options doesn't reach it: the LTRANS recompilation takes
-        # its code generation options from the link command line. Without them the
-        # LTO partition is emitted as a single .text/.data, which defeats
-        # -Wl,--gc-sections (it can only drop whole sections) and keeps unreferenced
-        # functions in the image.
-        list(APPEND link_options "-ffunction-sections"
-                                 "-fdata-sections")
-    else()
-        list(APPEND compile_options "-fno-lto")
-    endif()
+    list(APPEND link_options "-fno-lto")
 
     if(CONFIG_IDF_TARGET_LINUX AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
         # Not all versions of the MacOS linker support the -warn_commons flag.
@@ -518,44 +419,12 @@ function(__init_project_configuration)
     if("${linker_type}" STREQUAL "GNU")
         set(target_upper "${idf_target}")
         string(TOUPPER ${target_upper} target_upper)
+        # Add cross-reference table to the map file
+        list(APPEND link_options "-Wl,--cref")
         # Add this symbol as a hint for esp_idf_size to guess the target name
         list(APPEND link_options "-Wl,--defsym=IDF_TARGET_${target_upper}=0")
-        if(CONFIG_COMPILER_USE_LLD)
-            if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-                # The last --ld-path on the link line takes precedence over the
-                # one set in the toolchain file, selecting LLD for the link.
-                # The bare name is looked up in PATH.
-                list(APPEND link_options "--ld-path=ld.lld")
-            else()
-                # GCC has no --ld-path; -fuse-ld=lld makes the driver search
-                # its search paths and PATH for a binary named "ld.lld".
-                list(APPEND link_options "-fuse-ld=lld")
-            endif()
-            # Bare-metal images have no dynamic loader, so PT_GNU_RELRO is
-            # meaningless. LLD enables relro by default and errors out when
-            # relro sections (e.g. TLS .flash.tdata) are not contiguous in the
-            # IDF linker scripts, so disable it.
-            list(APPEND link_options "-Wl,-z,norelro")
-            # Some targets (e.g. esp32s3) use NOLOAD dummy sections that
-            # deliberately overlap other sections' address ranges, because two
-            # memory regions alias the same bus address space. GNU ld skips
-            # NOBITS sections in its overlap check; LLD does not, so disable
-            # the check there.
-            list(APPEND link_options "-Wl,--no-check-sections")
-            set(linker_binary "ld.lld")
-        else()
-            set(linker_binary "${CMAKE_LINKER}")
-        endif()
-        # Report which linker the link will use, with its version banner
-        execute_process(COMMAND ${linker_binary} "-v"
-            OUTPUT_VARIABLE linker_version
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
-        string(REGEX REPLACE "\n.*" "" linker_version "${linker_version}")
-        message(STATUS "Linker: ${linker_binary} (${linker_version})")
-        unset(linker_version)
         # Check if linker supports --no-warn-rwx-segments
-        execute_process(COMMAND ${linker_binary} "--no-warn-rwx-segments" "--version"
+        execute_process(COMMAND ${CMAKE_LINKER} "--no-warn-rwx-segments" "--version"
             RESULT_VARIABLE result
             OUTPUT_QUIET
             ERROR_QUIET)
@@ -575,27 +444,25 @@ function(__init_project_configuration)
     # paths back to the real paths in the filesystem.
     set(gdbinit_dir ${build_dir}/gdbinit)
     set(gdbinit_path "${gdbinit_dir}/prefix_map")
-    set(prefix_map_compile_options)
 
     if(CONFIG_COMPILER_HIDE_PATHS_MACROS)
-        list(APPEND prefix_map_compile_options "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=.")
-        list(APPEND prefix_map_compile_options "-fmacro-prefix-map=${idf_path}=/IDF")
+        list(APPEND compile_options "-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=.")
+        list(APPEND compile_options "-fmacro-prefix-map=${idf_path}=/IDF")
     endif()
 
     if(CONFIG_APP_REPRODUCIBLE_BUILD)
-        list(APPEND prefix_map_compile_options "-fdebug-prefix-map=${idf_path}=/IDF")
-        list(APPEND prefix_map_compile_options "-fdebug-prefix-map=${project_dir}=/IDF_PROJECT")
-        list(APPEND prefix_map_compile_options "-fdebug-prefix-map=${build_dir}=/IDF_BUILD")
+        list(APPEND compile_options "-fdebug-prefix-map=${idf_path}=/IDF")
+        list(APPEND compile_options "-fdebug-prefix-map=${project_dir}=/IDF_PROJECT")
+        list(APPEND compile_options "-fdebug-prefix-map=${build_dir}=/IDF_BUILD")
 
         # Generate mapping for component paths
         set(gdbinit_file_lines)
-        foreach(component_interface ${component_interfaces})
-            __idf_component_get_property_unchecked(component_name ${component_interface} COMPONENT_NAME)
-            __idf_component_get_property_unchecked(component_dir ${component_interface} COMPONENT_DIR)
+        foreach(component_name ${components_discovered})
+            idf_component_get_property(component_dir ${component_name} COMPONENT_DIR)
 
             string(TOUPPER ${component_name} component_name_uppercase)
             set(substituted_path "/COMPONENT_${component_name_uppercase}_DIR")
-            list(APPEND prefix_map_compile_options "-fdebug-prefix-map=${component_dir}=${substituted_path}")
+            list(APPEND compile_options "-fdebug-prefix-map=${component_dir}=${substituted_path}")
             string(APPEND gdbinit_file_lines "set substitute-path ${substituted_path} ${component_dir}\n")
         endforeach()
 
@@ -609,27 +476,14 @@ function(__init_project_configuration)
         endif()
         string(STRIP "${compiler_sysroot}" compiler_sysroot)
         get_filename_component(compiler_sysroot "${compiler_sysroot}/.." REALPATH)
-        list(APPEND prefix_map_compile_options "-fdebug-prefix-map=${compiler_sysroot}=/TOOLCHAIN")
+        list(APPEND compile_options "-fdebug-prefix-map=${compiler_sysroot}=/TOOLCHAIN")
         string(APPEND gdbinit_file_lines "set substitute-path /TOOLCHAIN ${compiler_sysroot}\n")
     else()
         set(gdbinit_file_lines "# There is no prefix map defined for the project.\n")
     endif()
-    list(APPEND compile_options ${prefix_map_compile_options})
     # Write the prefix_map file even if it is empty.
     file(MAKE_DIRECTORY ${gdbinit_dir})
     file(WRITE "${gdbinit_path}" "${gdbinit_file_lines}")
-
-    if(CONFIG_APP_REPRODUCIBLE_BUILD AND CONFIG_COMPILER_LTO_LINKTIME AND set_compiler_lto)
-        # LTO generates code at link time, where the path remapping applied to
-        # compile_options doesn't take effect, so pass it to the linker as well.
-        # -save-temps keeps LTRANS objects out of $TMPDIR, and a pinned random
-        # seed makes LTO bytecode byte-identical. See the commit message of
-        # "feat(build): add options to enable link-time optimization (LTO)"
-        # for details.
-        list(APPEND link_options ${prefix_map_compile_options})
-        list(APPEND link_options "-save-temps")
-        list(APPEND compile_options "-frandom-seed=1")
-    endif()
 
     idf_build_set_property(GDBINIT_FILES_PREFIX_MAP "${gdbinit_path}")
     idf_build_set_property(COMPILE_OPTIONS "${compile_options}" APPEND)
@@ -671,16 +525,14 @@ endfunction()
     esptool_py component.
 #]]
 function(__init_project_flash_targets)
-    # Skip if esptool_py is not in the build set; the flash-target function
-    # would otherwise be undefined.
-    if(CONFIG_APP_BUILD_GENERATE_BINARIES AND COMMAND esptool_py_flash_target)
+    if(CONFIG_APP_BUILD_GENERATE_BINARIES)
         idf_component_get_property(main_args esptool_py FLASH_ARGS)
         idf_component_get_property(sub_args esptool_py FLASH_SUB_ARGS)
         esptool_py_flash_target(flash "${main_args}" "${sub_args}")
     endif()
 endfunction()
 
-#[[api
+#[[
 .. cmakev2:macro:: idf_project_init
 
     .. code-block:: cmake
@@ -707,11 +559,6 @@ macro(idf_project_init)
         # Ensure this function is executed only once throughout the entire
         # project.
 
-        # The IDF_TOOLCHAIN variable is established as a CMake cache variable
-        # during the toolchain initialization process in
-        # ``tools/cmake/toolchain.cmake``.
-        idf_build_set_property(IDF_TOOLCHAIN "${IDF_TOOLCHAIN}")
-
         # Warn about the use of deprecated variables.
         deprecate_variable(COMPONENTS)
         deprecate_variable(EXCLUDE_COMPONENTS)
@@ -728,28 +575,11 @@ macro(idf_project_init)
         # Discover and initialize components
         __init_components()
 
-        # Save original sdkconfig before kconfgen may drop unknown options.
-        # Only creates a backup when the component manager is enabled.
-        __create_sdkconfig_orig_copy()
-
-        # When the component manager is enabled, suppress kconfgen warnings
-        # on this initial pass. Managed component symbols are unknown at this
-        # stage and will be resolved after __fetch_components_from_registry().
-        idf_build_get_property(idf_component_manager IDF_COMPONENT_MANAGER)
-        if(idf_component_manager EQUAL 1)
-            idf_build_set_property(__KCONFGEN_QUIET YES)
-        endif()
-
         # Generate initial sdkconfig with discovered components
         __generate_sdkconfig()
 
-        # Fetch managed components from registry if the component manager is enabled
-        idf_build_get_property(idf_component_manager IDF_COMPONENT_MANAGER)
-        if(idf_component_manager EQUAL 1)
-            __fetch_components_from_registry()
-        else()
-            __component_manager_warn_if_disabled_and_manifests_exist()
-        endif()
+        # Initialize the component manager and fetch components in a loop
+        __fetch_components_from_registry()
 
         # Include sdkconfig.cmake
         idf_build_get_property(sdkconfig_cmake __SDKCONFIG_CMAKE)
@@ -767,22 +597,12 @@ macro(idf_project_init)
         # Ensure this is done after including the sdkconfig.
         __init_idf_target_arch()
 
-        # Make build properties available as CMake variables for backward
-        # compatibility with project_include.cmake files (e.g. ULP component
-        # references ${SDKCONFIG_HEADER} and ${SDKCONFIG_CMAKE} directly).
-        idf_build_get_property(build_properties BUILD_PROPERTIES)
-        foreach(build_property IN LISTS build_properties)
-            idf_build_get_property(val ${build_property})
-            set(${build_property} "${val}")
-        endforeach()
-
         # Include all project_include.cmake files for the components that have
         # been discovered.
-        idf_build_get_property(component_interfaces COMPONENT_INTERFACES)
-        foreach(component_interface IN LISTS component_interfaces)
-            __idf_component_get_property_unchecked(project_include ${component_interface} __PROJECT_INCLUDE)
-            __idf_component_get_property_unchecked(component_dir ${component_interface} COMPONENT_DIR)
-            __idf_component_get_property_unchecked(component_name ${component_interface} COMPONENT_NAME)
+        idf_build_get_property(component_names COMPONENTS_DISCOVERED)
+        foreach(component_name IN LISTS component_names)
+            idf_component_get_property(project_include ${component_name} __PROJECT_INCLUDE)
+            idf_component_get_property(component_dir ${component_name} COMPONENT_DIR)
             if(project_include)
                 set(COMPONENT_NAME ${component_name})
                 set(COMPONENT_DIR ${component_dir})
@@ -819,7 +639,7 @@ macro(idf_project_init)
     unset(project_initialized)
 endmacro()
 
-#[[api
+#[[
 .. cmakev2:function:: idf_build_generate_flasher_args
 
     .. code-block:: cmake
@@ -868,28 +688,6 @@ function(idf_build_generate_flasher_args)
                  INPUT "${build_dir}/flasher_args.json.in")
 endfunction()
 
-#[[api
-.. cmakev2:function:: idf_project_add_default_build_component
-
-    .. code-block:: cmake
-
-        idf_project_add_default_build_component(<component>...)
-
-    *component[in]*
-
-        Component name to include in the executable created by
-        :cmakev2:ref:`idf_project_default`.
-
-    Add components to the default project executable. This is intended for
-    components that need to be built based on sdkconfig alone, for example to
-    provide linker-section registrations, without making another component
-    depend on them. This is e.g. the case with coredump which is simply enabled
-    based on CONFIG_ESP_COREDUMP_ENABLE option, but no other components depend it.
-#]]
-function(idf_project_add_default_build_component)
-    idf_build_set_property(PROJECT_DEFAULT_EXTRA_COMPONENTS "${ARGN}" APPEND)
-endfunction()
-
 #[[
 .. cmakev2:macro:: __project_default
 
@@ -903,43 +701,11 @@ endfunction()
 function(__project_default)
     idf_build_get_property(build_dir BUILD_DIR)
     idf_build_get_property(executable PROJECT_NAME)
-
-    # When the Build system v1 compatibility shim forwarded a COMPONENTS
-    # list, use it instead of default main.
-    idf_build_get_property(shim_components __SHIM_COMPONENTS)
-    if(shim_components)
-        set(root_components ${shim_components})
-    else()
-        set(root_components main)
-        idf_build_get_property(extra_default_components PROJECT_DEFAULT_EXTRA_COMPONENTS)
-        if(extra_default_components)
-            list(APPEND root_components ${extra_default_components})
-            list(REMOVE_DUPLICATES root_components)
-        endif()
-    endif()
-
     idf_build_executable("${executable}"
-                         COMPONENTS ${root_components}
+                         COMPONENTS main
                          MAPFILE_TARGET "${executable}_mapfile")
 
-    # In Build system v1, the ``project_elf`` variable (set to
-    # "${project_name}.elf") is used by several app CMakeLists.txt files to add
-    # linker flags after project(). In Build system v2 the executable target
-    # is just "${executable}" (the .elf suffix is an output property, not part
-    # of the target name). Propagate it to the caller's scope so existing
-    # code keeps working.
-    set(project_elf "${executable}" PARENT_SCOPE)
-
-    # Provide Build system v1-compatible build properties so that existing
-    # test apps and project CMakeLists.txt files that query EXECUTABLE
-    # continue to work when built through the shim.
-    idf_build_get_property(v1_compat __V1_COMPAT_SHIM)
-    if(v1_compat)
-        idf_build_set_property(EXECUTABLE "${executable}")
-        idf_build_set_property(EXECUTABLE_NAME "${executable}")
-    endif()
-
-    if(CONFIG_APP_BUILD_GENERATE_BINARIES AND TARGET idf::esptool_py)
+    if(CONFIG_APP_BUILD_GENERATE_BINARIES)
         # Is it possible to have a configuration where
         # CONFIG_APP_BUILD_GENERATE_BINARIES is not set?
 
@@ -958,8 +724,7 @@ function(__project_default)
                              TARGET app-flash
                              NAME "app"
                              FLASH)
-            idf_build_generate_metadata(BINARY "${executable}_binary_signed"
-                                        HINTS_OUTPUT_FILE "${BUILD_DIR}/hints.yml")
+            idf_build_generate_metadata("${executable}_binary_signed")
         else()
             idf_build_binary("${executable}"
                              OUTPUT_FILE "${build_dir}/${executable}.bin"
@@ -976,29 +741,19 @@ function(__project_default)
 
             idf_create_dfu("${executable}_binary"
                            TARGET dfu)
-            idf_build_generate_metadata(BINARY "${executable}_binary"
-                                        HINTS_OUTPUT_FILE "${BUILD_DIR}/hints.yml")
+            idf_build_generate_metadata("${executable}_binary")
         endif()
 
         idf_build_generate_flasher_args()
-    else()
-        idf_build_generate_metadata(EXECUTABLE "${executable}"
-                                    HINTS_OUTPUT_FILE "${BUILD_DIR}/hints.yml")
     endif()
 
     idf_create_menuconfig("${executable}"
-                          TARGET menuconfig-app)
-    idf_register_menuconfig(NAME "Main application"
-                            TARGET menuconfig-app)
-    __finalize_menuconfig()
+                          TARGET menuconfig)
 
     idf_create_confserver("${executable}"
                           TARGET confserver)
 
     idf_create_save_defconfig()
-
-    idf_create_config_report("${executable}"
-                             TARGET config-report)
 
     idf_create_uf2("${executable}"
                    TARGET uf2)
@@ -1031,11 +786,6 @@ endfunction()
 #]]
 macro(idf_project_default)
     idf_project_init()
-
-    # Use DEFERRED optional-requires resolution only when this will be the sole
-    # library being built.
-    idf_build_set_property(IDF_COMPONENT_OPTIONAL_REQUIRES_MODE DEFERRED)
-
     # Only the idf_project_init macro needs be called within the global scope,
     # as it includes the project_include.cmake files and the cmake version of
     # the configuration. The remaining functionality of the idf_project_default

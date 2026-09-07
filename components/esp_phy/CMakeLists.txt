@@ -10,8 +10,6 @@ if(IDF_TARGET STREQUAL "esp32p4")
     return()
 endif()
 
-set(embed_files)
-
 if(CONFIG_ESP_PHY_ENABLED)
 
     set(srcs "src/phy_override.c" "src/lib_printf.c" "src/phy_common.c")
@@ -22,9 +20,6 @@ if(CONFIG_ESP_PHY_ENABLED)
     else()
         set(link_binary_libs 1)
         set(ldfragments "linker.lf")
-        if(CONFIG_ESP_PHY_INIT_IRAM)
-            list(APPEND ldfragments "linker_esp32hxx.lf")
-        endif()
     endif()
 
     if(CONFIG_SOC_IEEE802154_BLE_ONLY)
@@ -46,25 +41,10 @@ if(CONFIG_ESP_PHY_ENABLED)
 
     if(CONFIG_SOC_WIFI_SUPPORTED)
         if(CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN)
-            set(_phy_multi_src "${CMAKE_CURRENT_SOURCE_DIR}/${idf_target}/phy_multiple_init_data.bin")
-            if(NOT "${CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN_CUSTOM_PATH}" STREQUAL "")
-                idf_build_get_property(project_dir PROJECT_DIR)
-                set(_phy_multi_custom_path "${CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN_CUSTOM_PATH}")
-                if(NOT IS_ABSOLUTE "${_phy_multi_custom_path}")
-                    get_filename_component(_phy_multi_custom_path
-                        "${project_dir}/${_phy_multi_custom_path}" ABSOLUTE)
-                endif()
-                if(IS_DIRECTORY "${_phy_multi_custom_path}")
-                    set(_phy_multi_custom_path "${_phy_multi_custom_path}/phy_multiple_init_data.bin")
-                endif()
-                if(EXISTS "${_phy_multi_custom_path}")
-                    set(_phy_multi_src "${_phy_multi_custom_path}")
-                endif()
+            if(NOT EXISTS "${build_dir}/phy_multiple_init_data.bin")
+                file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${idf_target}/phy_multiple_init_data.bin
+                DESTINATION "${build_dir}")
             endif()
-            # Refresh copied bin each configure so sdkconfig/path edits match embed + flash contents.
-            # configure_file(COPYONLY) tracks the source file as a configure dependency.
-            message(STATUS "esp_phy: phy_multiple_init_data.bin <- ${_phy_multi_src}")
-            configure_file("${_phy_multi_src}" "${build_dir}/phy_multiple_init_data.bin" COPYONLY)
         endif()
 
         if(CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN_EMBED)
@@ -92,6 +72,7 @@ if(CONFIG_ESP_PHY_ENABLED)
         # Decide which libraries to link based on the configuration and the target
         set(has_libbttestmode 0)
         set(has_librftest 0)
+        set(has_librfate 0)
         set(has_libphy 0)
         set(has_libbtbb 0)
         set(has_librtc 0)
@@ -102,9 +83,11 @@ if(CONFIG_ESP_PHY_ENABLED)
                 set(has_librftest 1)
             elseif(CONFIG_IDF_TARGET_ESP32S2)
                 set(has_librftest 1)
+                set(has_librfate 1)
             else()
                 set(has_libbttestmode 1)
                 set(has_librftest 1)
+                set(has_librfate 1)
             endif()
         endif()
 
@@ -131,6 +114,12 @@ if(CONFIG_ESP_PHY_ENABLED)
             list(APPEND libs_to_link esp_phy_librftest)
         endif()
 
+        if(has_librfate)
+            add_prebuilt_library(esp_phy_librfate "${lib_dir}/librfate.a"
+                                REQUIRES ${COMPONENT_NAME})
+            list(APPEND libs_to_link esp_phy_librfate)
+        endif()
+
         if(has_libbtbb)
             add_prebuilt_library(esp_phy_libbtbb "${lib_dir}/libbtbb.a"
                                  REQUIRES ${COMPONENT_NAME})
@@ -149,9 +138,8 @@ if(CONFIG_ESP_PHY_ENABLED)
             list(APPEND libs_to_link esp_phy_libphy)
         endif()
 
-        # Finally, link the libraries to the component.
-        # PUBLIC is required for linker.lf fragment mappings (e.g. IRAM placement) to work.
-        target_link_libraries(${COMPONENT_LIB} PUBLIC ${libs_to_link})
+        # Finally, link the libraries to the component
+        target_link_libraries(${COMPONENT_LIB} INTERFACE ${libs_to_link})
     endif()
 
    if(CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION)
@@ -191,17 +179,9 @@ if(CONFIG_ESP_PHY_ENABLED)
 
         set(phy_name "phy")
 
-        # When the multiple PHY init data bin is embedded into the application image
-        # (CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN_EMBED=y), the data is already part of
-        # app.bin and there is no need to flash it again to the `phy` data partition.
-        # Skip registering it as a flashable image in that case.
-        if(NOT CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN_EMBED)
-            esptool_py_flash_target(${phy_name}-flash "${main_args}" "${sub_args}")
-            esptool_py_flash_target_image(${phy_name}-flash ${phy_name}
-                "${phy_partition_offset}" "${phy_init_data_bin}")
-            esptool_py_flash_target_image(flash ${phy_name}
-                "${phy_partition_offset}" "${phy_init_data_bin}")
-        endif()
+        esptool_py_flash_target(${phy_name}-flash "${main_args}" "${sub_args}")
+        esptool_py_flash_target_image(${phy_name}-flash ${phy_name} "${phy_partition_offset}" "${phy_init_data_bin}")
+        esptool_py_flash_target_image(flash ${phy_name} "${phy_partition_offset}" "${phy_init_data_bin}")
     endif()
 
 endif()

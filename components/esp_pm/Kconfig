@@ -1,14 +1,12 @@
 menu "Power Management"
 
     config PM_SLEEP_FUNC_IN_IRAM
-        bool "Place Power Management module functions in IRAM"
-        default n
+        bool "Place Power Management module functions in IRAM" if IDF_TARGET_ESP32C2
+        default y
         select PM_SLP_IRAM_OPT if SOC_LIGHT_SLEEP_SUPPORTED
         select PM_RTOS_IDLE_OPT if FREERTOS_USE_TICKLESS_IDLE
         select ESP_PERIPH_CTRL_FUNC_IN_IRAM
         select ESP_REGI2C_CTRL_FUNC_IN_IRAM
-        select RTC_CLK_FUNC_IN_IRAM
-        select RTC_TIME_FUNC_IN_IRAM
 
 
     config PM_ENABLE
@@ -78,37 +76,16 @@ menu "Power Management"
             This feature is intended to be used when lower power consumption is needed
             while there is enough place in IRAM to place source code.
 
-    config PM_TICKLESS_IDLE_WAITI
-        bool "Enable tickless idle without entering light sleep"
-        depends on PM_ENABLE
-        depends on FREERTOS_USE_TICKLESS_IDLE
-        depends on FREERTOS_SYSTICK_USES_SYSTIMER
-        depends on SOC_RTC_TIMER_SUPPORTED
-        default n
-        help
-            When enabled, tickless idle also applies when the system does not enter
-            light sleep. This includes DFS-only configurations (light sleep disabled),
-            and cases where light sleep is enabled but not taken (for example when
-            blocked by ESP_PM_NO_LIGHT_SLEEP or other PM locks). This can reduce idle
-            power consumption in those situations.
-
     config PM_SLP_DISABLE_GPIO
         bool "Disable all GPIO when chip at sleep"
         depends on FREERTOS_USE_TICKLESS_IDLE
         help
             This feature is intended to disable all GPIO pins at automantic sleep to get a lower power mode.
             If enabled, chips will disable all GPIO pins at automantic sleep to reduce about 200~300 uA current.
-
-            If you want to specifically use some pins normally as chip wakes when chip sleeps, you can
-            call 'gpio_sleep_sel_dis' to disable this feature on those pins.
-
-            Please note, that disabling a GPIO as a wake-up source via `gpio_wakeup_disable` reverts
-            the effect of `gpio_sleep_sel_dis` for that pin.
-            When you disable a GPIO as wake-up source, but want to keep the GPIO powered or some custom
-            GPIO sleep state configurations during sleep, you must call `gpio_sleep_sel_dis` again.
-
-            Alternatively, You can also keep this feature on and call 'gpio_sleep_set_direction' and
-            'gpio_sleep_set_pull_mode' to have a different GPIO configuration at sleep.
+            If you want to specifically use some pins normally as chip wakes when chip sleeps,
+            you can call 'gpio_sleep_sel_dis' to disable this feature on those pins.
+            You can also keep this feature on and call 'gpio_sleep_set_direction' and 'gpio_sleep_set_pull_mode'
+            to have a different GPIO configuration at sleep.
 
     config PM_SLP_DEFAULT_PARAMS_OPT
         bool
@@ -262,44 +239,6 @@ menu "Power Management"
             NOTE: Enabling these callbacks may change sleep duration calculations based on time spent in callback and
             hence it is highly recommended to keep them as short as possible
 
-    config PM_LIGHTSLEEP_TICK_OVERFLOW_PROTECTION
-        bool "Enable light sleep tick overflow protection"
-        depends on FREERTOS_USE_TICKLESS_IDLE
-        default n
-        help
-            Limits tick compensation after light sleep wakeup to prevent vTaskStepTick() assertion
-            failure when actual wakeup overhead exceeds estimation (due to cache misses, CPU
-            frequency changes, or flash latency variations).
-
-            When enabled:
-              - Silently limits slept_ticks to xExpectedIdleTime when oversleep is within tolerance
-                (configured by PM_LIGHTSLEEP_TICK_OVERFLOW_TOLERANCE), preventing assertion failure
-              - Does not limit when oversleep exceeds tolerance (may indicate a bug), assertion failure may occur
-              - May lose ticks in rare cases, causing xTickCount to lag behind esp_timer
-
-            When disabled (default):
-              - Accurate tick compensation, better precision
-              - May trigger assertion failure and system crash if overslept
-
-            Keep disabled by default to maintain RTOS tick accuracy. Enable only when you experience
-            assertion failures related to vTaskStepTick() and can accept slight inaccuracy of RTOS
-            tick time compared to real time.
-
-    config PM_LIGHTSLEEP_TICK_OVERFLOW_TOLERANCE
-        int "Light sleep tick overflow tolerance"
-        depends on PM_LIGHTSLEEP_TICK_OVERFLOW_PROTECTION
-        default 2
-        range 1 10
-        help
-            Maximum number of ticks that can be overslept before triggering.
-            When oversleep is within this tolerance, the system silently limits slept_ticks to
-            prevent assertion failure. When oversleep exceeds this tolerance, assertion failure
-            may occur and system may crash.
-
-            Higher values provide more tolerance for estimation variance but may hide real issues
-            and cause more tick loss, leading to greater RTOS tick time inaccuracy compared to real time.
-            Lower values provide better RTOS tick accuracy but may cause false positives.
-
     config PM_WORKAROUND_FREQ_LIMIT_ENABLED
         bool
         default y if SPI_FLASH_FREQ_LIMIT_C5_240MHZ
@@ -307,50 +246,5 @@ menu "Power Management"
             Workaround for frequency limit during encrypted flash writes.
             Only enabled when SPI_FLASH_FREQ_LIMIT_C5_240MHZ is enabled.
             This is an internal configuration, automatically set based on SPI Flash configuration.
-
-    config PM_SLP_SPIRAM_HALFSLEEP_ENABLED
-        bool "Enable halfsleep mode for PSRAM in light sleep"
-        depends on SPIRAM
-        default y
-        help
-            Enable PSRAM halfsleep mode feature to reduce power consumption during light sleep, if the PSRAM used
-            support halfsleep mode.
-
-            When enabled, the PSRAM chip will be configured to enter halfsleep mode (if applicable) before entering
-            light sleep. This reduces power consumption by:
-            1. Setting refresh rate to 0.5x
-            2. Setting PSRAM to halfsleep mode
-
-            The PSRAM will automatically exit halfsleep mode after waking up from light sleep.
-
-    config PM_SLP_SPIRAM_HALFSLEEP_EXIT_WAIT_DELAY
-        int "The time to wait for PSRAM to be able to access after exiting halfsleep mode (in us)"
-        depends on SPIRAM
-        default 150
-        range 50 250
-        help
-            Configure the delay time between waking up PSRAM halfsleep mode and the first access to PSRAM.
-            Refer to the tXHS parameter in datasheet of the used PSRAM to configure this option.
-
-    config PM_SLEEP_CLK_ICG_ENABLE
-        bool "Enable clock gating control during light sleep"
-        depends on SOC_PM_SLEEP_CLK_ICG_USE_REGDMA
-        default y
-        help
-            Enable clock gating for digital peripherals in Light Sleep mode.
-            Some digital peripherals require their functional clocks to
-            remain enabled during sleep. The Sleep Clock ICG selectively
-            ungates the clock tree for these peripherals, allowing their
-            hardware logic to continue running during Light Sleep, while
-            keeping all other peripheral clocks gated to minimize sleep
-            power consumption.
-
-    config PM_SKIP_MODEM_TO_ACTIVE_ANALOG_WAIT
-        bool
-        depends on SOC_PM_SUPPORT_PMU_MODEM_STATE
-        default n
-        help
-            If enabled, the analog wait time when waking up from modem to active state will be skipped.
-            This will reduce the wakeup time.
 
 endmenu # "Power Management"

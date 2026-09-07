@@ -161,27 +161,18 @@ static void uhci_rx_done_process_task(void *arg)
 {
     size_t item_size = 0;
     uint8_t *data = NULL;
-    size_t items_waiting = 0;
-
-    xSemaphoreTake(uart_env.rx_process_sema, portMAX_DELAY);
     while (1) {
+        xSemaphoreTake(uart_env.rx_process_sema, portMAX_DELAY);
         data = xRingbufferReceiveUpTo(uart_env.ringbufhandle, &item_size, portMAX_DELAY, uart_env.rx.size);
-        // prepare next receive
+        if (item_size != uart_env.rx.size) {
+            assert(0);
+        }
+        memcpy(uart_env.rx.buf, data, item_size);
+        vRingbufferReturnItem(uart_env.ringbufhandle, data);
+
         if (uart_env.rx_eof) {
             uhci_receive(uart_env.uhci_handle, uart_env.rx_data_buffer, UHCI_MAX_RX_BUFFER_SIZE);
             uart_env.rx_eof = false;
-        }
-
-        memcpy(uart_env.rx.buf, data, item_size);
-        vRingbufferReturnItem(uart_env.ringbufhandle, data);
-        uart_env.rx.size -= item_size;
-        uart_env.rx.buf += item_size;
-        if (uart_env.rx.size) {
-            vRingbufferGetInfo(uart_env.ringbufhandle, NULL, NULL, NULL, NULL, &items_waiting);
-            if (items_waiting < uart_env.rx.size) {
-                ESP_LOGW(tag, "Ring buffer items size less than expected");
-            }
-            continue;
         }
 
         assert(uart_env.rx.callback != NULL);
@@ -191,14 +182,13 @@ static void uhci_rx_done_process_task(void *arg)
         // clear callback pointer
         uart_env.rx.callback = NULL;
         uart_env.rx.arg = NULL;
+        uart_env.rx.size = 0;
 
         // call handler
         callback(arg, ESP_BT_HCI_TL_STATUS_OK);
 
         // send notification to Bluetooth Controller task
         esp_bt_h4tl_eif_io_event_notify(1);
-
-        xSemaphoreTake(uart_env.rx_process_sema, portMAX_DELAY);
     }
 }
 

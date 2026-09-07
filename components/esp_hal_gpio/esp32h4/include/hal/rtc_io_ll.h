@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,9 +25,7 @@
 #include "hal/misc.h"
 #include "hal/assert.h"
 
-#define RTCIO_LL_PIN_FUNC           1
-
-#define RTCIO_LL_GPIO_NUM_OFFSET    0 // rtcio 0-5 correspond to gpio 0-5
+#define RTCIO_LL_PIN_FUNC       1
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +40,17 @@ typedef enum {
     RTCIO_LL_OUTPUT_NORMAL = 0,    /*!< RTCIO output mode is normal. */
     RTCIO_LL_OUTPUT_OD = 0x1,      /*!< RTCIO output mode is open-drain. */
 } rtcio_ll_out_mode_t;
+
+/**
+ * @brief Select a RTC IOMUX function for the RTC IO
+ *
+ * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
+ * @param func Function to assign to the pin
+ */
+static inline void rtcio_ll_iomux_func_sel(int rtcio_num, int func)
+{
+    LP_IO_MUX.gpion[rtcio_num].gpion_mcu_sel = func;
+}
 
 /**
  * @brief Enable/Disable LP_GPIO peripheral clock.
@@ -62,17 +71,6 @@ static inline void _rtcio_ll_enable_io_clock(bool enable)
     } while(0)
 
 /**
- * @brief Select a RTC IOMUX function for the RTC IO
- *
- * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
- * @param func Function to assign to the pin
- */
-static inline void rtcio_ll_iomux_func_sel(int rtcio_num, int func)
-{
-    LP_IO_MUX.gpion[rtcio_num].gpion_mcu_sel = func;
-}
-
-/**
  * @brief Select the rtcio function.
  *
  * @note The RTC function must be selected before the pad analog function is enabled.
@@ -89,6 +87,8 @@ static inline void rtcio_ll_function_select(int rtcio_num, rtcio_ll_func_t func)
         uint32_t sel_mask = LP_AON.gpio_mux.gpio_mux_sel;
         sel_mask |= BIT(rtcio_num);
         LP_AON.gpio_mux.gpio_mux_sel = sel_mask;
+        // LP_GPIO is FUNC 1
+        rtcio_ll_iomux_func_sel(rtcio_num, RTCIO_LL_PIN_FUNC);
     } else if (func == RTCIO_LL_FUNC_DIGITAL) {
         // Clear the bit to use digital GPIO module
         uint32_t sel_mask = LP_AON.gpio_mux.gpio_mux_sel;
@@ -335,16 +335,6 @@ static inline void rtcio_ll_wakeup_disable(int rtcio_num)
 }
 
 /**
- * Clear edge-wakeup latch.
- *
- * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
- */
-static inline void rtcio_ll_clear_edge_wakeup_latch(int rtcio_num)
-{
-    LP_GPIO.pinn[rtcio_num].pinn_edge_wakeup_clr = 1;
-}
-
-/**
  * @brief Enable interrupt function and set interrupt type
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
@@ -450,34 +440,6 @@ static inline uint32_t rtcio_ll_get_interrupt_status(void)
 static inline void rtcio_ll_clear_interrupt_status(void)
 {
     LP_GPIO.status_w1tc.val = 0x3F;
-}
-
-/**
- * @brief Configure the source of output enable signal for the pad.
- *
- * @param rtcio_num The index of rtcio. 0 ~ SOC_RTCIO_PIN_COUNT-1.
- * @param ctrl_by_periph True if use output enable signal from peripheral, false if force the output enable signal to be sourced from bit n of GPIO_ENABLE_REG
- * @param oen_inv True if the output enable signal needs to be inverted, otherwise False.
- */
-static inline void rtcio_ll_set_output_enable_ctrl(uint8_t rtcio_num, bool ctrl_by_periph, bool oen_inv)
-{
-    (void)ctrl_by_periph; // deterministic:
-    // When the IO is used as a simple LP GPIO output, oe signal can only be controlled by the oe register;
-    // When the IO connects to a peripheral signal through IOMUX, oe signal can only be controlled by the peripheral
-    LP_GPIO.funcn_out_sel_cfg[rtcio_num].funcn_oe_inv_sel = oen_inv;
-}
-
-/**
- * @brief Connect a peripheral signal which tagged as output attribute with a RTCIO.
- *
- * @param rtcio_num The index of rtcio. 0 ~ SOC_RTCIO_PIN_COUNT-1.
- * @param signal_idx Peripheral signal index (tagged as output attribute).
- * @param out_inv True if the output signal needs to be inverted, otherwise False.
- */
-static inline void rtcio_ll_set_output_signal_matrix_source(uint8_t rtcio_num, uint32_t signal_idx, bool out_inv)
-{
-    (void)signal_idx; // no LP GPIO matrix on the target
-    LP_GPIO.funcn_out_sel_cfg[rtcio_num].funcn_out_inv_sel = out_inv;
 }
 
 #ifdef __cplusplus

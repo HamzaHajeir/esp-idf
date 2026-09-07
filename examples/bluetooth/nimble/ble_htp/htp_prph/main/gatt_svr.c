@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,7 +15,7 @@
 
 static const char *manuf_name = "ESP32 devkitC";
 static const char *model_num = "HTP Sensor demo";
-static const uint8_t system_id[8] = { 'H', 'T', 'P', '1' };
+static const char *system_id = "HTP1";
 static int
 gatt_svr_chr_access_device_info(uint16_t conn_handle, uint16_t attr_handle,
                                 struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -72,7 +72,7 @@ gatt_svr_chr_access_device_info(uint16_t conn_handle, uint16_t attr_handle,
     }
 
     if (uuid == GATT_DIS_CHR_UUID16_SYS_ID) {
-        rc = os_mbuf_append(ctxt->om, system_id, sizeof(system_id));
+        rc = os_mbuf_append(ctxt->om, system_id, strlen(system_id));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -117,15 +117,9 @@ gatt_svr_init(void)
 {
     int rc;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     ble_svc_gap_init();
-#endif
-#if MYNEWT_VAL(BLE_GATTS)
     ble_svc_gatt_init();
-#endif
-#if CONFIG_BT_NIMBLE_HTP_SERVICE
     ble_svc_htp_init();
-#endif
 
     rc = ble_gatts_count_cfg(gatt_svr_svcs);
     if (rc != 0) {

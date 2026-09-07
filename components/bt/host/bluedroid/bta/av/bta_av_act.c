@@ -262,8 +262,8 @@ static void bta_av_rc_msg_cback(UINT8 handle, UINT8 label, UINT8 opcode, tAVRC_M
     }
 
     /* Create a copy of the message */
-    size_t buf_size = sizeof(tBTA_AV_RC_MSG) + data_len;
-    tBTA_AV_RC_MSG *p_buf = (tBTA_AV_RC_MSG *)osi_malloc(buf_size);
+    tBTA_AV_RC_MSG *p_buf =
+        (tBTA_AV_RC_MSG *)osi_malloc((UINT16)(sizeof(tBTA_AV_RC_MSG) + data_len));
     if (p_buf != NULL) {
         p_buf->hdr.event = BTA_AV_AVRC_MSG_EVT;
         p_buf->handle = handle;
@@ -298,18 +298,12 @@ UINT8 bta_av_rc_create(tBTA_AV_CB *p_cb, UINT8 role, UINT8 shdl, UINT8 lidx)
     tAVRC_CONN_CB ccb;
     BD_ADDR_PTR   bda = (BD_ADDR_PTR)bd_addr_any;
     UINT8         status = BTA_AV_RC_ROLE_ACP;
-    tBTA_AV_SCB  *p_scb = NULL;
+    tBTA_AV_SCB  *p_scb = p_cb->p_scb[shdl - 1];
     int i;
     UINT8   rc_handle;
     tBTA_AV_RCB *p_rcb;
 
-    if (shdl > 0 && shdl <= BTA_AV_NUM_STRS) {
-        p_scb = p_cb->p_scb[shdl - 1];
-    }
     if (role == AVCT_INT) {
-        if (p_scb == NULL) {
-            return BTA_AV_RC_HANDLE_NONE;
-        }
         bda = p_scb->peer_addr;
         status = BTA_AV_RC_ROLE_INT;
     } else {
@@ -331,11 +325,6 @@ UINT8 bta_av_rc_create(tBTA_AV_CB *p_cb, UINT8 role, UINT8 shdl, UINT8 lidx)
         return BTA_AV_RC_HANDLE_NONE;
     }
 
-    if (rc_handle >= BTA_AV_NUM_RCB) {
-        APPL_TRACE_ERROR("bta_av_rc_create: EINVAL rc_handle %u", rc_handle);
-        AVRC_Close(rc_handle);
-        return BTA_AV_RC_HANDLE_NONE;
-    }
     i = rc_handle;
     p_rcb = &p_cb->rcb[i];
 
@@ -845,7 +834,7 @@ void bta_av_rc_msg(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
     tBTA_AV     av;
     BT_HDR      *p_pkt = NULL;
     tAVRC_MSG_VENDOR    *p_vendor = &p_data->rc_msg.msg.vendor;
-    BOOLEAN is_inquiry = ((p_data->rc_msg.msg.hdr.ctype == AVRC_CMD_SPEC_INQ) || (p_data->rc_msg.msg.hdr.ctype == AVRC_CMD_GEN_INQ));
+    BOOLEAN is_inquiry = ((p_data->rc_msg.msg.hdr.ctype == AVRC_CMD_SPEC_INQ) || p_data->rc_msg.msg.hdr.ctype == AVRC_CMD_GEN_INQ);
 #if (AVRC_METADATA_INCLUDED == TRUE)
     UINT8       ctype = 0;
     tAVRC_RESPONSE  rc_rsp;
@@ -947,9 +936,7 @@ void bta_av_rc_msg(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
         /* else if not configured to support vendor specific and it's a command */
         else if (!(p_cb->features & BTA_AV_FEAT_VENDOR)  &&
                  p_data->rc_msg.msg.hdr.ctype <= AVRC_CMD_GEN_INQ) {
-            if (p_data->rc_msg.msg.vendor.p_vendor_data != NULL &&
-                p_data->rc_msg.msg.vendor.vendor_len >= 5 &&
-                p_data->rc_msg.msg.vendor.p_vendor_data[0] == AVRC_PDU_INVALID) {
+            if (p_data->rc_msg.msg.vendor.p_vendor_data[0] == AVRC_PDU_INVALID) {
                 /* reject it */
                 p_data->rc_msg.msg.hdr.ctype = BTA_AV_RSP_REJ;
                 p_data->rc_msg.msg.vendor.p_vendor_data[4] = AVRC_STS_BAD_CMD;
@@ -1348,7 +1335,6 @@ void bta_av_sig_chg(tBTA_AV_DATA *p_data)
     int     xx;
     UINT8   mask;
     tBTA_AV_LCB *p_lcb = NULL;
-    tBTA_AV_RCB *p_rcb = NULL;
 
     APPL_TRACE_DEBUG("bta_av_sig_chg event: %d", event);
     if (event == AVDT_CONNECT_IND_EVT) {
@@ -1423,20 +1409,6 @@ void bta_av_sig_chg(tBTA_AV_DATA *p_data)
                         (bdcmp(p_cb->p_scb[xx]->peer_addr, p_data->str_msg.bd_addr) == 0)) {
                     p_cb->p_scb[xx]->disc_rsn = p_data->str_msg.hdr.offset;
                     bta_av_ssm_execute(p_cb->p_scb[xx], BTA_AV_AVDT_DISCONNECT_EVT, NULL);
-                }
-            }
-        }
-
-        /* The acceptor RCB of this link gets its shdl only when a stream opens. If no stream
-         * opened, nothing deletes the RCB and its AVCTP ccb leaks until the device reboots. */
-        if (p_lcb && p_lcb->lidx != 0 && p_lcb->lidx != (BTA_AV_NUM_LINKS + 1)) {
-            for (xx = 0; xx < BTA_AV_NUM_RCB; xx++) {
-                p_rcb = &p_cb->rcb[xx];
-                if (p_rcb->handle != BTA_AV_RC_HANDLE_NONE && p_rcb->lidx == p_lcb->lidx &&
-                        p_rcb->shdl == 0 && !(p_rcb->status & BTA_AV_RC_CONN_MASK)) {
-                    APPL_TRACE_DEBUG("bta_av_sig_chg: delete unused rcb[%d] handle:%d lidx:%d", xx,
-                                     p_rcb->handle, p_rcb->lidx);
-                    bta_av_del_rc(p_rcb);
                 }
             }
         }
@@ -1581,48 +1553,6 @@ static UINT16 bta_av_extra_tg_cover_art_l2cap_psm(void)
 
 /*******************************************************************************
 **
-** Function         bta_av_mask_peer_rc_categories
-**
-** Description      Keep only SDP Supported Features bits defined for the
-**                  advertised AVRCP profile version (AVRCP 1.6.3 Table 8.1/8.2).
-**                  Category 1-4: 1.0+; TG App Settings / Group Navigation: 1.3+;
-**                  Browsing / TG Multiple Players: 1.4+; Cover Art: 1.6+.
-**
-** Returns          version-valid Supported Features bitmap
-**
-*******************************************************************************/
-static UINT16 bta_av_mask_peer_rc_categories(UINT16 service_uuid, UINT16 version,
-                                             UINT16 categories)
-{
-    UINT16 mask = AVRC_SUPF_CT_CAT1 | AVRC_SUPF_CT_CAT2 |
-                  AVRC_SUPF_CT_CAT3 | AVRC_SUPF_CT_CAT4;
-    BOOLEAN is_tg = (service_uuid == UUID_SERVCLASS_AV_REM_CTRL_TARGET);
-
-    if (version >= AVRC_REV_1_3 && is_tg) {
-        mask |= (AVRC_SUPF_TG_APP_SETTINGS | AVRC_SUPF_TG_GROUP_NAVI);
-    }
-
-    if (version >= AVRC_REV_1_4) {
-        mask |= AVRC_SUPF_CT_BROWSE;
-        if (is_tg) {
-            mask |= AVRC_SUPF_TG_MULTI_PLAYER;
-        }
-    }
-
-    if (version >= AVRC_REV_1_6) {
-        if (is_tg) {
-            mask |= AVRC_SUPF_TG_COVER_ART;
-        } else {
-            mask |= (AVRC_SUPF_CT_COVER_ART_GIP | AVRC_SUPF_CT_COVER_ART_GI |
-                     AVRC_SUPF_CT_COVER_ART_GLT);
-        }
-    }
-
-    return (UINT16)(categories & mask);
-}
-
-/*******************************************************************************
-**
 ** Function         bta_av_check_peer_rc_features
 **
 ** Description      check supported AVRC features on the peer device from the SDP
@@ -1662,41 +1592,34 @@ tBTA_AV_FEAT bta_av_check_peer_rc_features (UINT16 service_uuid, UINT16 *rc_feat
             /* get profile version (if failure, version parameter is not updated) */
             SDP_FindProfileVersionInRec(p_rec, UUID_SERVCLASS_AV_REMOTE_CONTROL, &peer_rc_version);
             APPL_TRACE_DEBUG("peer_rc_version 0x%x", peer_rc_version);
+
+            if (peer_rc_version >= AVRC_REV_1_3) {
+                peer_features |= (BTA_AV_FEAT_VENDOR | BTA_AV_FEAT_METADATA);
+            }
+
+            if (peer_rc_version >= AVRC_REV_1_4) {
+                peer_features |= (BTA_AV_FEAT_ADV_CTRL);
+                /* get supported categories */
+                if ((p_attr = SDP_FindAttributeInRec(p_rec,
+                                                     ATTR_ID_SUPPORTED_FEATURES)) != NULL) {
+                    categories = p_attr->attr_value.v.u16;
+                    if (categories & AVRC_SUPF_CT_BROWSE) {
+                        peer_features |= (BTA_AV_FEAT_BROWSE);
+                    }
+                    if ((service_uuid == UUID_SERVCLASS_AV_REM_CTRL_TARGET) && (categories & AVRC_SUPF_TG_COVER_ART)) {
+                        /* remote target support cover art */
+                        peer_features |= BTA_AV_FEAT_COVER_ART;
+                    }
+                }
+            }
         }
-
-        /* Supported Features is Mandatory since AVRCP 1.0 (Table 8.1 / 8.2) */
-        if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SUPPORTED_FEATURES)) != NULL) {
-            categories = p_attr->attr_value.v.u16;
-        }
-    }
-
-    categories = bta_av_mask_peer_rc_categories(service_uuid, peer_rc_version, categories);
-
-    /* AVRCP 1.3: Metadata Transfer / Vendor Unique (Table 3.1 items 10-15) */
-    if (peer_rc_version >= AVRC_REV_1_3) {
-        peer_features |= (BTA_AV_FEAT_VENDOR | BTA_AV_FEAT_METADATA);
-    }
-
-    /* AVRCP 1.4: Advanced Control and Browsing (Table 3.1 / Table 8.x bit 6) */
-    if (peer_rc_version >= AVRC_REV_1_4) {
-        peer_features |= BTA_AV_FEAT_ADV_CTRL;
-        if (categories & AVRC_SUPF_CT_BROWSE) {
-            peer_features |= BTA_AV_FEAT_BROWSE;
-        }
-    }
-
-    /* AVRCP 1.6: Cover Art (Table 8.2 bit 8, TG only) */
-    if ((peer_rc_version >= AVRC_REV_1_6) &&
-            (service_uuid == UUID_SERVCLASS_AV_REM_CTRL_TARGET) &&
-            (categories & AVRC_SUPF_TG_COVER_ART)) {
-        peer_features |= BTA_AV_FEAT_COVER_ART;
     }
 
     if (rc_features) {
         *rc_features = categories;
     }
 
-    APPL_TRACE_DEBUG("peer_features:x%x, rc:x%x ver:x%x", peer_features, categories, peer_rc_version);
+    APPL_TRACE_DEBUG("peer_features:x%x, rc:x%x", peer_features, categories);
     return peer_features;
 }
 
@@ -1781,16 +1704,11 @@ void bta_av_rc_disc_done(tBTA_AV_DATA *p_data)
                         /* cannot create valid rc_handle for current device. report failure */
                         APPL_TRACE_ERROR("%s: no link resources available", __func__);
                         p_scb->use_rc = FALSE;
-                        rc_open.rc_handle = BTA_AV_RC_HANDLE_NONE;
                         bdcpy(rc_open.peer_addr, p_scb->peer_addr);
                         rc_open.peer_features = 0;
-                        rc_open.peer_ct_features = 0;
-                        rc_open.peer_tg_features = 0;
                         rc_open.sdp_disc_done = FALSE;
                         rc_open.status = BTA_AV_FAIL_SDP;
-                        if (p_cb->p_cback) {
-                            (*p_cb->p_cback)(BTA_AV_RC_OPEN_EVT, (tBTA_AV *) &rc_open);
-                        }
+                        (*p_cb->p_cback)(BTA_AV_RC_OPEN_EVT, (tBTA_AV *) &rc_open);
                     }
                 }
 #if (BT_USE_TRACES == TRUE || BT_TRACE_APPL == TRUE)
@@ -1801,16 +1719,11 @@ void bta_av_rc_disc_done(tBTA_AV_DATA *p_data)
             } else if (p_scb->use_rc) {
                 /* can not find AVRC on peer device. report failure */
                 p_scb->use_rc = FALSE;
-                rc_open.rc_handle = BTA_AV_RC_HANDLE_NONE;
                 bdcpy(rc_open.peer_addr, p_scb->peer_addr);
                 rc_open.peer_features = 0;
-                rc_open.peer_ct_features = 0;
-                rc_open.peer_tg_features = 0;
                 rc_open.sdp_disc_done = FALSE;
                 rc_open.status = BTA_AV_FAIL_SDP;
-                if (p_cb->p_cback) {
-                    (*p_cb->p_cback)(BTA_AV_RC_OPEN_EVT, (tBTA_AV *) &rc_open);
-                }
+                (*p_cb->p_cback)(BTA_AV_RC_OPEN_EVT, (tBTA_AV *) &rc_open);
             }
         }
     } else {
@@ -1824,9 +1737,7 @@ void bta_av_rc_disc_done(tBTA_AV_DATA *p_data)
         rc_feat.peer_features = peer_features;
         rc_feat.peer_ct_features = peer_ct_features;
         rc_feat.peer_tg_features = peer_tg_features;
-        if (p_cb->p_cback) {
-            (*p_cb->p_cback)(BTA_AV_RC_FEAT_EVT, (tBTA_AV *) &rc_feat);
-        }
+        (*p_cb->p_cback)(BTA_AV_RC_FEAT_EVT, (tBTA_AV *) &rc_feat);
     }
 }
 
@@ -1955,17 +1866,12 @@ void bta_av_rc_disc(UINT8 disc)
     if ((disc & BTA_AV_CHNL_MSK) == BTA_AV_CHNL_MSK) {
         /* this is the rc handle/index to tBTA_AV_RCB */
         rc_handle = disc & (~BTA_AV_CHNL_MSK);
-        if (rc_handle < BTA_AV_NUM_RCB && p_cb->rcb[rc_handle].lidx > 0 &&
-            p_cb->rcb[rc_handle].lidx <= (BTA_AV_NUM_LINKS + 1)) {
+        if (p_cb->rcb[rc_handle].lidx) {
             p_addr = p_cb->lcb[p_cb->rcb[rc_handle].lidx - 1].addr;
         }
     } else {
-        hdi = (disc & BTA_AV_HNDL_MSK);
-        if (hdi > 0 && (hdi - 1) < BTA_AV_NUM_STRS) {
-            p_scb = p_cb->p_scb[hdi - 1];
-        } else {
-            p_scb = NULL;
-        }
+        hdi = (disc & BTA_AV_HNDL_MSK) - 1;
+        p_scb = p_cb->p_scb[hdi];
 
         if (p_scb) {
             APPL_TRACE_DEBUG("rc_handle %d", p_scb->rc_handle);
@@ -2079,7 +1985,6 @@ void bta_av_dereg_comp(tBTA_AV_DATA *p_data)
 #endif
 
         if (p_cb->disabling) {
-            bta_sys_deregister(BTA_ID_AV);
             p_cb->disabling     = FALSE;
             bta_av_cb.features  = 0;
         }

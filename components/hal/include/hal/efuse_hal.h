@@ -9,10 +9,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "soc/soc_caps.h"
+#include "hal/ecdsa_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 
 /**
  * @brief get factory mac address
@@ -72,6 +74,7 @@ uint32_t efuse_hal_get_minor_chip_version(void);
  * @brief Returns the chip package version
  */
 uint32_t efuse_hal_get_chip_ver_pkg(void);
+
 
 #if SOC_RECOVERY_BOOTLOADER_SUPPORTED
 

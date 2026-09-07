@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -63,34 +63,26 @@ typedef int twai_clock_source_t;
 #endif
 
 /**
- * @brief TWAI bitrate timing advanced config structure
+ * @brief TWAI bitrate timing config advanced mode
+ * @note  Setting one of `quanta_resolution_hz` and `brp` is enough, otherwise, `brp` is not used.
  */
 typedef struct {
-    uint32_t brp;                   /**< Bitrate pre-divider, which decides the quanta time */
+    twai_clock_source_t clk_src;    /**< Optional, clock source, remain 0 to using TWAI_CLK_SRC_DEFAULT by default */
+    uint32_t quanta_resolution_hz;  /**< The resolution of one timing quanta, in Hz. If setting, brp will be ignored */
+    uint32_t brp;                   /**< Bit rate pre-divider, f(clk_src) / brp = quanta_resolution_hz, f(clk_src) can be obtained using esp_clk_tree_src_get_freq_hz(clk_src,,)*/
     uint8_t  prop_seg;              /**< Prop_seg length, in quanta time */
     uint8_t  tseg_1;                /**< Seg_1 length, in quanta time */
     uint8_t  tseg_2;                /**< Seg_2 length, in quanta time */
     uint8_t  sjw;                   /**< Sync jump width, in quanta time */
     uint8_t  ssp_offset;            /**< Secondary sample point offset refet to Sync seg, in quanta time, set 0 to disable ssp */
-} twai_timing_advanced_config_t;
+    bool triple_sampling;           /**< Deprecated, in favor of `ssp_offset` */
+} twai_timing_config_t;
 
 /**
- * @brief TWAI hardware-dependent timing limits const
- *
- * Used for calculating and checking bit-timing parameters
+ * @brief TWAI bitrate timing config advanced mode for esp_driver_twai
+ * @note  `quanta_resolution_hz` is not supported in this driver
  */
-typedef struct {
-    uint32_t brp_min;       /**< Bit-rate prescaler minimum value */
-    uint32_t brp_max;       /**< Bit-rate prescaler maximum value */
-    uint32_t brp_inc;       /**< Bit-rate prescaler increment step */
-    uint32_t prop_min;      /**< Propagation segment minimum value */
-    uint32_t prop_max;      /**< Propagation segment maximum value */
-    uint32_t tseg1_min;     /**< Time segment 1 (phase_seg1) minimum value */
-    uint32_t tseg1_max;     /**< Time segment 1 (phase_seg1) maximum value */
-    uint32_t tseg2_min;     /**< Time segment 2 (phase_seg2) minimum value */
-    uint32_t tseg2_max;     /**< Time segment 2 (phase_seg2) maximum value */
-    uint32_t sjw_max;       /**< Synchronisation jump width maximum value */
-} twai_timing_limits_t;
+typedef twai_timing_config_t twai_timing_advanced_config_t;
 
 /**
  * @brief Configuration for TWAI mask filter
@@ -140,7 +132,7 @@ typedef struct {
     };
     union {
         uint64_t timestamp;         /**< Timestamp for received message */
-        uint64_t trigger_time;      /**< Trigger time for transmitting message in scheduled TX mode */
+        uint64_t trigger_time;      /**< Trigger time for transmitting message*/
     };
 } twai_frame_header_t;
 

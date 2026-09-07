@@ -10,6 +10,11 @@
 #include <stddef.h>
 #include "soc/soc_caps.h"
 #include "soc/periph_defs.h"
+#include "soc/regdma.h"
+
+#if SOC_HAS(PAU)
+#include "soc/retention_periph_defs.h"
+#endif // SOC_HAS(PAU)
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +31,18 @@ typedef struct {
 } soc_sdm_signal_desc_t;
 
 extern const soc_sdm_signal_desc_t soc_sdm_signals[SDM_CAPS_GET(INST_NUM)];
+
+#if SOC_HAS(PAU)
+
+typedef struct {
+    const periph_retention_module_t module;             // ID of the SDM as a retention module
+    const regdma_entries_config_t *regdma_entry_array;  // Array of regdma entries for retention
+    const size_t array_size;                            // Size of the regdma_entry_array
+} soc_sdm_retention_desc_t;
+
+extern const soc_sdm_retention_desc_t soc_sdm_retention_infos[SDM_CAPS_GET(INST_NUM)];
+
+#endif // SOC_HAS(PAU)
 
 #endif // SOC_HAS(SDM)
 

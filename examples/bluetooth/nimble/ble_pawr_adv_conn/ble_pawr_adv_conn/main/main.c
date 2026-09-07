@@ -1,17 +1,14 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
-#include "host/util/util.h"
 
 #define BLE_PAWR_EVENT_PERIODIC_INTERVAL_MS   (3000)
 #define BLE_PAWR_NUM_SUBEVTS                  (10)
@@ -20,33 +17,13 @@
 #define BLE_PAWR_RSP_SLOT_SPACING             (10)  /*!< Time between response slots (N * 0.125 ms) */
 #define BLE_PAWR_NUM_RSP_SLOTS                (25)   /*!< Number of subevent response slots          */
 #define BLE_PAWR_SUB_DATA_LEN                 (20)
-/* Give the controller a few periodic intervals to report the outcome of a
- * synchronized connection attempt before retrying from another subevent.
- */
-#define BLE_PAWR_CONN_TIMEOUT_MS              (3 * BLE_PAWR_EVENT_PERIODIC_INTERVAL_MS)
 
 #define TAG  "NimBLE_BLE_PAwR_CONN"
 
 static struct ble_gap_set_periodic_adv_subev_data_params sub_data_params[BLE_PAWR_NUM_SUBEVTS];
 static uint8_t sub_data_pattern[BLE_PAWR_SUB_DATA_LEN] = {0};
 static uint8_t conn;
-static uint8_t own_addr_type;
 static struct ble_gap_conn_desc desc;
-static char device_name[32] = "Nimble_PAwR_CONN";
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_ble_pawr_conn_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 char *
 addr_str(const void *addr)
 {
@@ -93,7 +70,6 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
     uint8_t adv_handle;
     uint8_t subevent;
     uint8_t phy_mask;
-    uint8_t actual_sent = 0;
 
     switch (event->type) {
 
@@ -125,38 +101,26 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
                   event->periodic_adv_subev_data_req.subevent_data_count);
 
         sent_num = event->periodic_adv_subev_data_req.subevent_data_count;
-
         for (uint8_t i = 0; i < sent_num; i++) {
             data = os_msys_get_pkthdr(BLE_PAWR_SUB_DATA_LEN, 0);
             if (!data) {
-                ESP_LOGE(TAG, "No memory at subevt %d", i);
-                // Free previously allocated data to prevent memory leak
-                for (uint8_t j = 0; j < actual_sent; j++) {
-                    os_mbuf_free_chain(sub_data_params[j].data);
-                    sub_data_params[j].data = NULL;
-                }
-                actual_sent = 0;  // Do not call set_periodic_adv_subev_data
+                ESP_LOGE(TAG, "No memory, %d", i);
                 break;
             }
             sub = (i + event->periodic_adv_subev_data_req.subevent_start) % BLE_PAWR_NUM_SUBEVTS;
             memset(&sub_data_pattern[1], sub, BLE_PAWR_SUB_DATA_LEN - 1);
-            if (os_mbuf_append(data, sub_data_pattern, BLE_PAWR_SUB_DATA_LEN) != 0) {
-                os_mbuf_free_chain(data);
-                break;
-            }
+            os_mbuf_append(data, sub_data_pattern, BLE_PAWR_SUB_DATA_LEN);
             sub_data_params[i].subevent = sub;
             sub_data_params[i].response_slot_start = 0;
             sub_data_params[i].response_slot_count = BLE_PAWR_NUM_RSP_SLOTS;
             sub_data_params[i].data = data;
             sub_data_pattern[0]++;
-            actual_sent++;
         }
-        if (actual_sent > 0) {
-            rc = ble_gap_set_periodic_adv_subev_data(event->periodic_adv_subev_data_req.adv_handle,
-                                                 actual_sent, sub_data_params);
-            if (rc) {
-                ESP_LOGE(TAG, "Failed to set Subevent Data, rc = 0x%x", rc);
-            }
+
+        rc = ble_gap_set_periodic_adv_subev_data(event->periodic_adv_subev_data_req.adv_handle,
+                                                 sent_num, sub_data_params);
+        if (rc) {
+            ESP_LOGE(TAG, "Failed to set Subevent Data, rc = 0x%x", rc);
         }
         return 0;
 
@@ -168,14 +132,10 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
             event->periodic_adv_response.response_slot,
             event->periodic_adv_response.data_length);
             const uint8_t *data = event->periodic_adv_response.data;
-            if (data == NULL || event->periodic_adv_response.data_length < 10) {
-                ESP_LOGE(TAG, "Invalid response data: NULL or too short (%d)", event->periodic_adv_response.data_length);
-                return 0;
-            }
             ESP_LOGI(TAG, "data: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x",
                     data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9]);
 
-            peer_addr.type = event->periodic_adv_response.data[8];
+            peer_addr.type=0;
             memcpy(peer_addr.val,&event->periodic_adv_response.data[2],6);
 
             adv_handle = event->periodic_adv_response.adv_handle;
@@ -183,13 +143,13 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
             phy_mask = 0x01;
 
             if (conn == 0) {
-                rc = ble_gap_connect_with_synced(own_addr_type,adv_handle,subevent,&peer_addr,BLE_PAWR_CONN_TIMEOUT_MS,phy_mask,NULL,NULL,NULL,gap_event_cb,NULL);
+                rc = ble_gap_connect_with_synced(0,adv_handle,subevent,&peer_addr,30000,phy_mask,NULL,NULL,NULL,gap_event_cb,NULL);
                 if (rc != 0 ) {
                     ESP_LOGI(TAG,"Error: Failed to connect to device , rc = %d\n",rc);
-                } else {
+                }else {
                     ESP_LOGI(TAG,"Connection create sent, adv handle = %d, subevent = %d", adv_handle, subevent);
-                    conn = 1;
                 }
+                conn = 1;
             }
         } else {
             ESP_LOGE(TAG, "[Response] subevent:%d, response_slot:%d, rsp_data status:%d",
@@ -206,7 +166,7 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
 }
 
 static void
-start_periodic_adv(uint8_t own_addr_type)
+start_periodic_adv(void)
 {
     int rc;
     uint8_t addr[6];
@@ -217,13 +177,12 @@ start_periodic_adv(uint8_t own_addr_type)
     uint8_t instance = 0;
 
 #if MYNEWT_VAL(BLE_PERIODIC_ADV_ENH)
-    struct ble_gap_periodic_adv_start_params eparams;
+    struct ble_gap_periodic_adv_enable_params eparams;
     memset(&eparams, 0, sizeof(eparams));
 #endif
 
-    /* Get the local address. */
-    uint8_t addr_type = own_addr_type == BLE_OWN_ADDR_RANDOM ? BLE_ADDR_RANDOM : BLE_ADDR_PUBLIC;
-    rc = ble_hs_id_copy_addr(addr_type, addr, NULL);
+    /* Get the local public address. */
+    rc = ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, addr, NULL);
     assert (rc == 0);
 
     ESP_LOGI(TAG, "Device Address %02x:%02x:%02x:%02x:%02x:%02x", addr[5], addr[4], addr[3],
@@ -231,7 +190,7 @@ start_periodic_adv(uint8_t own_addr_type)
 
     /* For periodic we use instance with non-connectable advertising */
     memset (&params, 0, sizeof(params));
-    params.own_addr_type = own_addr_type;
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
     params.primary_phy = BLE_HCI_LE_PHY_CODED;
     params.secondary_phy = BLE_HCI_LE_PHY_1M;
     params.sid = 0;
@@ -242,8 +201,8 @@ start_periodic_adv(uint8_t own_addr_type)
     assert (rc == 0);
 
     memset(&adv_fields, 0, sizeof(adv_fields));
-    adv_fields.name = (const uint8_t *)device_name;
-    adv_fields.name_len = strlen(device_name);
+    adv_fields.name = (const uint8_t *)"Nimble_PAwR_CONN";
+    adv_fields.name_len = strlen((char *)adv_fields.name);
 
     /* mbuf chain will be increased if needed */
     data = os_msys_get_pkthdr(BLE_HCI_MAX_ADV_DATA_LEN, 0);
@@ -290,23 +249,13 @@ static void
 on_reset(int reason)
 {
     ESP_LOGE(TAG, "Resetting state; reason=%d\n", reason);
-    conn = 0;
 }
 
 static void
 on_sync(void)
 {
-    int rc;
-
-    /* Make sure we have proper identity address set (public preferred) */
-    rc = ble_hs_util_ensure_addr(0);
-    assert(rc == 0);
-
-    rc = ble_hs_id_infer_auto(0, &own_addr_type);
-    assert(rc == 0);
-
     /* Begin advertising. */
-    start_periodic_adv(own_addr_type);
+    start_periodic_adv();
 }
 
 void pawr_host_task(void *param)
@@ -336,13 +285,6 @@ app_main(void)
         ESP_LOGE(TAG, "Failed to init nimble %d ", ret);
         return;
     }
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(device_name, esp_ble_pawr_conn_get_example_name(), sizeof(device_name) - 1);
-    device_name[sizeof(device_name) - 1] = '\0';
-    ESP_LOGI(TAG, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
 
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = on_reset;

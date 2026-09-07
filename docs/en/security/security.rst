@@ -3,7 +3,7 @@ Security Overview
 
 {IDF_TARGET_CIPHER_SCHEME:default="RSA", esp32h2="RSA or ECDSA", esp32p4="RSA or ECDSA", esp32c5="RSA or ECDSA", esp32c61="ECDSA", esp32h21="RSA or ECDSA"}
 
-{IDF_TARGET_SIG_PERI:default="RSA_DS", esp32h2="RSA_DS or ECDSA_DS", esp32p4="RSA_DS or ECDSA_DS", esp32c5="RSA_DS or ECDSA_DS", esp32c61="ECDSA_DS"}
+{IDF_TARGET_SIG_PERI:default="DS", esp32h2="DS or ECDSA", esp32p4="DS or ECDSA", esp32c5="DS or ECDSA"}
 
 :link_to_translation:`zh_CN:[中文]`
 
@@ -11,7 +11,7 @@ This guide provides an overview of the overall security features available in va
 
 .. note::
 
-    In this guide, most used commands are in the form of ``idf.py secure-<command>``, which is a wrapper around corresponding ``espsecure <command>``. The ``idf.py`` based commands provides a more user-friendly experience, although may lack some of the advanced functionality of their ``espsecure`` based counterparts.
+    In this guide, most used commands are in the form of ``idf.py secure-<command>``, which is a wrapper around corresponding ``espsecure <command>``. The ``idf.py`` based commands provides more user-friendly experience, although may lack some of the advanced functionality of their ``espsecure`` based counterparts.
 
 .. only:: TARGET_SUPPORT_QEMU
 
@@ -70,7 +70,7 @@ Please refer to :doc:`flash-encryption` for detailed information about this feat
 
 .. only:: SOC_SPIRAM_SUPPORTED and not esp32
 
-    If {IDF_TARGET_NAME} is connected to an external SPI RAM, the contents written to or read from the SPI RAM will also be encrypted and decrypted respectively (via the MMU's flash cache, provided that Flash Encryption is enabled). This provides an additional safety layer for the data stored in SPI RAM, hence configurations like ``CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`` can be safely enabled in this case.
+    If {IDF_TARGET_NAME} is connected to an external SPI RAM, the contents written to or read from the SPI RAM will also be encrypted and decrypted respectively (via the MMU's flash cache, provided that FLash Encryption is enabled). This provides an additional safety layer for the data stored in SPI RAM, hence configurations like ``CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`` can be safely enabled in this case.
 
 Flash Encryption Best Practices
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -85,39 +85,21 @@ Flash Encryption Best Practices
     Device Identity
     ~~~~~~~~~~~~~~~
 
-    The RSA Digital Signature Peripheral (RSA_DS) in {IDF_TARGET_NAME} produces hardware-accelerated RSA digital signatures with the assistance of HMAC, without the RSA private key being accessible by software. This allows the private key to be kept secured on the device without anyone other than the device hardware being able to access it.
+    The Digital Signature peripheral in {IDF_TARGET_NAME} produces hardware-accelerated RSA digital signatures with the assistance of HMAC, without the RSA private key being accessible by software. This allows the private key to be kept secured on the device without anyone other than the device hardware being able to access it.
 
     .. only:: SOC_ECDSA_SUPPORTED
 
-        {IDF_TARGET_NAME} also supports the ECDSA Digital Signature Peripheral (ECDSA_DS) for generating hardware-accelerated ECDSA digital signatures. ECDSA private key can be directly programmed in an eFuse block and marked as read protected from the software.
+        {IDF_TARGET_NAME} also supports ECDSA peripheral for generating hardware-accelerated ECDSA digital signatures. ECDSA private key can be directly programmed in an eFuse block and marked as read protected from the software.
 
     {IDF_TARGET_SIG_PERI} peripheral can help to establish the **Secure Device Identity** to the remote endpoint, e.g., in the case of TLS mutual authentication based on the {IDF_TARGET_CIPHER_SCHEME} cipher scheme.
 
     .. only:: not SOC_ECDSA_SUPPORTED
 
-        Please refer to the :doc:`RSA Digital Signature Peripheral (RSA_DS) <../api-reference/peripherals/ds>` for detailed documentation.
+        Please refer to the :doc:`../api-reference/peripherals/ds` for detailed documentation.
 
     .. only:: SOC_ECDSA_SUPPORTED
 
-        Please refer to the :doc:`ECDSA Digital Signature Peripheral (ECDSA_DS) <../api-reference/peripherals/ecdsa>` and :doc:`RSA Digital Signature Peripheral (RSA_DS) <../api-reference/peripherals/ds>` guides for detailed documentation.
-
-.. only:: SOC_KEY_MANAGER_SUPPORTED
-
-    Key Manager
-    ~~~~~~~~~~~
-
-    The Key Manager peripheral in {IDF_TARGET_NAME} provides hardware-assisted **key deployment and recovery** for cryptographic keys. Keys are cryptographically bound to a Hardware Unique Key (HUK) that is unique to each chip, ensuring that key material is never exposed to software-accessible memory.
-
-    The Key Manager supports key management for the following cryptographic peripherals: :doc:`ECDSA <../api-reference/peripherals/ecdsa>`, :doc:`HMAC <../api-reference/peripherals/hmac>`, :doc:`Digital Signature (DS) <../api-reference/peripherals/ds>`, and Flash Encryption.
-
-    Please refer to :doc:`../api-reference/peripherals/key_manager` for detailed documentation.
-
-    Key Manager Best Practices
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-    * Protect the ``key_recovery_info`` of a Key Manager-deployed key against unauthorized modification or loss.
-    * Lock Key Manager's security-related eFuses after successful key deployment to prevent re-deployment of a key of the same type.
-    * Avoid deploying new XTS-AES keys when Flash Encryption is already enabled unless explicitly intended.
+        Please refer to the :doc:`../api-reference/peripherals/ecdsa` and :doc:`../api-reference/peripherals/ds` guides for detailed documentation.
 
 .. only:: SOC_MEMPROT_SUPPORTED or SOC_CPU_IDRAM_SPLIT_USING_PMP
 
@@ -126,7 +108,7 @@ Flash Encryption Best Practices
 
     {IDF_TARGET_NAME} supports the **Memory Protection** scheme, either through architecture or special peripheral like PMS, which provides an ability to enforce and monitor permission attributes to memory and, in some cases, peripherals. ESP-IDF application startup code configures the permissions attributes like Read/Write access on data memories and Read/Execute access on instruction memories using the relevant peripheral. If there is any attempt made that breaks these permission attributes, e.g., a write operation to instruction memory region, then a violation interrupt is raised, and it results in system panic.
 
-    This feature depends on the config option :menuitem:`CONFIG_ESP_SYSTEM_MEMPROT` and it is kept enabled by default. Please note that the API for this feature is **private** and used exclusively by ESP-IDF code only.
+    This feature depends on the config option :ref:`CONFIG_ESP_SYSTEM_MEMPROT` and it is kept enabled by default. Please note that the API for this feature is **private** and used exclusively by ESP-IDF code only.
 
     .. note::
 
@@ -142,9 +124,9 @@ Flash Encryption Best Practices
         DPA (Differential Power Analysis) Protection
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-        {IDF_TARGET_NAME} has support for protection mechanisms against the Differential Power Analysis related security attacks. DPA protection dynamically adjusts the clock frequency of the crypto peripherals, thereby blurring the power consumption trajectory during its operation. Based on the configured DPA security level, the clock variation range changes. Please refer to the **{IDF_TARGET_NAME} Technical Reference Manual** [`PDF <{IDF_TARGET_TRM_EN_URL}>`__] for more details on this topic.
+        {IDF_TARGET_NAME} has support for protection mechanisms against the Differential Power Analysis related security attacks. DPA protection dynamically adjusts the clock frequency of the crypto peripherals, thereby blurring the power consumption trajectory during its operation. Based on the configured DPA security level, the clock variation range changes. Please refer to the *{IDF_TARGET_NAME} Technical Reference Manual* [`PDF <{IDF_TARGET_TRM_EN_URL}>`__]. for more details on this topic.
 
-        :menuitem:`CONFIG_ESP_CRYPTO_DPA_PROTECTION_LEVEL` can help to select the DPA level. Higher level means better security, but it can also have an associated performance impact. By default, the lowest DPA level is kept enabled but it can be modified based on the security requirement.
+        :ref:`CONFIG_ESP_CRYPTO_DPA_PROTECTION_LEVEL` can help to select the DPA level. Higher level means better security, but it can also have an associated performance impact. By default, the lowest DPA level is kept enabled but it can be modified based on the security requirement.
 
         .. note::
 
@@ -158,7 +140,7 @@ Flash Encryption Best Practices
         {IDF_TARGET_NAME} incorporates a pseudo-round function in the AES peripheral, thus enabling the peripheral to randomly insert pseudo-rounds before and after the original operation rounds and also generate a pseudo key to perform these dummy operations.
         These operations do not alter the original result, but they increase the complexity to perform side channel analysis attacks by randomizing the power profile.
 
-        :menuitem:`CONFIG_MBEDTLS_AES_USE_PSEUDO_ROUND_FUNC_STRENGTH` can be used to select the strength of the pseudo-round function. Increasing the strength improves the security provided, but would slow down the encryption/decryption operations.
+        :ref:`CONFIG_MBEDTLS_AES_USE_PSEUDO_ROUND_FUNC_STRENGTH` can be used to select the strength of the pseudo-round function. Increasing the strength improves the security provided, but would slow down the encrryption/decryption operations.
 
 
         .. list-table:: Performance impact on AES operations per strength level
@@ -175,7 +157,7 @@ Flash Encryption Best Practices
             * - High
               - 72.4 %
 
-        .. [#] The above performance numbers have been calculated using the AES performance test of the mbedtls test application :component_file:`test_psa_aes_perf.c <mbedtls/test_apps/mbedtls_ut/main/test_psa_aes_perf.c>`.
+        .. [#] The above performance numbers have been calculated using the AES performance test of the mbedtls test application :component_file:`test_aes_perf.c <mbedtls/test_apps/main/test_aes_perf.c>`.
 
         Considering the above performance impact, ESP-IDF by-default does not enable the pseudo-round function to avoid any performance-related degrade. But it is recommended to enable the pseudo-round function for better security.
 
@@ -190,7 +172,7 @@ JTAG
 
     - JTAG interface stays disabled if any of the security features are enabled. Please refer to :ref:`jtag-debugging-security-features` for more information.
     - JTAG interface can also be disabled in the absence of any other security features using :ref:`efuse_API`.
-    :SOC_HMAC_SUPPORTED: - {IDF_TARGET_NAME} supports soft disabling the JTAG interface and it can be re-enabled by programming a secret key through HMAC. (:ref:`HMAC for Enabling JTAG <hmac_for_enabling_jtag>`)
+    :SOC_HMAC_SUPPORTED: - {IDF_TARGET_NAME} supports soft disabling the JTAG interface and it can be re-enabled by programming a secret key through HMAC. (:ref:`hmac_for_enabling_jtag`)
 
 UART Download Mode
 ^^^^^^^^^^^^^^^^^^
@@ -210,7 +192,7 @@ UART Download Mode
     * Secure UART Download mode can also be enabled by calling :cpp:func:`esp_efuse_enable_rom_secure_download_mode`.
     * This mode does not allow any arbitrary code to execute if downloaded through the UART download mode.
     * It also limits the available commands in Download mode to update SPI config, e.g., changing baud rate, basic flash write, and the command to return a summary of currently enabled security features (``get-security-info``).
-    * To disable Download Mode entirely, select the :menuitem:`CONFIG_SECURE_UART_ROM_DL_MODE` to the recommended option ``Permanently disable ROM Download Mode`` or call :cpp:func:`esp_efuse_disable_rom_download_mode` at runtime.
+    * To disable Download Mode entirely, select the :ref:`CONFIG_SECURE_UART_ROM_DL_MODE` to the recommended option ``Permanently disable ROM Download Mode`` or call :cpp:func:`esp_efuse_disable_rom_download_mode` at runtime.
 
     .. important::
 
@@ -269,7 +251,7 @@ UART Download Mode
     Some guidelines to consider on this topic:
 
     - Please consider enabling :ref:`OTA rollback <ota_rollback>` and then keep the successful connection to the OTA update server as the checkpoint to cancel the rollback process. This ensures that the newly updated firmware can successfully reach till the OTA update server, otherwise rollback process will go back to the previous firmware on the device.
-    - If you plan to enable the :menuitem:`CONFIG_MBEDTLS_HAVE_TIME_DATE` option, then please consider to have the time sync mechanism (SNTP) and sufficient number of trusted certificates in place.
+    - If you plan to enable the :ref:`CONFIG_MBEDTLS_HAVE_TIME_DATE` option, then please consider to have the time sync mechanism (SNTP) and sufficient number of trusted certificates in place.
 
 Product Security
 ----------------
@@ -311,7 +293,7 @@ Please see more information to enable this feature in the :ref:`anti-rollback` g
 Encrypted Firmware Distribution
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Encrypted firmware distribution during over-the-air updates ensures that the application stays encrypted **in transit** from the server to the device. This can act as an additional layer of protection on top of the TLS communication during OTA updates and protect the identity of the application.
+Encrypted firmware distribution during over-the-air updates ensures that the application stays encrypted **in transit** from the server to the the device. This can act as an additional layer of protection on top of the TLS communication during OTA updates and protect the identity of the application.
 
 Please see working example for this documented in :ref:`ota_updates_pre-encrypted-firmware` section.
 

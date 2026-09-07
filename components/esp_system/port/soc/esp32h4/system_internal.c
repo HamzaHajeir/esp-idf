@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,19 +20,10 @@
 #include "soc/rtc.h"
 #include "esp_private/rtc_clk.h"
 #include "soc/uart_reg.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/uart_ll.h"
-#include "esp_memory_utils.h"
-#if CONFIG_ESP_SYSTEM_HW_STACK_GUARD && CONFIG_COMPILER_ENABLE_RISCV_ZCMP
-#include "esp_private/hw_stack_guard.h"
-#endif
-
-extern int _bss_end;
 
 #include "esp32h4/rom/cache.h"
-#include "esp32h4/rom/ets_sys.h"
 // TODO: IDF-11911 need refactor
 
 void esp_system_reset_modules_on_exit(void)
@@ -87,51 +78,10 @@ void esp_system_reset_modules_on_exit(void)
     CLEAR_PERI_REG_MASK(PCR_HMAC_CONF_REG, PCR_HMAC_RST_EN);
     SET_PERI_REG_MASK(PCR_SHA_CONF_REG, PCR_SHA_RST_EN);
     CLEAR_PERI_REG_MASK(PCR_SHA_CONF_REG, PCR_SHA_RST_EN);
-    CLEAR_PERI_REG_MASK(PCR_ECC_MEM_LP_CTRL_REG, PCR_ECC_MEM_LP_EN);
-    SET_PERI_REG_MASK(PCR_ECC_MEM_LP_CTRL_REG, PCR_ECC_MEM_FORCE_CTRL);
 
     // UART's sclk is controlled in the PCR register and does not reset with the UART module. The ROM missed enabling
     // it when initializing the ROM UART. If it is not turned on, it will trigger LP_WDT in the ROM.
     uart_ll_sclk_enable(&UART0);
-}
-
-static void IRAM_ATTR __attribute__((noinline, noreturn)) esp_restart_noos_inner(void)
-{
-    const uint32_t core_id = esp_cpu_get_core_id();
-
-    // Disable cache
-    Cache_Disable_Cache(CACHE_MAP_MASK);
-
-    esp_system_reset_modules_on_exit();
-
-    // Set CPU back to XTAL source, same as hard reset, but keep BBPLL on so that USB Serial JTAG can log at 1st stage bootloader.
-#if !CONFIG_IDF_ENV_FPGA
-    rtc_clk_cpu_set_to_default_config();
-#endif
-
-#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-    // clear entry point for APP CPU
-    ets_set_appcpu_boot_addr(0);
-#endif
-
-    // Reset CPUs
-    if (core_id == 0) {
-        // Running on PRO CPU: APP CPU is stalled. Can reset both CPUs.
-#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-        esp_cpu_reset(1);
-#endif
-        esp_cpu_reset(0);
-    }
-#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-    else {
-        // Running on APP CPU: need to reset PRO CPU and unstall it,
-        // then reset APP CPU
-        esp_cpu_reset(0);
-        esp_cpu_unstall(0);
-        esp_cpu_reset(1);
-    }
-#endif
-    ESP_INFINITE_LOOP();
 }
 
 /* "inner" restart function for after RTOS, interrupts & anything else on this
@@ -142,7 +92,6 @@ void esp_restart_noos(void)
 {
     // Disable interrupts
     rv_utils_intr_global_disable();
-#if SOC_RTC_WDT_SUPPORTED
     // Enable RTC watchdog for 1 second
     wdt_hal_context_t rtc_wdt_ctx;
     wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, false);
@@ -153,16 +102,14 @@ void esp_restart_noos(void)
     //Enable flash boot mode so that flash booting after restart is protected by the RTC WDT.
     wdt_hal_set_flashboot_en(&rtc_wdt_ctx, true);
     wdt_hal_write_protect_enable(&rtc_wdt_ctx);
-#endif /* SOC_RTC_WDT_SUPPORTED */
 
-#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
     const uint32_t core_id = esp_cpu_get_core_id();
+#if !CONFIG_FREERTOS_UNICORE
     const uint32_t other_core_id = (core_id == 0) ? 1 : 0;
     esp_cpu_reset(other_core_id);
     esp_cpu_stall(other_core_id);
 #endif
 
-#if SOC_WDT_SUPPORTED
     // Disable TG0/TG1 watchdogs
     wdt_hal_context_t wdt0_context = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
     wdt_hal_write_protect_disable(&wdt0_context);
@@ -173,24 +120,33 @@ void esp_restart_noos(void)
     wdt_hal_write_protect_disable(&wdt1_context);
     wdt_hal_disable(&wdt1_context);
     wdt_hal_write_protect_enable(&wdt1_context);
-#endif /* SOC_WDT_SUPPORTED */
 
-#ifdef CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
-    if (esp_ptr_external_ram(esp_cpu_get_sp())) {
-        // If stack is in external RAM (CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM), switch SP to
-        // internal RAM before disabling the cache to avoid a "Cache disabled but cached memory
-        // region accessed" crash.
+    // Disable cache
+    Cache_Disable_Cache(CACHE_MAP_ALL);
 
-#if CONFIG_ESP_SYSTEM_HW_STACK_GUARD && CONFIG_COMPILER_ENABLE_RISCV_ZCMP
-        // Stop hw stack guard before changing SP: new SP is outside task stack bounds.
-        // rtc_clk_cpu_set_to_default_config() (called later) uses vPortEnterCritical() via
-        // ENABLE_CLK_GATE, which can trigger DIG-661 (assist-debug interrupt with mstatus.mie=0).
-        esp_hw_stack_guard_monitor_stop();
+    esp_system_reset_modules_on_exit();
+
+    // Set CPU back to XTAL source, same as hard reset, but keep BBPLL on so that USB Serial JTAG can log at 1st stage bootloader.
+#if !CONFIG_IDF_ENV_FPGA
+    rtc_clk_cpu_set_to_default_config();
 #endif
-        uint32_t new_sp = ESP_ALIGN_DOWN((uint32_t)&_bss_end, 16);
-        rv_utils_set_sp((void *)new_sp);
+
+    // Reset CPUs
+    if (core_id == 0) {
+        // Running on PRO CPU: APP CPU is stalled. Can reset both CPUs.
+#if !CONFIG_FREERTOS_UNICORE
+        esp_cpu_reset(1);
+#endif
+        esp_cpu_reset(0);
+    }
+#if !CONFIG_FREERTOS_UNICORE
+    else {
+        // Running on APP CPU: need to reset PRO CPU and unstall it,
+        // then reset APP CPU
+        esp_cpu_reset(0);
+        esp_cpu_unstall(0);
+        esp_cpu_reset(1);
     }
 #endif
-
-    esp_restart_noos_inner();
+    ESP_INFINITE_LOOP();
 }

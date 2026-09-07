@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,18 +19,19 @@
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_intr_alloc.h"
-#include "soc/clk_tree_defs.h"
 #ifdef CONFIG_IDF_TARGET_ESP32
 #include "esp_clock_output.h"
 #endif // CONFIG_IDF_TARGET_ESP32
-#include "esp_clk_tree.h"
+#include "hal/clk_tree_ll.h"
+#include "esp_private/esp_clk.h"
 #include "esp_private/esp_clk_tree_common.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "emac_priv.h"
 #include "hal/emac_hal.h"
-#include "hal/emac_clk.h"
+#include "soc/soc.h"
+#include "hal/emac_periph.h"
+#include "clk_ctrl_os.h"
 #include "sdkconfig.h"
 #include "esp_rom_sys.h"
 #include "esp_private/eth_mac_esp_dma.h"
@@ -45,50 +46,18 @@ static const char *TAG = "esp.emac";
 
 #define EMAC_ALLOW_INTR_PRIORITY_MASK   ESP_INTR_FLAG_LOWMED
 
-#define EMAC_PHY_REF_CLK_HZ             (50000000)  // 50MHz
-#define RGMII_CLK_HZ                    (125000000) // 125MHz
-#define RMII_CLK_HZ                     (50000000)  // 50MHz
-
-#define RMII_CLK_STABILTY_PPM           (50)
-#define RGMII_CLK_STABILTY_PPM          (100)
-
-#define EMAC_UNDEFINED_PLL_CLK          SOC_MOD_CLK_INVALID
-
-#if CONFIG_ETH_EMAC_PHY_REF_CLK_SRC_CPLL
-#define ETH_EMAC_PHY_REF_CLK_SRC        ((soc_module_clk_t)EMAC_REF_PHY_CLK_SRC_CPLL)
-#elif CONFIG_ETH_EMAC_PHY_REF_CLK_SRC_MPLL
-#define ETH_EMAC_PHY_REF_CLK_SRC        ((soc_module_clk_t)EMAC_REF_PHY_CLK_SRC_MPLL)
-#else
-#define ETH_EMAC_PHY_REF_CLK_SRC        (EMAC_UNDEFINED_PLL_CLK)
-#endif
-
-#if SOC_EMAC_SUPPORT_1000M
-#if CONFIG_ETH_EMAC_RGMII_TX_CLK_SRC_CPLL
-#define ETH_EMAC_RGMII_TX_CLK_SRC       ((soc_module_clk_t)EMAC_CLK_OUT_SRC_CPLL)
-#elif CONFIG_ETH_EMAC_RGMII_TX_CLK_SRC_APLL
-#define ETH_EMAC_RGMII_TX_CLK_SRC       ((soc_module_clk_t)EMAC_CLK_OUT_SRC_APLL)
-#elif CONFIG_ETH_EMAC_RGMII_TX_CLK_SRC_MPLL
-#define ETH_EMAC_RGMII_TX_CLK_SRC       ((soc_module_clk_t)EMAC_CLK_OUT_SRC_MPLL)
-#else
-#define ETH_EMAC_RGMII_TX_CLK_SRC       (EMAC_UNDEFINED_PLL_CLK)
-#endif
-#endif // SOC_EMAC_SUPPORT_1000M
-
-#define EMAC_USED_PLL_DEFAULT_IDX            (0)
-#define EMAC_USED_PLL_PHY_REF_CLK_DERIVED_IDX    (1)
-#if defined(SOC_EMAC_REF_PHY_CLK) && defined(SOC_EMAC_SUPPORT_1000M)
-    // additional ref_50M clock can be used in RGMII to source clock for PHY instead of crystal
-    #define EMAC_USED_PLL_PHY_REF_CLK_SCR_IDX    (2)
-    #define EMAC_USED_PLL_CLK_MAX_COUNT      (3)
-#else
-    #define EMAC_USED_PLL_CLK_MAX_COUNT      (2)
-#endif
-
-#define RX_TX_10M_SPEED_CLK_HZ            (2500000) // 2.5MHz
-#define RX_TX_100M_SPEED_CLK_HZ           (25000000) // 25MHz
-#define RX_TX_1000M_SPEED_CLK_HZ          (125000000) // 125MHz
+#define RMII_CLK_HZ                     (50000000)
+#define RMII_10M_SPEED_RX_TX_CLK_DIV    (19)
+#define RMII_100M_SPEED_RX_TX_CLK_DIV   (1)
 
 #define EMAC_MULTI_REG_MUTEX_TIMEOUT_MS (100)
+
+#if CONFIG_IDF_TARGET_ESP32P4
+// ESP32P4 EMAC interface clock configuration is shared among other modules in registers
+#define EMAC_IF_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define EMAC_IF_RCC_ATOMIC()
+#endif
 
 #define EMAC_USE_RETENTION_LINK (CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_EMAC_SUPPORT_SLEEP_RETENTION)
 
@@ -106,7 +75,7 @@ typedef struct {
     uint32_t flow_control_low_water_mark;
     bool flow_ctrl_enabled; // indicates whether the user want to do flow control
     bool do_flow_ctrl;  // indicates whether we need to do software flow control
-    soc_module_clk_t pll_clk_used[EMAC_USED_PLL_CLK_MAX_COUNT];  // Used PLLs
+    bool use_pll;  // Only use (A/M)PLL in EMAC_DATA_INTERFACE_RMII && EMAC_CLK_OUT
     SemaphoreHandle_t multi_reg_mutex; // lock for multiple register access
     int32_t mdc_freq_hz;
 #ifdef CONFIG_PM_ENABLE
@@ -145,10 +114,6 @@ static esp_err_t emac_create_retention_module(emac_esp32_t *emac)
     if (sleep_retention_is_module_inited(module) && !sleep_retention_is_module_created(module)) {
         if ((ret = sleep_retention_module_allocate(module)) != ESP_OK) {
             ESP_LOGW(TAG, "create retention link failed on EMAC, power domain won't be turned off during sleep");
-        } else {
-            if ((ret = sleep_retention_module_attach(module)) != ESP_OK) {
-                ESP_LOGW(TAG, "attach retention link failed on EMAC, power domain won't be turned off during sleep");
-            }
         }
     }
     return ret;
@@ -176,7 +141,6 @@ static void emac_free_retention_module(emac_esp32_t *emac)
 {
     sleep_retention_module_t module = emac_reg_retention_info.module_id;
     if (sleep_retention_is_module_created(module)) {
-        sleep_retention_module_detach(module);
         sleep_retention_module_free(module);
     }
 }
@@ -190,11 +154,6 @@ static esp_err_t emac_esp32_lock_multi_reg(emac_esp32_t *emac)
 static esp_err_t emac_esp32_unlock_multi_reg(emac_esp32_t *emac)
 {
     return xSemaphoreGive(emac->multi_reg_mutex) == pdTRUE ? ESP_OK : ESP_FAIL;
-}
-
-static inline uint32_t emac_clock_stability_hz(uint32_t freq_hz, uint32_t max_ppm)
-{
-    return (uint32_t)((uint64_t)freq_hz * max_ppm / 1000000);
 }
 
 static esp_err_t emac_esp32_set_mediator(esp_eth_mac_t *mac, esp_eth_mediator_t *eth)
@@ -250,108 +209,6 @@ static esp_err_t emac_esp32_read_phy_reg(esp_eth_mac_t *mac, uint32_t phy_addr, 
     return ESP_OK;
 err:
     return ret;
-}
-
-static esp_err_t emac_set_freq_ref_out_clock(emac_esp32_t *emac, uint32_t src_freq_hz, uint32_t out_freq_hz, uint32_t max_ppm)
-{
-    int32_t set_freq_hz = src_freq_hz;
-    int32_t div = 1;
-    if (set_freq_hz > out_freq_hz) {
-        div = set_freq_hz / out_freq_hz;
-    }
-    if (emac_hal_ref_clock_div(&emac->hal, div - 1) == ESP_OK) {
-        // we were able to set the divider, so we can calculate the actual set frequency
-        set_freq_hz /= div;
-    }
-    uint32_t max_stability_hz = emac_clock_stability_hz(out_freq_hz, max_ppm);
-    ESP_RETURN_ON_FALSE(abs((int)set_freq_hz - (int)out_freq_hz) <= max_stability_hz, ESP_ERR_INVALID_STATE, TAG,
-                        "EMAC out frequency cannot be used. It would work at an unusable frequency %" PRIu32 " Hz", set_freq_hz);
-    return ESP_OK;
-}
-
-static esp_err_t emac_enable_ref_out_clock(emac_esp32_t *emac, const emac_clk_internal_info_t *clk_internal, soc_module_clk_t clock_src, bool enable)
-{
-    ESP_RETURN_ON_FALSE(clk_internal->clk_count > 0, ESP_ERR_NOT_SUPPORTED, TAG, "no internal clock out sources supported");
-
-    // if EMAC_UNDEFINED_PLL_CLK, caller didn't specify a clock source, so we use the default one
-    size_t ckl_i = 0;
-    if (clock_src != EMAC_UNDEFINED_PLL_CLK) {
-        for (ckl_i = 0; ckl_i < clk_internal->clk_count; ckl_i++) {
-            if (clk_internal->clk_src[ckl_i]->clk_id == clock_src) {
-                break;
-            }
-        }
-        ESP_RETURN_ON_FALSE(ckl_i < clk_internal->clk_count, ESP_ERR_NOT_FOUND, TAG, "Internal clock source %i not found", clock_src);
-    }
-    // If there is more then one internal clock, clock order determines the selection value
-    if (clk_internal->clk_count > 1) {
-        ESP_RETURN_ON_ERROR(emac_hal_ref_clock_select(&emac->hal, (int)ckl_i), TAG, "failed to select internal clock source");
-    }
-    ESP_RETURN_ON_ERROR(emac_hal_ref_clock_enable(&emac->hal, enable), TAG, "failed to enable internal clock");
-    return ESP_OK;
-}
-
-#if !SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
-static esp_err_t emac_config_phy_ref_clk_clock(emac_esp32_t *emac, soc_module_clk_t phy_ref_src, soc_module_clk_t upstream_src)
-{
-    ESP_RETURN_ON_ERROR(esp_clk_tree_enable_src(phy_ref_src, true), TAG, "PHY_REF_CLK enable failed");
-    esp_err_t up_ret = esp_clk_tree_src_select_upstream(phy_ref_src, upstream_src);
-    if (up_ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "PHY_REF_CLK upstream is already selected by another peripheral; reusing existing routing");
-    } else {
-        ESP_RETURN_ON_ERROR(up_ret, TAG, "PHY_REF_CLK upstream selection failed");
-    }
-    uint32_t real_freq = 0;
-    esp_err_t cfg_ret = esp_clk_tree_src_set_freq_hz(phy_ref_src, EMAC_PHY_REF_CLK_HZ, &real_freq);
-    if (cfg_ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "PHY_REF_CLK is already configured by another peripheral; reusing existing configuration at %" PRIu32 " Hz", real_freq);
-    } else {
-        ESP_RETURN_ON_ERROR(cfg_ret, TAG, "PHY_REF_CLK configuration failed");
-    }
-    // Engine returns the actual programmed frequency; verify it is within tolerance for RMII.
-    ESP_RETURN_ON_FALSE(abs((int)real_freq - (int)EMAC_PHY_REF_CLK_HZ) <= emac_clock_stability_hz(EMAC_PHY_REF_CLK_HZ, RMII_CLK_STABILTY_PPM),
-                        ESP_ERR_INVALID_STATE, TAG, "EMAC PHY_REF_CLK would work at unusable frequency %" PRIu32 " Hz", real_freq);
-    return ESP_OK;
-}
-#endif // !SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
-
-static esp_err_t emac_config_pll_clock(emac_esp32_t *emac, const emac_clk_info_t **clk_table, size_t clk_count,
-                                       soc_module_clk_t *clock_src, uint32_t *freq_hz)
-{
-    uint32_t pll_expt_freq = 0;
-    uint32_t real_freq = 0;
-
-    for (size_t i = 0; i < clk_count; i++) {
-        const emac_clk_info_t *info = clk_table[i];
-        if (info->clk_id == *clock_src || *clock_src == EMAC_UNDEFINED_PLL_CLK) {
-            if (info->step_hz > 0) {
-                for (uint32_t step = 1; step <= info->max_steps; step++) {
-                    uint32_t clk_hz = info->step_hz * step;
-                    if (clk_hz % *freq_hz == 0) {
-                        pll_expt_freq = clk_hz;
-                        break;
-                    }
-                }
-            } else {
-                pll_expt_freq = *freq_hz;
-            }
-            ESP_LOGD(TAG, "info->clk_id: %i, info->clk_name: %s, pll_expt_freq: %" PRIu32 " Hz", info->clk_id, info->clk_name, pll_expt_freq);
-            ESP_RETURN_ON_FALSE(pll_expt_freq > 0, ESP_ERR_NOT_SUPPORTED, TAG, "No %s on %" PRIi32 " Hz grid divides %" PRIu32 " Hz", info->clk_name, info->step_hz, *freq_hz);
-            ESP_RETURN_ON_ERROR(esp_clk_tree_enable_src(info->clk_id, true), TAG, "%s enable failed", info->clk_name);
-            esp_err_t ret = esp_clk_tree_src_set_freq_hz(info->clk_id, pll_expt_freq, &real_freq);
-            ESP_LOGD(TAG, "Clock set frequency: %" PRIu32 " Hz", real_freq);
-            if (ret == ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG, "%s is occupied already, it is working at %" PRIu32 " Hz", info->clk_name, real_freq);
-            } else if (ret != ESP_OK) {
-                esp_clk_tree_enable_src(info->clk_id, false);
-                ESP_RETURN_ON_ERROR(ret, TAG, "Set %s clock failed", info->clk_name);
-            }
-            *freq_hz = real_freq;
-            *clock_src = info->clk_id; // if the clock source was not specified, return id of the default one
-            return ESP_OK;
-        }
-    }
-    return ESP_ERR_NOT_SUPPORTED;
 }
 
 static esp_err_t emac_esp32_set_addr(esp_eth_mac_t *mac, uint8_t *addr)
@@ -421,47 +278,28 @@ err:
 
 static esp_err_t emac_esp32_set_speed(esp_eth_mac_t *mac, eth_speed_t speed)
 {
+    esp_err_t ret = ESP_ERR_INVALID_ARG;
     emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
     if (speed >= ETH_SPEED_10M && speed < ETH_SPEED_MAX) {
-        eth_data_interface_t phy_intf = emac_hal_get_phy_intf(&emac->hal);
-        if (phy_intf != EMAC_DATA_INTERFACE_RGMII && speed > ETH_SPEED_100M) {
-            return ESP_ERR_INVALID_ARG;
-        }
-#if !SOC_IS(ESP32)
-        int div = 0;
-        // Set RMII clk_rx/clk_tx divider to get 25MHz for 100mbps mode or 2.5MHz for 10mbps mode since REF CLK is always 50MHz
-        if (phy_intf == EMAC_DATA_INTERFACE_RMII) {
+#ifdef CONFIG_IDF_TARGET_ESP32P4
+        // Set RMII clk_rx/clk_tx divider to get 25MHz for 100mbps mode or 2.5MHz for 10mbps mode
+        if (emac_hal_get_phy_intf(&emac->hal) == EMAC_DATA_INTERFACE_RMII) {
             if (speed == ETH_SPEED_10M) {
-                div = RMII_CLK_HZ / RX_TX_10M_SPEED_CLK_HZ - 1;
+                EMAC_IF_RCC_ATOMIC() {
+                    emac_hal_clock_rmii_rx_tx_div(&emac->hal, RMII_10M_SPEED_RX_TX_CLK_DIV);
+                }
             } else {
-                div = RMII_CLK_HZ / RX_TX_100M_SPEED_CLK_HZ - 1;
+                EMAC_IF_RCC_ATOMIC() {
+                    emac_hal_clock_rmii_rx_tx_div(&emac->hal, RMII_100M_SPEED_RX_TX_CLK_DIV);
+                }
             }
-            PERIPH_RCC_ATOMIC() {
-                emac_hal_clock_rmii_rx_tx_div(&emac->hal, div);
-            }
-        } else if (phy_intf == EMAC_DATA_INTERFACE_RGMII) {
-            // in RGMII mode, set internal clock div to output correct Tx_clk (125 MHz for 1000Mbps mode, 25 MHz for 100Mbps mode,
-            // 2.5 MHz for 10Mbps mode). Rx_clk is reconfigured inside the PHY.
-            uint32_t pll_freq = 0;
-            uint32_t out_freq = 0;
-            ESP_RETURN_ON_ERROR(esp_clk_tree_src_get_freq_hz(emac->pll_clk_used[EMAC_USED_PLL_DEFAULT_IDX], ESP_CLK_TREE_SRC_FREQ_PRECISION_APPROX, &pll_freq),
-                                                             TAG, "get PLL frequency for default index failed");
-            if (speed == ETH_SPEED_10M) {
-                out_freq = RX_TX_10M_SPEED_CLK_HZ;
-            } else if (speed == ETH_SPEED_100M) {
-                out_freq = RX_TX_100M_SPEED_CLK_HZ;
-            } else {
-                out_freq = RX_TX_1000M_SPEED_CLK_HZ;
-            }
-            ESP_RETURN_ON_ERROR(emac_set_freq_ref_out_clock(emac, pll_freq, out_freq, RGMII_CLK_STABILTY_PPM),
-                                TAG, "Configure RGMII internal ref clock divider failed");
         }
 #endif
         emac_hal_set_speed(&emac->hal, speed);
-        ESP_LOGD(TAG, "working in %iMbps", speed == ETH_SPEED_10M ? 10 : speed == ETH_SPEED_100M ? 100 : 1000);
+        ESP_LOGD(TAG, "working in %iMbps", speed == ETH_SPEED_10M ? 10 : 100);
         return ESP_OK;
     }
-    return ESP_ERR_INVALID_ARG;
+    return ret;
 }
 
 static esp_err_t emac_esp32_set_duplex(esp_eth_mac_t *mac, eth_duplex_t duplex)
@@ -528,6 +366,83 @@ esp_err_t emac_esp_custom_ioctl(esp_eth_mac_t *mac, int cmd, void *data)
 
     switch (cmd)
     {
+#ifdef SOC_EMAC_IEEE1588V2_SUPPORTED
+    case ETH_MAC_ESP_CMD_PTP_ENABLE: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP enable invalid argument, cant' be NULL");
+        bool enable = *((bool *)data);
+        if (enable) {
+            EMAC_IF_RCC_ATOMIC() {
+                emac_hal_clock_enable_ptp(&emac->hal, EMAC_PTP_CLK_SRC_XTAL, true);
+            }
+            emac_hal_ptp_config_t ptp_config = {
+                .upd_method = ETH_PTP_UPDATE_METHOD_FINE,
+                .roll = ETH_PTP_DIGITAL_ROLLOVER,
+                .ptp_clk_src_period_ns = 25,  // = 1 / 40MHz
+                .ptp_req_accuracy_ns = 40     // required accuracy (must be worse than ptp_ref_clk)
+            };
+            ESP_RETURN_ON_ERROR(emac_hal_ptp_start(&emac->hal, &ptp_config), TAG, "failed to start PTP module");
+            emac_esp_dma_ts_enable(emac->emac_dma_hndl, true);
+        } else {
+            ESP_RETURN_ON_ERROR(emac_hal_ptp_stop(&emac->hal), TAG, "failed to stop PTP module");
+            emac_esp_dma_ts_enable(emac->emac_dma_hndl, false);
+            EMAC_IF_RCC_ATOMIC() {
+                emac_hal_clock_enable_ptp(&emac->hal, 0, false);
+            }
+        }
+        break;
+    }
+    case ETH_MAC_ESP_CMD_S_PTP_TIME: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP set time invalid argument, cant' be NULL");
+        eth_mac_time_t *time = (eth_mac_time_t *)data;
+        ESP_RETURN_ON_ERROR(emac_hal_ptp_set_sys_time(&emac->hal, time->seconds, time->nanoseconds), TAG, "failed to set PTP time");
+        break;
+    }
+    case ETH_MAC_ESP_CMD_G_PTP_TIME: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP get time invalid argument, cant' be NULL");
+        eth_mac_time_t *time = (eth_mac_time_t *)data;
+        ESP_RETURN_ON_ERROR(emac_hal_ptp_get_sys_time(&emac->hal, &time->seconds, &time->nanoseconds), TAG, "failed to get PTP time");
+        break;
+    }
+    case ETH_MAC_ESP_CMD_ADJ_PTP_TIME: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP adjust time invalid argument, cant' be NULL");
+        int32_t adj_ppb = *((int32_t *)data);
+        ESP_RETURN_ON_ERROR(emac_hal_ptp_adj_inc(&emac->hal, adj_ppb), TAG, "failed to adjust PTP time base");
+        break;
+    }
+    case ETH_MAC_ESP_CMD_ADJ_PTP_FREQ: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP adjust frequency invalid argument, cant' be NULL");
+        double scale_factor = *((double *)data);
+        ESP_RETURN_ON_ERROR(emac_hal_adj_freq_factor(&emac->hal, scale_factor), TAG, "failed to aject PTP time base by scale factor");
+        break;
+    }
+    case ETH_MAC_ESP_CMD_S_TARGET_CB:
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP set target callback function invalid argument, cant' be NULL");
+        emac->ts_target_exceed_cb_from_isr = (ts_target_exceed_cb_from_isr_t)data;
+        break;
+    case ETH_MAC_ESP_CMD_S_TARGET_TIME: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP set target time invalid argument, cant' be NULL");
+        eth_mac_time_t *start_time = (eth_mac_time_t *)data;
+        ESP_RETURN_ON_ERROR(emac_hal_ptp_set_target_time(&emac->hal, start_time->seconds, start_time->nanoseconds), TAG,
+                            "failed to set PTP target time");
+        break;
+    }
+    case ETH_MAC_ESP_CMD_ENABLE_TS4ALL: {
+        ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "PTP enable TS for all invalid argument, cant' be NULL");
+        bool enable = *(bool *)data;
+        ESP_RETURN_ON_ERROR(emac_hal_ptp_enable_ts4all(&emac->hal, enable), TAG, "failed to enable timestamping for all frames");
+        break;
+    }
+#else
+    case ETH_MAC_ESP_CMD_PTP_ENABLE:
+    case ETH_MAC_ESP_CMD_S_PTP_TIME:
+    case ETH_MAC_ESP_CMD_G_PTP_TIME:
+    case ETH_MAC_ESP_CMD_ADJ_PTP_TIME:
+    case ETH_MAC_ESP_CMD_ADJ_PTP_FREQ:
+    case ETH_MAC_ESP_CMD_S_TARGET_CB:
+    case ETH_MAC_ESP_CMD_S_TARGET_TIME:
+    case ETH_MAC_ESP_CMD_ENABLE_TS4ALL:
+	return ESP_ERR_NOT_SUPPORTED;
+#endif
     case ETH_MAC_ESP_CMD_SET_TDES0_CFG_BITS:
         ESP_RETURN_ON_FALSE(data != NULL, ESP_ERR_INVALID_ARG, TAG, "cannot set DMA tx desc flag to null");
         emac_esp_dma_set_tdes0_ctrl_bits(emac->emac_dma_hndl, *(uint32_t *)data);
@@ -556,39 +471,28 @@ static esp_err_t emac_esp32_transmit(esp_eth_mac_t *mac, uint8_t *buf, uint32_t 
     return ESP_OK;
 }
 
-static esp_err_t emac_esp32_transmit_ctrl_bufs(esp_eth_mac_t *mac, void *ctrl, const esp_eth_buf_desc_t *bufs, size_t buf_count)
+static esp_err_t emac_esp32_transmit_ctrl_vargs(esp_eth_mac_t *mac, void *ctrl, uint32_t argc, va_list args)
 {
     emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    emac_esp_dma_transmit_buff_t buff_array[buf_count];
+    uint32_t buf_num = argc / 2;
+
+    emac_esp_dma_transmit_buff_t buff_array[buf_num];
 
     uint32_t exp_len = 0;
-    for (size_t i = 0; i < buf_count; i++) {
-        buff_array[i].buf = bufs[i].buf;
-        buff_array[i].size = bufs[i].len;
+    for (int i = 0; i < buf_num; i++) {
+        buff_array[i].buf = va_arg(args, uint8_t *);
+        buff_array[i].size = va_arg(args, uint32_t);
         exp_len += buff_array[i].size;
     }
 
     eth_mac_time_t *ts = (eth_mac_time_t *)ctrl;
-    uint32_t sent_len = emac_esp_dma_transmit_frame_ext(emac->emac_dma_hndl, buff_array, (uint32_t)buf_count, ts);
+    uint32_t sent_len = emac_esp_dma_transmit_frame_ext(emac->emac_dma_hndl, buff_array, buf_num, ts);
 
-    if (sent_len != exp_len) {
+    if(sent_len != exp_len) {
         ESP_LOGD(TAG, "insufficient TX buffer size");
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
-}
-
-static esp_err_t emac_esp32_transmit_ctrl_vargs(esp_eth_mac_t *mac, void *ctrl, uint32_t argc, va_list args)
-{
-    uint32_t buf_num = argc / 2;
-    esp_eth_buf_desc_t bufs[buf_num];
-
-    for (uint32_t i = 0; i < buf_num; i++) {
-        bufs[i].buf = va_arg(args, uint8_t *);
-        bufs[i].len = va_arg(args, uint32_t);
-    }
-
-    return emac_esp32_transmit_ctrl_bufs(mac, ctrl, bufs, buf_num);
 }
 
 static esp_err_t emac_esp32_receive(esp_eth_mac_t *mac, uint8_t *buf, uint32_t *length)
@@ -657,6 +561,44 @@ static void emac_esp32_rx_task(void *arg)
 #endif
         } while (emac->frames_remain);
     }
+}
+
+static esp_err_t emac_config_pll_clock(emac_esp32_t *emac)
+{
+    uint32_t expt_freq = RMII_CLK_HZ; // 50 MHz
+    uint32_t real_freq = 0;
+
+#if CONFIG_IDF_TARGET_ESP32
+    // the RMII reference comes from the APLL
+    periph_rtc_apll_acquire();
+    emac->use_pll = true;
+    esp_err_t ret = periph_rtc_apll_freq_set(expt_freq, &real_freq);
+    ESP_RETURN_ON_FALSE(ret != ESP_ERR_INVALID_ARG, ESP_FAIL, TAG, "Set APLL clock coefficients failed");
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "APLL is occupied already, it is working at %" PRIu32 " Hz", real_freq);
+    }
+#elif CONFIG_IDF_TARGET_ESP32P4
+    // the RMII reference comes from the MPLL
+    periph_rtc_mpll_acquire();
+    emac->use_pll = true;
+    esp_err_t ret = periph_rtc_mpll_freq_set(expt_freq * 2, &real_freq); // cannot set 50MHz at MPLL, the nearest possible freq is 100 MHz
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "MPLL is occupied already, it is working at %" PRIu32 " Hz", real_freq);
+    }
+    // Set divider of MPLL clock
+    if (real_freq > RMII_CLK_HZ) {
+        uint32_t div = real_freq / RMII_CLK_HZ;
+        clk_ll_pll_f50m_set_divider(div);
+        // compute real RMII CLK frequency
+        real_freq /= div;
+    }
+    // Enable 50MHz MPLL derived clock
+    ESP_RETURN_ON_ERROR(esp_clk_tree_enable_src(SOC_MOD_CLK_PLL_F50M, true), TAG, "clock source enable failed");
+#endif
+    // If the difference of real RMII CLK frequency is not within 50 ppm, i.e. 2500 Hz, the (A/M)PLL is unusable
+    ESP_RETURN_ON_FALSE(abs((int)real_freq - (int)expt_freq) <= 2500,
+                        ESP_ERR_INVALID_STATE, TAG, "The (A/M)PLL is working at an unusable frequency %" PRIu32 " Hz", real_freq);
+    return ESP_OK;
 }
 
 static esp_err_t emac_esp32_init(esp_eth_mac_t *mac)
@@ -795,15 +737,6 @@ IRAM_ATTR void emac_isr_default_handler(void *args)
     }
 #endif // EMAC_LL_CONFIG_ENABLE_INTR_MASK & EMAC_LL_INTR_RECEIVE_ENABLE
 
-#if SOC_EMAC_SUPPORT_1000M
-    // If Rx clock is present (which is needed for reset to complete), in-band link status may trigger
-    // before it is masked during EMAC initialization.
-    if (unlikely(intr_stat & EMAC_LL_DMA_GLI_INTR)) {
-        // Read to clear the interrupt; value intentionally unused.
-        (void)emac_hal_get_gmii_status(hal);
-    }
-#endif // SOC_EMAC_SUPPORT_1000M
-
     if (high_task_woken) {
         portYIELD_FROM_ISR();
     }
@@ -819,12 +752,13 @@ static void emac_esp_free_driver_obj(emac_esp32_t *emac)
             esp_intr_free(emac->intr_hdl);
         }
 
-        for (int32_t i = 0; i < EMAC_USED_PLL_CLK_MAX_COUNT; i++) {
-            if (emac->pll_clk_used[i] != EMAC_UNDEFINED_PLL_CLK) {
-                esp_clk_tree_enable_src(emac->pll_clk_used[i], false);
-            }
+        if (emac->use_pll) {
+#if CONFIG_IDF_TARGET_ESP32
+            periph_rtc_apll_release();
+#elif CONFIG_IDF_TARGET_ESP32P4
+            periph_rtc_mpll_release();
+#endif
         }
-
 #ifdef CONFIG_IDF_TARGET_ESP32
         if (emac->rmii_clk_hdl) {
             esp_clock_output_stop(emac->rmii_clk_hdl);
@@ -878,7 +812,6 @@ static esp_err_t emac_esp_alloc_driver_obj(const eth_mac_config_t *config, emac_
                 .arg = (void *)emac
             },
         },
-        .attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH,
         .depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)
     };
     if (sleep_retention_module_init(module, &init_param) != ESP_OK) {
@@ -909,9 +842,6 @@ err:
 static esp_err_t emac_esp_config_data_interface(const eth_esp32_emac_config_t *esp32_emac_config, emac_esp32_t *emac)
 {
     esp_err_t ret = ESP_OK;
-    for (int32_t i = 0; i < EMAC_USED_PLL_CLK_MAX_COUNT; i++) {
-        emac->pll_clk_used[i] = EMAC_UNDEFINED_PLL_CLK;
-    }
     switch (esp32_emac_config->interface) {
     case EMAC_DATA_INTERFACE_MII: {
         /* MII interface GPIO initialization */
@@ -925,7 +855,7 @@ static esp_err_t emac_esp_config_data_interface(const eth_esp32_emac_config_t *e
         ESP_GOTO_ON_ERROR(emac_esp_iomux_init_mii(mii_data_gpio), err, TAG, "invalid EMAC MII data plane GPIO");
 #endif // SOC_EMAC_MII_USE_GPIO_MATRIX
         /* Enable MII clock */
-        PERIPH_RCC_ATOMIC() {
+        EMAC_IF_RCC_ATOMIC() {
             emac_hal_clock_enable_mii(&emac->hal);
         }
         break;
@@ -940,242 +870,44 @@ static esp_err_t emac_esp_config_data_interface(const eth_esp32_emac_config_t *e
         /* If ref_clk is configured as input */
         if (esp32_emac_config->clock_config.rmii.clock_mode == EMAC_CLK_EXT_IN) {
             ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_input(esp32_emac_config->clock_config.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock input GPIO");
-            PERIPH_RCC_ATOMIC() {
+            EMAC_IF_RCC_ATOMIC() {
                 emac_hal_clock_enable_rmii_input(&emac->hal);
             }
         } else if (esp32_emac_config->clock_config.rmii.clock_mode == EMAC_CLK_OUT) {
-            uint32_t pll_freq = RMII_CLK_HZ;
-#if !SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
+            ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac), err, TAG, "Configure (A/M)PLL for RMII failed");
+#if CONFIG_IDF_TARGET_ESP32P4
             /* Output RMII clock is routed back to input externally */
-            if (esp32_emac_config->clock_config_out_in.rmii.clock_mode == EMAC_CLK_EXT_IN && esp32_emac_config->clock_config_out_in.rmii.clock_gpio >= 0) {
-                soc_module_clk_t phy_ref_clk_src = ETH_EMAC_PHY_REF_CLK_SRC;
-                ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac, emac_clk_phy_ref.clk_src, emac_clk_phy_ref.clk_count, &phy_ref_clk_src, &pll_freq),
-                                err, TAG, "Configure PLL for RMII failed");
-                emac->pll_clk_used[EMAC_USED_PLL_DEFAULT_IDX] = phy_ref_clk_src;
-                ESP_GOTO_ON_ERROR(emac_config_phy_ref_clk_clock(emac, emac_clk_phy_ref.derived_clk_id, phy_ref_clk_src),
-                                err, TAG, "Configure PHY_REF_CLK for RMII failed");
-                emac->pll_clk_used[EMAC_USED_PLL_PHY_REF_CLK_DERIVED_IDX] = emac_clk_phy_ref.derived_clk_id;
-                /* Output RMII clock is routed back to input externally */
-                ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_input(esp32_emac_config->clock_config_out_in.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock input GPIO");
-                PERIPH_RCC_ATOMIC() {
-                    emac_hal_clock_enable_rmii_input(&emac->hal);
-                }
-                ESP_GOTO_ON_ERROR(emac_esp_iomux_phy_ref_clk_output(esp32_emac_config->clock_config.rmii.clock_gpio), err, TAG, "invalid EMAC PHY_REF_CLK clock output GPIO");
-                /* Enable PHY_REF_CLK output clock */
-                PERIPH_RCC_ATOMIC() {
-                    emac_hal_enable_phy_ref_clock_output(&emac->hal);
-                }
-            } else if (emac_clk_internal.clk_count > 0) { // target also supports EMAC internal clock for REF CLK
-                soc_module_clk_t ref_inter_src = EMAC_UNDEFINED_PLL_CLK;
-                ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac, emac_clk_internal.clk_src, emac_clk_internal.clk_count, &ref_inter_src, &pll_freq),
-                              err, TAG, "Configure PLL for RMII failed");
-                emac->pll_clk_used[EMAC_USED_PLL_DEFAULT_IDX] = ref_inter_src;
-                ESP_GOTO_ON_ERROR(emac_set_freq_ref_out_clock(emac, pll_freq, RMII_CLK_HZ, RMII_CLK_STABILTY_PPM),
-                              err, TAG, "Configure internal output clock for RMII failed");
-                ESP_GOTO_ON_ERROR(emac_enable_ref_out_clock(emac, &emac_clk_internal, ref_inter_src, true),
-                              err, TAG, "Enable internal output clock for RMII failed");
-                ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_output(esp32_emac_config->clock_config.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock output GPIO");
-                /* Enable RMII internal output clock */
-                PERIPH_RCC_ATOMIC() {
-                    emac_hal_clock_enable_rmii_output(&emac->hal);
-                }
-            } else {
-                ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC input of REF clock mode");
+            ESP_GOTO_ON_FALSE(esp32_emac_config->clock_config_out_in.rmii.clock_mode == EMAC_CLK_EXT_IN && esp32_emac_config->clock_config_out_in.rmii.clock_gpio >= 0,
+                              ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC input of output clock mode");
+            ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_input(esp32_emac_config->clock_config_out_in.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock input GPIO");
+            EMAC_IF_RCC_ATOMIC() {
+                emac_hal_clock_enable_rmii_input(&emac->hal);
             }
-#else
-            soc_module_clk_t pll_clk_used = EMAC_UNDEFINED_PLL_CLK;
-            ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac, emac_clk_internal.clk_src, emac_clk_internal.clk_count, &pll_clk_used, &pll_freq),
-                              err, TAG, "Configure PLL for RMII failed");
-            emac->pll_clk_used[EMAC_USED_PLL_DEFAULT_IDX] = pll_clk_used;
-            ESP_GOTO_ON_ERROR(emac_set_freq_ref_out_clock(emac, pll_freq, RMII_CLK_HZ, RMII_CLK_STABILTY_PPM),
-                              err, TAG, "Configure internal output clock for RMII failed");
-            ESP_GOTO_ON_ERROR(emac_enable_ref_out_clock(emac, &emac_clk_internal, EMAC_UNDEFINED_PLL_CLK, true),
-                              err, TAG, "Enable internal output clock for RMII failed");
-#if SOC_IS(ESP32)
+#elif CONFIG_IDF_TARGET_ESP32
+            // we can also use the IOMUX to route the APLL clock to GPIO_0
             if (esp32_emac_config->clock_config.rmii.clock_gpio == 0) {
-                                ESP_GOTO_ON_ERROR(esp_clock_output_start(CLKOUT_SIG_APLL, 0, &emac->rmii_clk_hdl),
-                                                  err, TAG, "start APLL clock output failed");
+                ESP_GOTO_ON_ERROR(esp_clock_output_start(CLKOUT_SIG_APLL, 0, &emac->rmii_clk_hdl),
+                                  err, TAG, "start APLL clock output failed");
             } else
-#endif // SOC_IS(ESP32)
+#endif
             {
-                ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_output(esp32_emac_config->clock_config.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock output GPIO");
+                ESP_GOTO_ON_ERROR(emac_esp_iomux_rmii_clk_ouput(esp32_emac_config->clock_config.rmii.clock_gpio), err, TAG, "invalid EMAC RMII clock output GPIO");
             }
-            PERIPH_RCC_ATOMIC() {
+            /* Enable RMII Output clock */
+            EMAC_IF_RCC_ATOMIC() {
                 emac_hal_clock_enable_rmii_output(&emac->hal);
             }
-#endif // !SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
         } else {
-            ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC RMII clock mode");
+            ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC clock mode");
         }
         break;
     }
-#if SOC_EMAC_SUPPORT_1000M
-    case EMAC_DATA_INTERFACE_RGMII: {
-        uint32_t pll_freq = RGMII_CLK_HZ;
-        const eth_mac_rgmii_gpio_config_t *rgmii_data_gpio = NULL;
-#if SOC_EMAC_USE_MULTI_IO_MUX
-        rgmii_data_gpio = &esp32_emac_config->emac_dataif_gpio.rgmii;
-#endif // SOC_EMAC_USE_MULTI_IO_MUX
-        ESP_GOTO_ON_ERROR(emac_esp_iomux_init_rgmii(rgmii_data_gpio), err, TAG, "invalid EMAC RGMII data plane GPIO");
-        ESP_GOTO_ON_ERROR(emac_esp_iomux_rgmii_clk_input(esp32_emac_config->clock_config.rgmii.clock_rx_gpio), err, TAG, "invalid EMAC RGMII clock input GPIO");
-        soc_module_clk_t tx_clk_src = ETH_EMAC_RGMII_TX_CLK_SRC;
-        ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac, emac_clk_internal.clk_src, emac_clk_internal.clk_count,
-                                                &tx_clk_src, &pll_freq), err, TAG, "Configure PLL for RGMII failed");
-        emac->pll_clk_used[EMAC_USED_PLL_DEFAULT_IDX] = tx_clk_src;
-        // set default RGMII output clock to 125MHz, will be overridden by PHY link speed
-        ESP_GOTO_ON_ERROR(emac_set_freq_ref_out_clock(emac, pll_freq, RX_TX_1000M_SPEED_CLK_HZ, RGMII_CLK_STABILTY_PPM),
-                                                      err, TAG, "Configure RGMII internal ref clock divider failed");
-        ESP_GOTO_ON_ERROR(emac_enable_ref_out_clock(emac, &emac_clk_internal, tx_clk_src, true),
-                                                    err, TAG, "Enable internal output clock for RGMII failed");
-#ifdef SOC_EMAC_REF_PHY_CLK
-        if (esp32_emac_config->clock_config.rgmii.clock_phy_ref_gpio != -1) {
-            pll_freq = EMAC_PHY_REF_CLK_HZ;
-            soc_module_clk_t phy_ref_clk_src = ETH_EMAC_PHY_REF_CLK_SRC;
-            ESP_GOTO_ON_ERROR(emac_config_pll_clock(emac, emac_clk_phy_ref.clk_src, emac_clk_phy_ref.clk_count, &phy_ref_clk_src,
-                                                    &pll_freq), err, TAG, "Configure PLL for PHY_REF_CLK failed");
-            emac->pll_clk_used[EMAC_USED_PLL_PHY_REF_CLK_SCR_IDX] = phy_ref_clk_src;
-            ESP_GOTO_ON_ERROR(emac_config_phy_ref_clk_clock(emac, emac_clk_phy_ref.derived_clk_id, phy_ref_clk_src), err, TAG, "Configure PHY_REF_CLK for RGMII failed");
-            emac->pll_clk_used[EMAC_USED_PLL_PHY_REF_CLK_DERIVED_IDX] = emac_clk_phy_ref.derived_clk_id;
-            ESP_GOTO_ON_ERROR(emac_esp_iomux_phy_ref_clk_output(esp32_emac_config->clock_config.rgmii.clock_phy_ref_gpio), err, TAG, "invalid EMAC PHY_REF_CLK clock output GPIO");
-            /* Enable PHY_REF_CLK output clock */
-            PERIPH_RCC_ATOMIC() {
-                emac_hal_enable_phy_ref_clock_output(&emac->hal);
-            }
-        }
-#endif // SOC_EMAC_REF_PHY_CLK
-        ESP_GOTO_ON_ERROR(emac_esp_iomux_rgmii_clk_output(esp32_emac_config->clock_config.rgmii.clock_tx_gpio), err, TAG, "invalid EMAC RGMII clock output GPIO");
-        PERIPH_RCC_ATOMIC() {
-            emac_hal_clock_enable_rgmii(&emac->hal);
-        }
-        break;
-    }
-#endif // SOC_EMAC_SUPPORT_1000M
     default:
         ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC Data Interface:%i", esp32_emac_config->interface);
     }
 err:
     return ret;
 }
-
-#ifdef SOC_EMAC_IEEE1588V2_SUPPORTED
-esp_err_t esp_eth_mac_ptp_enable(esp_eth_mac_t *mac, const eth_mac_ptp_config_t *config)
-{
-    ESP_RETURN_ON_FALSE(mac && config, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    PERIPH_RCC_ATOMIC() {
-        emac_hal_clock_enable_ptp(&emac->hal, config->clk_src, true);
-    }
-    emac_hal_ptp_config_t ptp_config = {
-        .upd_method = ETH_PTP_UPDATE_METHOD_FINE,
-        .roll = config->roll_type,
-        .ptp_clk_src_period_ns = config->clk_src_period_ns,
-        .ptp_req_accuracy_ns = config->required_accuracy_ns
-    };
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_start(&emac->hal, &ptp_config), TAG, "failed to start PTP module");
-    emac_esp_dma_ts_enable(emac->emac_dma_hndl, true);
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_ptp_disable(esp_eth_mac_t *mac)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_stop(&emac->hal), TAG, "failed to stop PTP module");
-    emac_esp_dma_ts_enable(emac->emac_dma_hndl, false);
-    PERIPH_RCC_ATOMIC() {
-        emac_hal_clock_enable_ptp(&emac->hal, 0, false);
-    }
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_set_ptp_time(esp_eth_mac_t *mac, const eth_mac_time_t *time)
-{
-    ESP_RETURN_ON_FALSE(mac && time, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_set_sys_time(&emac->hal, time->seconds, time->nanoseconds), TAG, "failed to set PTP time");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_get_ptp_time(esp_eth_mac_t *mac, eth_mac_time_t *time)
-{
-    ESP_RETURN_ON_FALSE(mac && time, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_get_sys_time(&emac->hal, &time->seconds, &time->nanoseconds), TAG, "failed to get PTP time");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_adj_ptp_freq(esp_eth_mac_t *mac, double scale_factor)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_adj_freq_factor(&emac->hal, scale_factor), TAG, "failed to adjust PTP time base by scale factor");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_adj_ptp_time(esp_eth_mac_t *mac, int32_t adj_ppb)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_adj_inc(&emac->hal, adj_ppb), TAG, "failed to adjust PTP time base");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_adj_ptp_freq_ppb(esp_eth_mac_t *mac, int32_t adj_ppb)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_adj_freq(&emac->hal, adj_ppb), TAG, "failed to adjust PTP frequency");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_set_target_time(esp_eth_mac_t *mac, const eth_mac_time_t *target)
-{
-    ESP_RETURN_ON_FALSE(mac && target, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_set_target_time(&emac->hal, target->seconds, target->nanoseconds), TAG,
-                        "failed to set PTP target time");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_set_target_time_cb(esp_eth_mac_t *mac, ts_target_exceed_cb_from_isr_t cb)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    emac->ts_target_exceed_cb_from_isr = cb;
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_enable_ts4all(esp_eth_mac_t *mac, bool enable)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_ptp_enable_ts4all(&emac->hal, enable), TAG, "failed to enable timestamping for all frames");
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_set_pps_out_gpio(esp_eth_mac_t *mac, int gpio_num)
-{
-    // The mac argument is unused in implementation but kept for API consistency
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    ESP_RETURN_ON_ERROR(emac_esp_gpio_matrix_init_ptp_pps(gpio_num), TAG, "failed to set PPS0 output at GPIO %i", gpio_num);
-    return ESP_OK;
-}
-
-esp_err_t esp_eth_mac_set_pps_out_freq(esp_eth_mac_t *mac, uint32_t freq_hz)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    ESP_RETURN_ON_ERROR(emac_hal_set_pps0_out_freq(&emac->hal, freq_hz), TAG, "failed to set PPS0 output frequency");
-    return ESP_OK;
-}
-
-uint32_t esp_eth_mac_get_ts_resolution(esp_eth_mac_t *mac)
-{
-    ESP_RETURN_ON_FALSE(mac, ESP_ERR_INVALID_ARG, TAG, "invalid argument, can't be NULL");
-    emac_esp32_t *emac = __containerof(mac, emac_esp32_t, parent);
-    return emac_hal_get_ts_resolution(&emac->hal);
-}
-#endif // SOC_EMAC_IEEE1588V2_SUPPORTED
 
 esp_eth_mac_t *esp_eth_mac_new_esp32(const eth_esp32_emac_config_t *esp32_config, const eth_mac_config_t *config)
 {
@@ -1250,11 +982,7 @@ esp_eth_mac_t *esp_eth_mac_new_esp32(const eth_esp32_emac_config_t *esp32_config
     emac->parent.set_peer_pause_ability = emac_esp32_set_peer_pause_ability;
     emac->parent.enable_flow_ctrl = emac_esp32_enable_flow_ctrl;
     emac->parent.transmit = emac_esp32_transmit;
-    emac->parent.transmit_ctrl_bufs = emac_esp32_transmit_ctrl_bufs;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     emac->parent.transmit_ctrl_vargs = emac_esp32_transmit_ctrl_vargs;
-#pragma GCC diagnostic pop
     emac->parent.receive = emac_esp32_receive;
     emac->parent.custom_ioctl = emac_esp_custom_ioctl;
 #ifdef SOC_EMAC_IEEE1588V2_SUPPORTED

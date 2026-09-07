@@ -5,10 +5,6 @@ include_guard(GLOBAL)
 
 cmake_minimum_required(VERSION 3.22)
 
-if(NOT DEFINED IDF_DEFAULT_PROJECT_NAME)
-    get_filename_component(IDF_DEFAULT_PROJECT_NAME "${CMAKE_CURRENT_SOURCE_DIR}" NAME)
-endif()
-
 # Update the CMAKE_MODULE_PATH to ensure that additional cmakev2 build system
 # modules can be included. The third_party directory from cmakev1 is also
 # included for third-party modules shared with cmakev1.
@@ -36,14 +32,6 @@ include(${CMAKE_CURRENT_LIST_DIR}/../cmake/openocd.cmake)
 # idf_build_generate_depgraph function.
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/depgraph.cmake)
 
-# The err_codes.cmake file from cmakev1 provides idf_define_esp_err_codes(),
-# which generates per-component error code tables placed in a link-time array.
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/err_codes.cmake)
-
-# The lto.cmake file from cmakev1 provides __lto_collect_fragment_placed_components(),
-# used to decide which components must be excluded from link-time optimization.
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/lto.cmake)
-
 include(component)
 include(build)
 include(kconfig)
@@ -54,29 +42,11 @@ include(ldgen)
 include(dfu)
 include(uf2)
 include(size)
-
 include(GetGitRevisionDescription)
 # For backward compatibility, since externalproject_add is used by
 # project_include.cmake in the bootloader component. The ExternalProject
 # should probably be included there instead.
 include(ExternalProject)
-
-#[[api
-.. cmakev2:variable:: IDF_BUILD_V2
-
-    Set to ``y`` when the project is built with the CMake-based build system
-    v2. Use it to write component code that works with both v1 and v2, for
-    example ``if(IDF_BUILD_V2)``. It is also exported as an environment variable
-    and stored as a build property.
-
-.. cmakev2:variable:: IDF_BUILD_VER
-
-    The major version number of the build system, ``2`` for v2.
-
-.. cmakev2:variable:: IDF_BUILD_VER_TAG
-
-    The build system version tag, ``v2`` for v2.
-#]]
 
 #[[
     __init_build_version()
@@ -124,9 +94,7 @@ function(__init_idf_path)
     endif()
 
     idf_build_set_property(IDF_PATH "${idf_path}")
-    # Components reference either ${IDF_PATH} or ${idf_path}; publish both.
     set(IDF_PATH ${idf_path} PARENT_SCOPE)
-    set(idf_path ${idf_path} PARENT_SCOPE)
     set(ENV{IDF_PATH} ${idf_path})
 endfunction()
 
@@ -298,29 +266,20 @@ endfunction()
 #[[
     __init_toolchain()
 
-    Determine the toolchain file, set IDF_TOOLCHAIN_FILE build property and
-    global CMAKE_TOOLCHAIN_FILE CMake variable. Also ensure that the
+    Determine the IDF_TOOLCHAIN value from the IDF_TOOLCHAIN environment
+    variable or the CMake cache variable. If none of these are set, use the
+    default gcc toolchain. Ensure there are no inconsistencies in the
+    IDF_TOOLCHAIN values set in different locations. Also ensure that the
     CMAKE_TOOLCHAIN_FILE is set to the correct file according to the current
     IDF_TARGET.
 
-    Note: The IDF_TOOLCHAIN build property is set after the toolchain
-    configuration in ``idf_project_init``. The ``tools/cmake/toolchain.cmake``
-    is included in the toolchain file and it sets the IDF_TOOLCHAIN variable in
-    CMake's cache.
+    Set the IDF_TOOLCHAIN and IDF_TOOLCHAIN_FILE build properties. Also,
+    configure the IDF_TOOLCHAIN CMake cache variable and set the
+    CMAKE_TOOLCHAIN_FILE global variable.
 #]]
 function(__init_toolchain)
     set(cache_toolchain $CACHE{IDF_TOOLCHAIN})
     set(cache_toolchain_file $CACHE{CMAKE_TOOLCHAIN_FILE})
-
-    # When IDF_CUSTOM_TOOLCHAIN is set, the toolchain was provided
-    # externally by the parent build (e.g. ULP sub-project via
-    # externalproject_add -DCMAKE_TOOLCHAIN_FILE=...). Skip
-    # IDF_TARGET-based resolution and validation, and trust the
-    # caller-provided CMAKE_TOOLCHAIN_FILE.
-    if(IDF_CUSTOM_TOOLCHAIN AND cache_toolchain_file)
-        idf_build_set_property(IDF_TOOLCHAIN_FILE "${cache_toolchain_file}")
-        return()
-    endif()
 
     idf_build_get_property(idf_path IDF_PATH)
     idf_build_get_property(idf_target IDF_TARGET)
@@ -359,74 +318,29 @@ function(__init_toolchain)
         idf_die("Toolchain file ${toolchain_file} not found")
     endif()
 
-    # IDF_TOOLCHAIN applies to Espressif targets only; on linux (host build)
-    # it must stay empty so Kconfig leaves both CONFIG_IDF_TOOLCHAIN_GCC and
-    # CONFIG_IDF_TOOLCHAIN_CLANG unset.
-    if(NOT "${idf_target}" STREQUAL "linux")
-        set(IDF_TOOLCHAIN "${toolchain}" CACHE STRING "IDF Build Toolchain Type" FORCE)
-    endif()
-
+    set(IDF_TOOLCHAIN ${toolchain} CACHE STRING "IDF Build Toolchain Type")
     set(CMAKE_TOOLCHAIN_FILE "${toolchain_file}" PARENT_SCOPE)
+    idf_build_set_property(IDF_TOOLCHAIN "${toolchain}")
     idf_build_set_property(IDF_TOOLCHAIN_FILE "${toolchain_file}")
 endfunction()
 
 #[[
-    __init_compiler_launchers()
+    __init_ccache()
 
-    Build the compiler launcher chain and apply it to
-    CMAKE_{C,CXX,ASM}_COMPILER_LAUNCHER. The chain runs esp-idf-configdep first
-    (when configdep is enabled) followed by ccache (when enabled).
+    Enable ccache if requested through CCACHE_ENABLE.
 #]]
-function(__init_compiler_launchers)
-    set(launcher_chain "")
-
-    # esp-idf-configdep goes first in the chain.
-    # Gate on the same esp-idf-kconfig version check as --output cdep_tree in
-    # kconfig.cmake so the launcher is never enabled without the .cdep tree.
-    if(CONFIGDEP_ENABLE)
-        idf_build_get_property(python PYTHON)
-        __check_python_package_min_version(
-            ${python} esp-idf-kconfig "${CONFIGDEP_MIN_KCONFIG_VERSION}" _kconfig_version_ok)
-        if(_kconfig_version_ok)
-            find_program(CONFIGDEP_FOUND esp-idf-configdep)
-            if(CONFIGDEP_FOUND)
-                idf_msg("esp-idf-configdep will be used for faster recompilation")
-                list(APPEND launcher_chain "esp-idf-configdep")
-            else()
-                idf_warn("esp-idf-configdep enabled but not found. "
-                         "Run 'eim fix' to update esp-idf-kconfig.")
-            endif()
-        else()
-            idf_warn("esp-idf-configdep not supported by esp-idf-kconfig "
-                     "(>= ${CONFIGDEP_MIN_KCONFIG_VERSION} required). "
-                     "Run 'eim fix' to update esp-idf-kconfig.")
-        endif()
-    endif()
-
-    # ccache goes second in the chain.
-    if(CCACHE_ENABLE)
-        find_program(CCACHE_FOUND ccache)
-        if(CCACHE_FOUND)
-            idf_msg("ccache will be used for faster recompilation")
-            list(APPEND launcher_chain "ccache")
-        else()
-            idf_warn("enabled ccache in build but ccache program not found")
-        endif()
-    endif()
-
-    if(NOT launcher_chain)
-        idf_msg("No compiler launcher chain will be used.")
+function(__init_ccache)
+    if(NOT CCACHE_ENABLE)
         return()
     endif()
 
-    # Apply to all languages. Set in the caller's (project top-level) directory
-    # scope so component targets created later in idf_project_init() inherit it.
-    set(CMAKE_C_COMPILER_LAUNCHER "${launcher_chain}" PARENT_SCOPE)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${launcher_chain}" PARENT_SCOPE)
-    set(CMAKE_ASM_COMPILER_LAUNCHER "${launcher_chain}" PARENT_SCOPE)
-
-    string(REPLACE ";" " -> " launcher_display "${launcher_chain}")
-    idf_msg("Compiler launcher chain: ${launcher_display}")
+    find_program(CCACHE_FOUND ccache)
+    if(CCACHE_FOUND)
+        idf_msg("ccache will be used for faster recompilation")
+        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    else()
+        idf_warn("enabled ccache in build but ccache program not found")
+    endif()
 endfunction()
 
 #[[
@@ -451,33 +365,11 @@ endfunction()
     EXTRA_COMPONENT_EXCLUDE_DIRS
         List of paths to exclude from searching the component directories.
 
-    The ``PROJECT_COMPONENTS_SOURCE`` build property controls how the
-    project's own components are categorised -- i.e. those discovered
-    under ``CMAKE_CURRENT_SOURCE_DIR/main``,
-    ``CMAKE_CURRENT_SOURCE_DIR/components``, or the paths listed in
-    ``COMPONENT_DIRS``.  It defaults to ``project_components``
-    (priority 3 -- highest).  Setting it to ``idf_components``
-    (priority 0) makes them overridable by components supplied through
-    ``EXTRA_COMPONENT_DIRS`` (priority 2).  This is useful for
-    sub-projects whose built-in components are provided by ESP-IDF and
-    should be overridable by user-supplied components.
-
     Each component is initialized for every component directory found.
 #]]
 function(__init_components)
     idf_build_get_property(idf_path IDF_PATH)
     idf_build_get_property(prefix PREFIX)
-
-    idf_build_get_property(project_components_source PROJECT_COMPONENTS_SOURCE)
-    if(NOT project_components_source)
-        set(project_components_source "project_components")
-    endif()
-
-    set(valid_sources "project_components" "idf_components")
-    if(NOT project_components_source IN_LIST valid_sources)
-        idf_die("Invalid PROJECT_COMPONENTS_SOURCE '${project_components_source}'."
-                " Must be one of: ${valid_sources}")
-    endif()
 
     __get_component_paths(PATHS "${idf_path}/components"
                           OUTPUT idf_components)
@@ -515,7 +407,7 @@ function(__init_components)
     foreach(path IN LISTS project_components)
         __init_component(DIRECTORY "${path}"
                          PREFIX "${prefix}"
-                         SOURCE "${project_components_source}")
+                         SOURCE "project_components")
     endforeach()
 
     foreach(path IN LISTS project_extra_components)
@@ -626,132 +518,43 @@ function(__init_idf_target_arch)
     endif()
 endfunction()
 
-# The idf_build_properties interface target stores all global build
-# properties. It is created very early so that the initialization functions
-# can use it. Build properties are read and written with the
-# idf_build_get_property and idf_build_set_property functions.
+#[[
+    The idf_build_properties interface target is exclusively used to store
+    information about global build properties and is not linked or used in any
+    other way. This is created very early so that all the initialization
+    functions can use it.
 
-#[[api
-.. cmakev2:build_property:: IDF_PATH
+    List of build properties
 
-    Absolute path to the ESP-IDF directory.
+    IDF_PATH
+        Path to esp-idf directory.
 
-.. cmakev2:build_property:: IDF_TARGET
+    PREFIX
+        Prefix used for component target names.
 
-    The target chip the project is built for, for example ``esp32``.
+    COMPONENTS_DISCOVERED
+        List of component names identified by the build system. These
+        components are initialized and can have properties attached to them.
+        However, they are not necessarily included in the build through
+        add_subdirectory.
 
-.. cmakev2:build_property:: IDF_TARGET_ARCH
+    COMPONENT_INTERFACES
+        This is a list of component interface targets for the components in
+        ``COMPONENTS_DISCOVERED``. It is used when searching for a component,
+        such as by its name, to set or retrieve the component's properties.
 
-    The architecture of the target, ``xtensa`` or ``riscv`` (empty for the Linux host build).
-
-.. cmakev2:build_property:: IDF_VER
-
-    The ESP-IDF version string.
-
-.. cmakev2:build_property:: IDF_TOOLCHAIN
-
-    The selected toolchain, ``gcc`` or ``clang``.
-
-.. cmakev2:build_property:: PROJECT_NAME
-
-    The project name. Defaults to the name passed to CMake's ``project()`` command.
-
-.. cmakev2:build_property:: PROJECT_VER
-
-    The project version.
-
-.. cmakev2:build_property:: PROJECT_DIR
-
-    Absolute path to the project directory.
-
-.. cmakev2:build_property:: BUILD_DIR
-
-    Absolute path to the build directory.
-
-.. cmakev2:build_property:: PYTHON
-
-    Path to the Python interpreter used by the build.
-
-.. cmakev2:build_property:: COMPONENTS_DISCOVERED
-
-    List of the names of all discovered components.
-
-.. cmakev2:build_property:: COMPONENT_INTERFACES
-
-    List of the interface targets of all discovered components.
-
-.. cmakev2:build_property:: COMPONENTS_INCLUDED
-
-    List of the components that have been included (evaluated) in the build.
-
-.. cmakev2:build_property:: SDKCONFIG
-
-    Path to the project ``sdkconfig`` file.
-
-.. cmakev2:build_property:: SDKCONFIG_DEFAULTS
-
-    List of ``sdkconfig.defaults`` files applied to the configuration.
-
-.. cmakev2:build_property:: SDKCONFIG_HEADER
-
-    Path to the generated ``sdkconfig.h`` with C and C++ preprocessor defines.
-
-.. cmakev2:build_property:: SDKCONFIG_CMAKE
-
-    Path to the generated ``sdkconfig.cmake`` with the ``CONFIG_*`` CMake variables.
-
-.. cmakev2:build_property:: SDKCONFIG_JSON
-
-    Path to the generated ``sdkconfig.json``.
-
-.. cmakev2:build_property:: COMPILE_OPTIONS
-
-    Compile options applied to all components, for all languages.
-
-.. cmakev2:build_property:: C_COMPILE_OPTIONS
-
-    Compile options applied to all components, for C only.
-
-.. cmakev2:build_property:: CXX_COMPILE_OPTIONS
-
-    Compile options applied to all components, for C++ only.
-
-.. cmakev2:build_property:: ASM_COMPILE_OPTIONS
-
-    Compile options applied to all components, for assembly only.
-
-.. cmakev2:build_property:: COMPILE_DEFINITIONS
-
-    Preprocessor definitions applied to all components.
-
-.. cmakev2:build_property:: LINK_OPTIONS
-
-    Link options applied when linking the application.
-
-.. cmakev2:build_property:: INCLUDE_DIRECTORIES
-
-    Include directories applied to all components.
-
-.. cmakev2:build_property:: LINKER_TYPE
-
-    The linker family, ``GNU`` or ``Darwin``.
-
-.. cmakev2:build_property:: IDF_COMPONENT_MANAGER
-
-    Whether the component manager is enabled (``1``) or disabled (``0``).
-
-.. cmakev2:build_property:: IDF_COMPONENT_OPTIONAL_REQUIRES_MODE
-
-    How :cmakev2:ref:`idf_component_optional_requires` is resolved, ``IMMEDIATE`` or ``DEFERRED``.
-
-.. cmakev2:build_property:: PROJECT_DEFAULT_EXTRA_COMPONENTS
-
-    Internal list of additional components to include in the executable
-    created by ``idf_project_default``. Components should use
-    ``idf_project_add_default_build_component`` rather than modifying this
-    property directly.
+    COMPONENTS_INCLUDED
+        This is a list of component names that were included in the build,
+        meaning their CMakeLists.txt files were processed with an
+        add_subdirectory call. Each component is evaluated exactly once, and
+        this list serves as a record of which components have already been
+        evaluated.  Although each component can only be evaluated once, it can
+        be used in multiple idf_component_include calls. If a component is
+        requested to be included a second time, this list is checked. If the
+        component is already included, the idf_component_include function
+        simply returns, as there is nothing further to do except add a new
+        alias target if requested.
 #]]
-
 add_library(idf_build_properties INTERFACE)
 
 # The __idf_component_interface_cache target is used to maintain internal
@@ -794,17 +597,14 @@ __init_python()
 # Initialize Kconfig system infrastructure.
 __init_kconfig()
 
-# Initialize component manager build properties (IDF_COMPONENT_MANAGER, etc.).
-__init_component_manager()
-
 # Set IDF_TARGET.
 __init_idf_target()
 
 # Set IDF_TOOLCHAIN, IDF_TOOLCHAIN_FILE and CMAKE_TOOLCHAIN_FILE.
 __init_toolchain()
 
-# Set up the compiler launcher chain (esp-idf-configdep, ccache) if requested.
-__init_compiler_launchers()
+# Enable ccache if requested.
+__init_ccache()
 
 #[[
 

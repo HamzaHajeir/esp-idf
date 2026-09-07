@@ -19,8 +19,7 @@ extern "C" {
 /* Use esp timer instead of FreeRTOS timer to implement the callout. */
 #define BLE_NPL_USE_ESP_TIMER       (1)
 #else
-/* Always use esp timer */
-#define BLE_NPL_USE_ESP_TIMER       (1)
+#define BLE_NPL_USE_ESP_TIMER       (0)
 #endif
 
 typedef struct {

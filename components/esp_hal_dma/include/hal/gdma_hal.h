@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -52,11 +52,9 @@ typedef struct {
 typedef struct {
     // The bitmap of the IDs that can be used by M2M are different between AXI DMA and AHB DMA, so we need to save a copy for each of them
     uint32_t m2m_free_periph_mask;
-    // Supported interrupt events can vary across DMA instances (e.g. AHB vs AXI)
-    uint32_t tx_event_mask;
-    uint32_t rx_event_mask;
-    // Bitmap of supported configurable data burst sizes, using gdma_burst_size_support_t
-    uint32_t supported_burst_size_mask;
+    // TODO: we can add more private data here, e.g. the interrupt event mask of interest
+    // for now, the AXI DMA and AHB DMA are sharing the same interrupt mask, so we don't need to store it here
+    // If one day they become incompatible, we shall save a copy for each of them as a private data
 } gdma_hal_priv_data_t;
 
 /**
@@ -82,9 +80,8 @@ struct gdma_hal_context_t {
     void (*append)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Append a descriptor to the channel
     void (*reset)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Reset the channel
     void (*set_priority)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t priority); /// Set the channel priority
-    void (*connect_peri)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int periph_id); /// Connect the channel to a peripheral
-    void (*connect_mem)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int dummy_id); /// Connect the channel to memory (for M2M)
-    void (*disconnect_all)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Disconnect the channel from all peripherals/memory
+    void (*connect_peri)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, gdma_trigger_peripheral_t periph, int periph_sub_id); /// Connect the channel to a peripheral
+    void (*disconnect_peri)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Disconnect the channel from a peripheral
     void (*enable_burst)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_data_burst, bool en_desc_burst); /// Enable burst mode
     void (*set_burst_size)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t burst_sz); /// Set burst transfer size
     void (*set_strategy)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back, bool eof_till_popped); /// Set some misc strategy of the channel behaviour
@@ -93,6 +90,7 @@ struct gdma_hal_context_t {
     void (*clear_intr)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t intr_event_mask); /// Clear the channel interrupt
     uint32_t (*read_intr_status)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool raw); /// Read the channel interrupt status
     uint32_t (*get_eof_desc_addr)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool is_success); /// Get the address of the descriptor with success/error EOF flag set
+    void (*enable_access_encrypt_mem)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_or_dis); /// Enable the access to the encrypted memory
 #if SOC_GDMA_SUPPORT_CRC
     void (*clear_crc)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Clear the CRC interim results
     void (*set_crc_poly)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, const gdma_hal_crc_config_t *config); /// Set the CRC polynomial
@@ -104,8 +102,6 @@ struct gdma_hal_context_t {
 #if SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
     void (*set_weight)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t weight);  /// Set the channel weight
 #endif // SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-    bool (*is_tx_link_switch_event_supported)(gdma_hal_context_t *hal); /// Check if TX link-switch interrupt is supported
-    void (*request_link_switch_event)(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir); /// Raise the interrupt when tx link switch complete
 };
 
 void gdma_hal_deinit(gdma_hal_context_t *hal);
@@ -120,17 +116,13 @@ void gdma_hal_reset(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction
 
 void gdma_hal_set_priority(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t priority);
 
-void gdma_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int periph_id);
+void gdma_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, gdma_trigger_peripheral_t periph, int periph_sub_id);
 
-void gdma_hal_connect_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int dummy_id);
-
-void gdma_hal_disconnect_all(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir);
+void gdma_hal_disconnect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir);
 
 void gdma_hal_enable_burst(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_data_burst, bool en_desc_burst);
 
 void gdma_hal_set_burst_size(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t burst_sz);
-
-bool gdma_hal_check_burst_size(gdma_hal_context_t *hal, uint32_t burst_sz);
 
 void gdma_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back, bool eof_till_popped);
 
@@ -143,6 +135,8 @@ uint32_t gdma_hal_get_intr_status_reg(gdma_hal_context_t *hal, int chan_id, gdma
 uint32_t gdma_hal_read_intr_status(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool raw);
 
 uint32_t gdma_hal_get_eof_desc_addr(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool is_success);
+
+void gdma_hal_enable_access_encrypt_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_or_dis);
 
 #if SOC_GDMA_SUPPORT_CRC
 void gdma_hal_build_parallel_crc_matrix(int crc_width, uint32_t crc_poly_hex, int data_width,
@@ -166,10 +160,6 @@ void gdma_hal_enable_etm_task(gdma_hal_context_t *hal, int chan_id, gdma_channel
 #if SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
 void gdma_hal_set_weight(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t weight);
 #endif //SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-
-void gdma_hal_request_link_switch_event(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir);
-
-bool gdma_hal_is_tx_link_switch_event_supported(gdma_hal_context_t *hal);
 
 #ifdef __cplusplus
 }

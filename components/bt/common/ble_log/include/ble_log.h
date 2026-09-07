@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -35,31 +35,13 @@ typedef enum {
     BLE_LOG_SRC_HCI,
     BLE_LOG_SRC_ENCODE,
 
-    /* UART redirection (PORT 0 only) */
-    BLE_LOG_SRC_REDIR,
-
     BLE_LOG_SRC_MAX,
 } ble_log_src_t;
-
-/* HCI Log Direction */
-#define BLE_LOG_HCI_DOWNSTREAM  0
-#define BLE_LOG_HCI_UPSTREAM    1
-
-/* HCI Log Write Macro
- * Encodes direction in MSB of data[0] (HCI type byte) before writing.
- * Safe because ble_log_write_hex -> ble_log_lbm_write_trans does synchronous memcpy.
- * Parser reads MSB to determine direction; old firmware with MSB=0 defaults to "sent". */
-#define ble_log_write_hci(direction, data, len) do {    \
-    (data)[0] |= ((direction) << 7);                   \
-    ble_log_write_hex(BLE_LOG_SRC_HCI, (data), (len)); \
-    (data)[0] &= 0x7F;                                 \
-} while (0)
 
 /* INTERFACE */
 bool ble_log_init(void);
 void ble_log_deinit(void);
 bool ble_log_enable(bool enable);
-/* Blocking; call only from a caller-owned task, not an ISR or system callback. */
 void ble_log_flush(void);
 bool ble_log_write_hex(ble_log_src_t src_code, const uint8_t *addr, size_t len);
 void ble_log_dump_to_console(void);

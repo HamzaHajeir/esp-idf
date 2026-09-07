@@ -11,12 +11,12 @@ Time
 Log
 ---
 
-**Log V2** is introduced in this ESP-IDF version as an enhanced and optional logging implementation. It is fully compatible with **Log V1**, allowing projects to continue using **Log V1** without changes. Developers can enable **Log V2** via the Kconfig option :menuitem:`CONFIG_LOG_VERSION`. In future ESP-IDF versions, **Log V2** may become the default.
+**Log V2** is introduced in this ESP-IDF version as an enhanced and optional logging implementation. It is fully compatible with **Log V1**, allowing projects to continue using **Log V1** without changes. Developers can enable **Log V2** via the Kconfig option :ref:`CONFIG_LOG_VERSION`. In future ESP-IDF versions, **Log V2** may become the default.
 
 **Key Points**
 
 - Centralized log handling, dynamic formatting, and greater flexibility.
-- Slightly higher stack and IRAM usage, with a reduced binary size (refer to measurements in the `Logging Library <../../../api-reference/system/log.rst>`_ document).
+- Slightly higher stack and IRAM usage, with a reduced binary size (refer to measurements in the `Logging Library <../../../system/log.rst>`_ document).
 - **Log V2**-specific features (e.g., dynamic formatting, detecting the execution context) are not backward-compatible with **Log V1**.
 
 If you use the ``esp_log_write`` (or ``esp_log_writev``) function, replace it with ``esp_log`` (or ``esp_log_va``) to reduce one nested call.

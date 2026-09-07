@@ -104,12 +104,12 @@ You can also see the information on segments in the ESP-IDF logs while your appl
 
 3. The image has a single checksum byte after the last segment. This byte is written on a sixteen byte padded boundary, so the application image might need padding.
 4. If the ``hash_appended`` field from :cpp:type:`esp_image_header_t` is set then a SHA256 checksum will be appended. The value of the SHA256 hash is calculated on the range from the first byte and up to this field. The length of this field is 32 bytes.
-5. If the option :menuitem:`CONFIG_SECURE_SIGNED_APPS_SCHEME` is set to ECDSA then the application image will have an additional 68 bytes for an ECDSA signature, which includes:
+5. If the option :ref:`CONFIG_SECURE_SIGNED_APPS_SCHEME` is set to ECDSA then the application image will have an additional 68 bytes for an ECDSA signature, which includes:
 
     * version word (4 bytes)
     * signature data (64 bytes)
 
-6. If the option :menuitem:`CONFIG_SECURE_SIGNED_APPS_SCHEME` is set to RSA or ECDSA (V2) then the application image will have an additional signature sector of 4 KB in size. For more details on the format of this signature sector, please refer to :ref:`signature-block-format`.
+6. If the option :ref:`CONFIG_SECURE_SIGNED_APPS_SCHEME` is set to RSA or ECDSA (V2) then the application image will have an additional signature sector of 4 KB in size. For more details on the format of this signature sector, please refer to :ref:`signature-block-format`.
 
 .. _app-image-format-application-description:
 
@@ -125,10 +125,6 @@ The ``DROM`` segment of the application binary starts with the :cpp:type:`esp_ap
 * ``time`` and ``date``: compile time and date
 * ``idf_ver``: version of ESP-IDF [#f1]_
 * ``app_elf_sha256``: contains SHA256 hash for the application ELF file
-* ``min_efuse_blk_rev_full``: minimal eFuse block revision supported by the image, in format: major * 100 + minor
-* ``max_efuse_blk_rev_full``: maximal eFuse block revision supported by the image, in format: major * 100 + minor
-* ``mmu_page_size``: MMU page size in log base 2 format
-* ``spi_flash_mode``: SPI flash mode as per ``CONFIG_ESPTOOLPY_FLASHMODE_VAL`` for compatibility check during OTA
 
 .. [#f1] The maximum length is 32 characters, including null-termination character. For example, if the length of ``PROJECT_NAME`` exceeds 31 characters, the excess characters will be disregarded.
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
+#include "soc/lldesc.h"
 #include "soc/soc_caps.h"
 #include "hal/i2s_periph.h"
 #include "hal/i2s_hal.h"
@@ -18,7 +19,6 @@
 #if SOC_LP_I2S_SUPPORTED
 #include "hal/lp_i2s_ll.h"
 #endif
-#include "hal/i2s_types.h"
 #include "driver/i2s_types.h"
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp_clock_output.h"
@@ -26,12 +26,9 @@
 #if SOC_GDMA_SUPPORTED
 #include "esp_private/gdma.h"
 #endif
-#include "esp_private/gdma_link.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_gpio_reserve.h"
 #if SOC_HAS(PAU)
-#include "soc/regdma.h"
-#include "soc/retention_periph_defs.h"
 #include "esp_private/sleep_retention.h"
 #endif
 #include "esp_pm.h"
@@ -53,15 +50,22 @@ extern "C" {
 #endif //CONFIG_I2S_ISR_IRAM_SAFE
 #define I2S_DMA_ALLOC_CAPS      (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT)
 
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define I2S_CLOCK_SRC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define I2S_CLOCK_SRC_ATOMIC()
+#endif
+
+#if !SOC_RCC_IS_INDEPENDENT
+#define I2S_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define I2S_RCC_ATOMIC()
+#endif
+
 #define I2S_USE_RETENTION_LINK  (SOC_HAS(PAU) && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
 
 #define I2S_NULL_POINTER_CHECK(tag, p)          ESP_RETURN_ON_FALSE((p), ESP_ERR_INVALID_ARG, tag, "input parameter '"#p"' is NULL")
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-/**
- * @brief Whether this channel uses the DMA memory data path
- */
-#define I2S_CHANNEL_USES_DMA(handle)   ((handle)->destination == I2S_DESTINATION_DMA)
 
 /**
  * @brief i2s channel state for checking if the operation in under right driver state
@@ -92,9 +96,6 @@ typedef struct {
     i2s_isr_callback_t on_send_q_ovf;       /**< Callback of sending queue overflowed event, only for tx channel
                                              *   The event data includes buffer size that has been overwritten
                                              */
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-    i2s_tx_fifo_sync_callback_t on_tx_sync_evt;      /**< Callback when the TX sync difference count exceeds the manual threshold */
-#endif
 } i2s_event_callbacks_internal_t;
 
 /**
@@ -115,55 +116,16 @@ typedef struct {
 #else
     intr_handle_t           dma_chan;       /*!< interrupt channel handle */
 #endif
-    gdma_link_list_handle_t dma_link;       /*!< DMA descriptor link list */
-    uint32_t                link_index;      /*!< Index of the next completed DMA link item */
     uint32_t                desc_num;       /*!< I2S DMA buffer number, it is also the number of DMA descriptor */
     uint32_t                frame_num;      /*!< I2S frame number in one DMA buffer. One frame means one-time sample data in all slots */
-    uint32_t                burst_size;     /*!< Resolved DMA data burst size in bytes */
     uint32_t                buf_size;       /*!< dma buffer size */
-    size_t                  buf_alignment;  /*!< DMA buffer alignment required for address and size */
-    bool                    buffer_in_psram; /*!< Whether the DMA buffers are allocated in PSRAM */
-#if SOC_GDMA_SUPPORTED
-    bool                    connected;      /*!< Whether the GDMA channel is connected to I2S */
-#endif
     bool                    auto_clear_after_cb;     /*!< Set to auto clear DMA TX descriptor after callback, i2s will always send zero automatically if no data to send */
     bool                    auto_clear_before_cb;    /*!< Set to auto clear DMA TX descriptor before callback, i2s will always send zero automatically if no data to send */
     uint32_t                rw_pos;         /*!< reading/writing pointer position */
     void                    *curr_ptr;      /*!< Pointer to current dma buffer */
+    lldesc_t                **desc;         /*!< dma descriptor array */
     uint8_t                 **bufs;         /*!< dma buffer array */
 } i2s_dma_t;
-
-/**
- * @brief Duplex candidate information extracted from channel configuration
- * @note  Used by the generic duplex constitution function to check whether two channels can form duplex.
- *        Two channels can share the BCLK/WS lines only when the BCLK/WS configurations are identical
- *        and the per-frame bit count (sample_rate * total_frame_bits) is the same. The slot layout,
- *        clock source, external clock frequency and MCLK configuration are allowed to differ as long
- *        as the BCLK/WS frequency and frame timing match.
- */
-typedef struct {
-    int ws_pin;                 /*!< WS GPIO pin number, -1 if unused */
-    int bclk_pin;               /*!< BCLK GPIO pin number, -1 if unused */
-    uint32_t sample_rate_hz;    /*!< Sample rate in Hz */
-    uint32_t total_frame_bits;  /*!< Total bits per frame: total_slot * slot_bit_width */
-    i2s_clock_src_t clk_src;    /*!< Clock source (informational, not compared) */
-    bool bclk_inv;              /*!< Whether the BCLK is inverted */
-    bool ws_inv;                /*!< Whether the WS is inverted */
-} i2s_duplex_candidate_t;
-
-/**
- * @brief Try to constitute full-duplex between two channels on the same controller
- * @note  The two channels can constitute full-duplex only when they share the same valid WS/BCK pins,
- *        the same BCLK/WS invert flags, the same sample rate and the same total frame bits.
- *        The slot layout, clock source, external clock frequency and MCLK configuration may differ
- *        as long as the BCLK/WS frequency and frame timing match (e.g. STD 2ch/32bit can pair
- *        with TDM 4ch/16bit).
- *        If the conditions match, mark the controller as full-duplex. If both channels are master,
- *        the later one is forced to slave.
- * @param handle       Current channel being initialized
- * @param candidate    Duplex configuration of the current channel
- */
-void i2s_channel_try_to_constitute_duplex(i2s_chan_handle_t handle, const i2s_duplex_candidate_t *candidate);
 
 /**
  * @brief i2s controller level configurations
@@ -187,16 +149,6 @@ typedef struct {
 #endif
 } i2s_controller_t;
 
-#if SOC_HAS(PAU)
-typedef struct {
-    const periph_retention_module_t retention_module;
-    const regdma_entries_config_t *entry_array;
-    uint32_t array_size;
-} i2s_reg_retention_info_t;
-
-extern const i2s_reg_retention_info_t i2s_reg_retention_info[I2S_LL_GET(INST_NUM)];
-#endif
-
 struct i2s_channel_obj_t {
     /* Channel basic information */
     i2s_controller_t        *controller;    /*!< Parent pointer to controller object */
@@ -215,15 +167,16 @@ struct i2s_channel_obj_t {
         bool                is_raw_pdm: 1;     /*!< Flag of whether send/receive PDM in raw data, i.e., no PCM2PDM/PDM2PCM filter enabled */
         bool                is_external: 1;    /*!< Whether use external clock */
         bool                full_duplex_slave: 1; /*!< whether the channel is forced to switch to slave role for full duplex */
+#if SOC_I2S_SUPPORTS_APLL
+        bool                apll_en: 1;        /*!< Flag of whether APLL enabled */
+#endif
     };
     uint32_t                active_slot;    /*!< Active slot number */
     uint32_t                total_slot;     /*!< Total slot number */
-    i2s_destination_t       destination;    /*!< Data path destination (DMA memory path vs Bluetooth controller where supported) */
     i2s_clock_src_t         clk_src;        /*!< Clock source */
     uint32_t                sclk_hz;        /*!< Source clock frequency */
     uint32_t                origin_mclk_hz; /*!< Original mclk frequency */
     uint32_t                curr_mclk_hz;   /*!< Current mclk frequency */
-    uint32_t                bclk_hz;        /*!< BCLK frequency */
     /* Locks and queues */
     SemaphoreHandle_t       mutex;          /*!< Mutex semaphore for the channel operations */
     SemaphoreHandle_t       binary;         /*!< Binary semaphore for writing / reading / enabling / disabling */
@@ -234,13 +187,6 @@ struct i2s_channel_obj_t {
     uint64_t                reserve_gpio_mask; /*!< The gpio mask that has been reserved by I2S */
     i2s_event_callbacks_internal_t   callbacks;      /*!< Callback functions */
     void                    *user_data;     /*!< User data for callback functions */
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-    i2s_tx_fifo_sync_callback_t     on_tx_sync;        /*!< TX FIFO sync manual supplement threshold callback */
-    void                    *sync_user_data; /*!< User data for TX FIFO sync callback */
-    intr_handle_t           i2s_intr;       /*!< I2S peripheral interrupt handle */
-    bool                    tx_fifo_sync_configured; /*!< Whether TX FIFO sync has been configured */
-    bool                    tx_fifo_sync_enabled; /*!< Whether TX FIFO sync is enabled */
-#endif
     void (*start)(i2s_chan_handle_t);       /*!< start tx/rx channel */
     void (*stop)(i2s_chan_handle_t);        /*!< stop tx/rx channel */
 };
@@ -301,40 +247,17 @@ extern i2s_platform_t g_i2s;  /*!< Global i2s instance for driver internal use *
 esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag);
 
 /**
- * @brief Prepare the DMA engine and query the memory alignment constraints
- *
- * @param handle I2S channel handle
- * @return
- *      - ESP_OK                DMA engine prepared
- *      - ESP_ERR_NOT_SUPPORTED External-memory DMA is unsupported
- *      - ESP_ERR_NOT_FOUND     DMA channel not found
- */
-esp_err_t i2s_prepare_dma(i2s_chan_handle_t handle);
-
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-/**
- * @brief Initialize I2S peripheral interrupt
- *
- * @param handle        I2S channel handle
- * @return
- *      - ESP_OK                Initialize interrupt success
- *      - ESP_ERR_INVALID_ARG   Wrong port id or NULL pointer
- */
-esp_err_t i2s_init_i2s_intr(i2s_chan_handle_t handle);
-#endif
-
-/**
- * @brief Free I2S DMA buffers and the DMA link list
+ * @brief Free I2S DMA descriptor and DMA buffer
  *
  * @param handle        I2S channel handle
  * @return
  *      - ESP_OK                Free success
  *      - ESP_ERR_INVALID_ARG   NULL pointer
  */
-esp_err_t i2s_free_dma_resources(i2s_chan_handle_t handle);
+esp_err_t i2s_free_dma_desc(i2s_chan_handle_t handle);
 
 /**
- * @brief Allocate I2S DMA buffers and mount them to the DMA link list
+ * @brief Allocate memory for I2S DMA descriptor and DMA buffer
  *
  * @param handle        I2S channel handle
  * @param bufsize       The DMA buffer size
@@ -342,9 +265,9 @@ esp_err_t i2s_free_dma_resources(i2s_chan_handle_t handle);
  * @return
  *      - ESP_OK                Allocate memory success
  *      - ESP_ERR_INVALID_ARG   NULL pointer or bufsize is too big
- *      - ESP_ERR_NO_MEM        No memory for DMA buffers or DMA link list
+ *      - ESP_ERR_NO_MEM        No memory for DMA descriptor and DMA buffer
  */
-esp_err_t i2s_alloc_dma_resources(i2s_chan_handle_t handle, uint32_t bufsize);
+esp_err_t i2s_alloc_dma_desc(i2s_chan_handle_t handle, uint32_t bufsize);
 
 /**
  * @brief Get DMA buffer size

@@ -31,7 +31,7 @@ ESP-IDF FreeRTOS
     Amazon SMP FreeRTOS
     ^^^^^^^^^^^^^^^^^^^
 
-        Amazon SMP FreeRTOS 是由 Amazon 官方支持的 FreeRTOS SMP 实现。Amazon SMP FreeRTOS 能够支持 N 核，即双核以上。通过 ``CONFIG_FREERTOS_SMP`` 选项能够启用 Amazon SMP FreeRTOS（仅适用于 ESP32）。关于 Amazon SMP FreeRTOS 的更多细节，请参考 `官方 Amazon SMP FreeRTOS 文档 <https://freertos.org/zh-cn-cmn-s/symmetric-multiprocessing-introduction.html>`__。
+        Amazon SMP FreeRTOS 是由 Amazon 官方支持的 FreeRTOS SMP 实现。Amazon SMP FreeRTOS 能够支持 N 核，即双核以上。通过 :ref:`CONFIG_FREERTOS_SMP` 选项能够启用 Amazon SMP FreeRTOS。关于 Amazon SMP FreeRTOS 的更多细节，请参考 `官方 Amazon SMP FreeRTOS 文档 <https://freertos.org/zh-cn-cmn-s/symmetric-multiprocessing-introduction.html>`__。
 
         .. warning::
 
@@ -49,14 +49,14 @@ ESP-IDF FreeRTOS
 
 关于用户可配置内核选项的完整列表，请参见 :ref:`Kconfig 选项参考 <configuration-options-reference>`。下列为常用的内核配置选项：
 
-- :menuitem:`CONFIG_FREERTOS_UNICORE`：仅在核 0 上运行 FreeRTOS。注意，这 **不等同于运行原生 FreeRTOS。** 另外，此选项还可能影响除 :component:`freertos` 外其他组件的行为。关于在单核上运行 FreeRTOS 的更多内容，请参考 :ref:`freertos-idf-single-core` （使用 ESP-IDF FreeRTOS 时）或参考 Amazon SMP FreeRTOS 的官方文档，还可以在 ESP-IDF 组件中搜索 ``CONFIG_FREERTOS_UNICORE``。
+- :ref:`CONFIG_FREERTOS_UNICORE`：仅在核 0 上运行 FreeRTOS。注意，这 **不等同于运行原生 FreeRTOS。** 另外，此选项还可能影响除 :component:`freertos` 外其他组件的行为。关于在单核上运行 FreeRTOS 的更多内容，请参考 :ref:`freertos-idf-single-core` （使用 ESP-IDF FreeRTOS 时）或参考 Amazon SMP FreeRTOS 的官方文档，还可以在 ESP-IDF 组件中搜索 ``CONFIG_FREERTOS_UNICORE``。
 
 .. only:: not SOC_HP_CPU_HAS_MULTIPLE_CORES
 
     .. note::
-        由于 {IDF_TARGET_NAME} 是一个单核 SoC，所以总是会启用 :menuitem:`CONFIG_FREERTOS_UNICORE` 配置。
+        由于 {IDF_TARGET_NAME} 是一个单核 SoC，所以总是会启用 :ref:`CONFIG_FREERTOS_UNICORE` 配置。
 
-- :menuitem:`CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY` 可以向后兼容某些 FreeRTOS 宏、类型或函数，这些宏、类型或函数已在 v8.0 及以上版本中弃用。
+- :ref:`CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY` 可以向后兼容某些 FreeRTOS 宏、类型或函数，这些宏、类型或函数已在 v8.0 及以上版本中弃用。
 
 端口配置
 ^^^^^^^^^^^^^^^^^^
@@ -96,27 +96,27 @@ ESP-IDF FreeRTOS
       - 优先级
     * - 空闲任务 (``IDLEx``)
       - 为每个 CPU 核创建并分配一个空闲任务 (``IDLEx``)，其中 ``x`` 是 CPU 核的编号。 当启用单核配置时，``x`` 将被删除。
-      - :menuitem:`CONFIG_FREERTOS_IDLE_TASK_STACKSIZE`
+      - :ref:`CONFIG_FREERTOS_IDLE_TASK_STACKSIZE`
       - 核 x
       - ``0``
     * - FreeRTOS 定时器任务 (``Tmr Svc``)
       - 如果应用程序调用了任何 FreeRTOS 定时器 API，FreeRTOS 会创建定时器服务或守护任务
-      - :menuitem:`CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH`
+      - :ref:`CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH`
       - 核 0
-      - :menuitem:`CONFIG_FREERTOS_TIMER_TASK_PRIORITY`
+      - :ref:`CONFIG_FREERTOS_TIMER_TASK_PRIORITY`
     * - 主任务 (``main``)
       - 简单调用 ``app_main`` 的任务在 ``app_main`` 返回时会自我删除
-      - :menuitem:`CONFIG_ESP_MAIN_TASK_STACK_SIZE`
-      - :menuitem:`CONFIG_ESP_MAIN_TASK_AFFINITY`
+      - :ref:`CONFIG_ESP_MAIN_TASK_STACK_SIZE`
+      - :ref:`CONFIG_ESP_MAIN_TASK_AFFINITY`
       - ``1``
     * - IPC 任务 (``ipcx``)
-      - 当 :menuitem:`CONFIG_FREERTOS_UNICORE` 为假时，为每个 CPU 核创建并分配一个 IPC 任务 (``ipcx``)。IPC 任务用于实现处理器间调用 (IPC) 功能
-      - :menuitem:`CONFIG_ESP_IPC_TASK_STACK_SIZE`
+      - 当 :ref:`CONFIG_FREERTOS_UNICORE` 为假时，为每个 CPU 核创建并分配一个 IPC 任务 (``ipcx``)。IPC 任务用于实现处理器间调用 (IPC) 功能
+      - :ref:`CONFIG_ESP_IPC_TASK_STACK_SIZE`
       - 核 x
       - ``24``
     * - ESP 定时器任务 (``esp_timer``)
       - ESP-IDF 创建 ESP 定时器任务用于处理 ESP 定时器回调
-      - :menuitem:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`
+      - :ref:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`
       - 核 0
       - ``22``
 

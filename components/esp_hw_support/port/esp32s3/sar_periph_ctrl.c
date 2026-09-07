@@ -128,7 +128,7 @@ void sar_periph_ctrl_adc_continuous_power_release(void)
 *----------------------------------------------------------------------------*/
 void sar_periph_ctrl_adc_reset(void)
 {
-    PERIPH_RCC_ATOMIC() {
+    ADC_BUS_CLK_ATOMIC() {
         adc_ll_reset_register();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
-#include <inttypes.h>
 #include <sys/lock.h>
 #include <sys/param.h>
 #include <assert.h>
@@ -27,9 +26,11 @@
 #include "esp_private/periph_ctrl.h"
 
 #include "soc/rtc.h"
+#include "hal/clk_tree_ll.h"
 #include "hal/uart_ll.h"
 #include "hal/uart_types.h"
 
+#include "driver/gpio.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -48,40 +49,17 @@
 #include "esp_private/sleep_cpu.h"
 #include "esp_private/sleep_gpio.h"
 #include "esp_private/sleep_modem.h"
+#include "esp_private/uart_share_hw_ctrl.h"
 #include "esp_private/esp_clk_utils.h"
 #include "esp_sleep.h"
 #include "esp_memory_utils.h"
 #include "esp_rom_sys.h"
 
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-#include "hal/rtc_timer_hal.h"
-#include "hal/systimer_ll.h"
-#include "esp_private/systimer.h"
-#include "esp_private/freertos_idf_additions_priv.h"
-#include "esp_intr_alloc.h"
-#if CONFIG_ESP_TASK_WDT_EN
-#include "esp_private/esp_task_wdt.h"
-#endif
-#if CONFIG_ESP_INT_WDT
-#include "esp_private/esp_int_wdt.h"
-#endif
-#if SOC_LP_PERIPH_SHARE_INTERRUPT
-#include "esp_private/rtc_ctrl.h"
-#endif
-
-#if SOC_LP_PERIPH_SHARE_INTERRUPT
-#define TICKLESS_WAITI_LP_TIMER_INTR_SOURCE   ETS_LP_TIMER_INTR_SOURCE
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define HP_UART_SRC_CLK_ATOMIC()       PERIPH_RCC_ATOMIC()
 #else
-#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
-#define TICKLESS_WAITI_LP_TIMER_INTR_SOURCE   ETS_LP_TIMER_REG_0_INTR_SOURCE
-#else
-#define TICKLESS_WAITI_LP_TIMER_INTR_SOURCE   ETS_LP_RTC_TIMER_INTR_SOURCE
-/* LP_RTC_TIMER is shared by the LP timer alarm and brownout detector (see power_supply_periph.c). */
-#define TICKLESS_WAITI_LP_TIMER_INTR_STATUS   ((uint32_t)&LP_TIMER.int_st)
-#define TICKLESS_WAITI_LP_TIMER_INTR_MASK     BIT(31) /* LP_TIMER_SOC_WAKEUP_INT_ST */
+#define HP_UART_SRC_CLK_ATOMIC()
 #endif
-#endif /* !SOC_LP_PERIPH_SHARE_INTERRUPT */
-#endif /* CONFIG_PM_TICKLESS_IDLE_WAITI */
 
 #define MHZ (1000000)
 
@@ -100,16 +78,37 @@
 #define CCOMPARE_PREPARE_CYCLES_IN_FREQ_UPDATE  60
 #endif // CONFIG_FREERTOS_SYSTICK_USES_CCOUNT
 
-/* When tickless idle is used, wake this number of microseconds earlier than
+/* When light sleep is used, wake this number of microseconds earlier than
  * the next tick.
  */
-#define TICKLESS_IDLE_EARLY_WAKEUP_US 100
+#define LIGHT_SLEEP_EARLY_WAKEUP_US 100
 
 #if CONFIG_IDF_TARGET_ESP32
 /* Minimal divider at which REF_CLK_FREQ can be obtained */
 #define REF_CLK_DIV_MIN 10
 #elif CONFIG_IDF_TARGET_ESP32S2
 /* Minimal divider at which REF_CLK_FREQ can be obtained */
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32S3
+/* Minimal divider at which REF_CLK_FREQ can be obtained */
+#define REF_CLK_DIV_MIN 2         // TODO: IDF-5660
+#elif CONFIG_IDF_TARGET_ESP32C3
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C2
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C6
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C61
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C5
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32H2
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32H21
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32P4
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32H4
 #define REF_CLK_DIV_MIN 2
 #endif
 
@@ -133,7 +132,7 @@ static uint32_t s_mode_mask;
 
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
 
-#define PERIPH_SKIP_LIGHT_SLEEP_NO 3
+#define PERIPH_SKIP_LIGHT_SLEEP_NO 2
 
 /* Indicates if light sleep should be skipped by peripherals. */
 static skip_light_sleep_cb_t s_periph_skip_light_sleep_cb[PERIPH_SKIP_LIGHT_SLEEP_NO];
@@ -459,13 +458,11 @@ esp_err_t esp_pm_configure(const void* vconfig)
         return ESP_ERR_INVALID_ARG;
     }
 
-#ifdef REF_CLK_DIV_MIN
     int xtal_freq_mhz = esp_clk_xtal_freq() / MHZ;
     if (min_freq_mhz < xtal_freq_mhz && min_freq_mhz * MHZ / REF_CLK_FREQ < REF_CLK_DIV_MIN) {
         ESP_LOGW(TAG, "min_freq_mhz should be >= %d", REF_CLK_FREQ * REF_CLK_DIV_MIN / MHZ);
         return ESP_ERR_INVALID_ARG;
     }
-#endif
 
     if (!rtc_clk_cpu_freq_mhz_to_config(max_freq_mhz, &freq_config)) {
         ESP_LOGW(TAG, "invalid max_freq_mhz value (%d)", max_freq_mhz);
@@ -489,7 +486,7 @@ esp_err_t esp_pm_configure(const void* vconfig)
     /* Maximum SOC APB clock frequency is 40 MHz, maximum Modem (WiFi,
      * Bluetooth, etc..) APB clock frequency is 80 MHz */
     int apb_clk_freq = esp_clk_apb_freq() / MHZ;
-#if (CONFIG_ESP_WIFI_ENABLED || CONFIG_BT_ENABLED || CONFIG_IEEE802154_ENABLED) && SOC_PHY_SUPPORTED && !SOC_MODEM_APB_CLOCK_IS_INDEPENDENT
+#if (CONFIG_ESP_WIFI_ENABLED || CONFIG_BT_ENABLED || CONFIG_IEEE802154_ENABLED) && SOC_PHY_SUPPORTED
     apb_clk_freq = MAX(apb_clk_freq, MODEM_REQUIRED_MIN_APB_CLK_FREQ / MHZ);
 #endif
     int apb_max_freq = MIN(max_freq_mhz, apb_clk_freq); /* CPU frequency in APB_MAX mode */
@@ -711,18 +708,7 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
 #endif
         extern portMUX_TYPE s_time_update_lock;
         portENTER_CRITICAL_SAFE(&s_time_update_lock);
-#if SOC_CLK_ROOT_CLK_SWITCH_PROTECT
-        /* On ESP32-C5 ECO1 and later: before switching the main system clock
-        * between 240 MHz and 160 MHz, clear BIT(31) of PCR_FPGA_DEBUG_REG.
-        * After the switch is completed, set BIT(31) back to 1.
-        * This operation fixes WiFi packet TX/RX abnormalities and missed interrupts.
-        * See WIFI-7270 for details.*/
-        rtc_clk_root_clk_switch_protect(&new_config, &old_config, true);
-#endif
         rtc_clk_cpu_freq_set_config_fast(&new_config);
-#if SOC_CLK_ROOT_CLK_SWITCH_PROTECT
-        rtc_clk_root_clk_switch_protect(&new_config, &old_config, false);
-#endif
         portEXIT_CRITICAL_SAFE(&s_time_update_lock);
 #if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
         esp_clk_utils_mspi_speed_mode_sync_after_cpu_freq_switching(new_config.source_freq_mhz, new_config.freq_mhz);
@@ -854,270 +840,11 @@ static inline void IRAM_ATTR other_core_should_skip_light_sleep(int core_id)
 #endif
 }
 
-/* ---------------------------------------- Tickless WAITI Implementation ------------------------------------------
- * Use the LP/RTC timer to bound the maximum idle duration, then enter WAITI with interrupts
- * enabled. The OS tick systimer keeps running during WAITI; the LP timer alarm (or any other
- * interrupt) takes the CPU out of WFI.
- *
- * Multi-core: the LP/RTC timer has a single shared alarm comparator (timer_id=0), programmed
- * with the earliest deadline among the parked cores. The LP timer interrupt is only routed to
- * core 0, so its ISR calls portYIELD_CORE() on the other parked core. Whenever any core leaves
- * WAITI it yields any remaining parked sibling.
- *
- * Two-phase park: portSUPPRESS_TICKS_AND_SLEEP() (vApplicationSleep) runs under xKernelLock with
- * interrupts masked, so WFI cannot be issued there. Phase 1 arms the LP alarm, suppresses the OS
- * tick, and records the wake deadline in s_waiti_plan[]; phase 2 runs in esp_vApplicationIdleHook()
- * on the next idle-loop iteration to enter WFI, disarm, restore the tick, and advance xTickCount
- * via xTaskCatchUpTicks() on core 0.
- * esp_pm_impl_waiti() handles plain WFI for shorter idle windows.
- * --------------------------------------------------------------------------------------------------------------- */
-
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-/* Protected by s_switch_lock */
-typedef struct {
-    bool valid;
-    int64_t deadline_us;    // absolute esp_timer time at which to wake.
-} tickless_waiti_plan_t;
-static tickless_waiti_plan_t s_waiti_plan[CONFIG_FREERTOS_NUMBER_OF_CORES];
-
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-static volatile uint32_t s_waiti_armed_mask;    // cores that currently hold an armed LP/RTC deadline.
-static volatile uint32_t s_waiti_parked_mask;   // cores currently blocked in the WAITI WFI.
-static uint64_t s_waiti_target_rtc[CONFIG_FREERTOS_NUMBER_OF_CORES]; // per-core wakeup deadline in RTC slow-clock ticks.
-static uint64_t s_waiti_programmed_target;      // deadline currently programmed into the shared comparator.
-#endif
-
-static void IRAM_ATTR tickless_waiti_isr(void *arg)
-{
-    (void)arg;
-#if SOC_LP_PERIPH_SHARE_INTERRUPT
-    SET_PERI_REG_MASK(RTC_CNTL_INT_CLR_REG, RTC_CNTL_MAIN_TIMER_INT_CLR_M);
-#else
-    rtc_timer_ll_clear_alarm_intr_status(&LP_TIMER, 0);
-#endif
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-    /* The shared LP/RTC timer interrupt is only routed to core 0; wake the core1 if parked. */
-    int core_id = esp_cpu_get_core_id();
-    if (s_waiti_parked_mask & BIT(1 - core_id)) {
-        portYIELD_CORE(1 - core_id);
-    }
-#endif
-}
-
-/* Suppress this core's periodic OS-tick interrupt. Only the interrupt is masked; the periodic
- * comparator and the systimer counter keep free-running, so the exact number of ticks elapsed while
- * masked is preserved in the counter. */
-FORCE_INLINE_ATTR void tickless_waiti_suppress_sys_tick_intr(int core_id)
-{
-    systimer_ll_enable_alarm_int(&SYSTIMER, SYSTIMER_ALARM_OS_TICK_CORE0 + core_id, false);
-}
-
-FORCE_INLINE_ATTR void tickless_waiti_restore_sys_tick_intr(int core_id)
-{
-    systimer_ll_enable_alarm_int(&SYSTIMER, SYSTIMER_ALARM_OS_TICK_CORE0 + core_id, true);
-}
-
-FORCE_INLINE_ATTR void tickless_waiti_arm_alarm(int core_id, int64_t sleep_time_us)
-{
-    uint32_t cal_val = esp_clk_slowclk_cal_get();
-    uint64_t rtc_ticks = rtc_time_us_to_slowclk((uint64_t)sleep_time_us, cal_val);
-    uint64_t now_rtc = rtc_timer_hal_get_cycle_count(0);
-    /* rtc_time_us_to_slowclk() truncates; a zero delta makes target == now_rtc and the
-     * alarm will never fire. Clamp to one slow-clock tick. */
-    uint64_t target = now_rtc + MAX(rtc_ticks, 1);
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-    /* The comparator is shared, so program it with the earliest deadline among all armed cores.
-     * Only reprogram when this core lowers the deadline or the alarm was idle, to avoid
-     * clobbering an earlier deadline that another core still depends on. */
-    s_waiti_target_rtc[core_id] = target;
-    bool was_empty = (s_waiti_armed_mask == 0);
-    s_waiti_armed_mask |= BIT(core_id);
-    uint64_t min_target = target;
-    if ((s_waiti_armed_mask & BIT(1 - core_id)) && s_waiti_target_rtc[1 - core_id] < target) {
-        min_target = s_waiti_target_rtc[1 - core_id];
-    }
-    if (was_empty || (min_target < s_waiti_programmed_target)) {
-        rtc_timer_hal_set_wakeup_time(0, min_target);
-        s_waiti_programmed_target = min_target;
-    }
-#else
-    (void)core_id;
-    rtc_timer_hal_set_wakeup_time(0, target);
-#endif
-}
-
-FORCE_INLINE_ATTR void tickless_waiti_disarm_alarm(int core_id)
-{
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-    s_waiti_armed_mask &= ~BIT(core_id);
-    if (s_waiti_armed_mask != 0) {
-        /* The leaving core may have owned the programmed min; reprogram to the earliest
-         * deadline still armed so the sibling is not woken early or spuriously. */
-        uint64_t min_target = s_waiti_target_rtc[1 - core_id];
-        if (min_target != s_waiti_programmed_target) {
-            rtc_timer_hal_set_wakeup_time(0, min_target);
-            s_waiti_programmed_target = min_target;
-        }
-        return;
-    }
-#else
-    (void)core_id;
-#endif
-
-#if SOC_LP_PERIPH_SHARE_INTERRUPT
-    CLEAR_PERI_REG_MASK(RTC_CNTL_SLP_TIMER1_REG, RTC_CNTL_MAIN_TIMER_ALARM_EN_M);
-    SET_PERI_REG_MASK(RTC_CNTL_INT_CLR_REG, RTC_CNTL_MAIN_TIMER_INT_CLR_M);
-#else
-    rtc_timer_ll_set_target_enable(&LP_TIMER, 0, false);
-    rtc_timer_ll_clear_alarm_intr_status(&LP_TIMER, 0);
-#endif
-}
-
-static bool tickless_waiti_enter(void)
-{
-    int core_id = xPortGetCoreID();
-    if (!s_skipped_light_sleep[core_id] || !s_waiti_plan[core_id].valid) {
-        return false;
-    }
-
-    portENTER_CRITICAL(&s_switch_lock);
-    s_waiti_plan[core_id].valid = false;
-
-    int64_t remaining_us = s_waiti_plan[core_id].deadline_us - esp_timer_get_time();
-    if ((remaining_us < configEXPECTED_IDLE_TIME_BEFORE_SLEEP * portTICK_PERIOD_MS * 1000LL)
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-        /* core 0 owns the global tick; it must not suppress it while core 1 is still active. */
-        || (core_id == 0 && !(s_waiti_parked_mask & BIT(1)))
-#endif
-        ) {
-        /* Abort without Claim/CatchUp: systimer counter kept running while the alarm int was
-         * masked, so the next SysTickIsrHandler will recover missed ticks via its diff path. */
-        tickless_waiti_disarm_alarm(core_id);
-        tickless_waiti_restore_sys_tick_intr(core_id);
-        portEXIT_CRITICAL(&s_switch_lock);
-        return false;
-    }
-
-    bool stop_global_tick = (core_id == 0);
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-    s_waiti_parked_mask |= BIT(core_id);
-#if CONFIG_ESP_INT_WDT && CONFIG_ESP_INT_WDT_CHECK_CPU1
-    if (core_id == 1) {
-        /* The interrupt watchdog feed runs from core 0's tick hook and, with CPU1 liveness checking,
-         * requires core 1 to keep ticking. Pause that check while core 1 is intentionally idle. */
-        esp_int_wdt_pause_cpu1_checking(true);
-    }
-#endif
-#endif
-    portEXIT_CRITICAL(&s_switch_lock);
-
-    if (stop_global_tick) {
-        /* Tick hook no longer runs while the global tick is suppressed, so the watchdogs it feeds
-         * would time out. Pause them across the WAITI window. */
-#if CONFIG_ESP_TASK_WDT_EN
-        esp_task_wdt_stop();
-#endif
-#if CONFIG_ESP_INT_WDT
-        esp_int_wdt_pause();
-#endif
-    }
-
-    /* Lock-free context with interrupts enabled: the LP/RTC alarm (or any other interrupt) takes
-     * the CPU out of WFI, and an ISR may portYIELD_CORE() this core. */
-    esp_cpu_wait_for_intr();
-
-    if (stop_global_tick) {
-#if CONFIG_ESP_INT_WDT
-        esp_int_wdt_resume();
-#endif
-#if CONFIG_ESP_TASK_WDT_EN
-        esp_task_wdt_restart();
-#endif
-    }
-
-    portENTER_CRITICAL(&s_switch_lock);
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-    s_waiti_parked_mask &= ~BIT(core_id);
-#if CONFIG_ESP_INT_WDT && CONFIG_ESP_INT_WDT_CHECK_CPU1
-    if (core_id == 1) {
-        esp_int_wdt_pause_cpu1_checking(false);
-    }
-#endif
-    // We may have been woken by an unrelated interrupt rather than the LP timer; make sure
-    // the sibling leaves WAITI and restores the tick.
-    if (s_waiti_parked_mask & BIT(1 - core_id)) {
-        portYIELD_CORE(1 - core_id);
-    }
-#endif
-    tickless_waiti_disarm_alarm(core_id);
-    uint32_t elapsed_ticks = xPortSysTickClaimElapsedTicks(core_id);
-    tickless_waiti_restore_sys_tick_intr(core_id);
-    portEXIT_CRITICAL(&s_switch_lock);
-
-    if (core_id == 0 && elapsed_ticks > 0) {
-        (void) xTaskCatchUpTicks((TickType_t) elapsed_ticks);
-    }
-
-    /* Wake path re-acquires the RTOS lock via leave_idle(); drop it again so
-     * vApplicationSleep() in this idle iteration can enter light sleep / prepare WAITI. */
-    esp_pm_impl_idle_hook();
-    return true;
-}
-
-bool esp_pm_impl_tickless_waiti(void)
-{
-    /* Release RTOS PM lock before any WFI so DFS can drop to min_freq. */
-    esp_pm_impl_idle_hook();
-    return tickless_waiti_enter();
-}
-
-static void tickless_waiti_init(void)
-{
-#if SOC_LP_PERIPH_SHARE_INTERRUPT
-    rtc_isr_register(tickless_waiti_isr, NULL, RTC_CNTL_MAIN_TIMER_INT_ENA_M, 0);
-    SET_PERI_REG_MASK(RTC_CNTL_INT_ENA_REG, RTC_CNTL_MAIN_TIMER_INT_ENA_M);
-#else
-#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
-    ESP_ERROR_CHECK(esp_intr_alloc(TICKLESS_WAITI_LP_TIMER_INTR_SOURCE, ESP_INTR_FLAG_IRAM, tickless_waiti_isr, NULL, NULL));
-#else
-    ESP_ERROR_CHECK(esp_intr_alloc_intrstatus(TICKLESS_WAITI_LP_TIMER_INTR_SOURCE,
-                                              ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_SHARED,
-                                              TICKLESS_WAITI_LP_TIMER_INTR_STATUS,
-                                              TICKLESS_WAITI_LP_TIMER_INTR_MASK,
-                                              tickless_waiti_isr, NULL, NULL));
-#endif
-    rtc_timer_ll_alarm_intr_enable(&LP_TIMER, 0, true);
-#endif
-}
-#endif /* CONFIG_PM_TICKLESS_IDLE_WAITI */
-
-// Compute how long the CPU may stay idle: the smaller of the FreeRTOS expected idle window
-// and the time until the next esp_timer alarm.
-FORCE_INLINE_ATTR int64_t pm_get_min_idle_us(TickType_t xExpectedIdleTime)
-{
-    int64_t now = esp_timer_get_time();
-    int64_t next_esp_timer_alarm = esp_timer_get_next_alarm_for_wake_up();
-    int64_t time_until_next_alarm = next_esp_timer_alarm - now;
-    int64_t wakeup_delay_us = portTICK_PERIOD_MS * 1000LL * xExpectedIdleTime;
-    return MIN(wakeup_delay_us, time_until_next_alarm);
-}
-
 // Adjust RTOS tick count based on the amount of time spent in sleep.
-FORCE_INLINE_ATTR void pm_step_tick(int64_t slept_us, TickType_t xExpectedIdleTime)
+FORCE_INLINE_ATTR void pm_step_tick(int64_t slept_us)
 {
     uint32_t slept_ticks = slept_us / (portTICK_PERIOD_MS * 1000LL);
     if (slept_ticks) {
-#if CONFIG_PM_LIGHTSLEEP_TICK_OVERFLOW_PROTECTION
-        /* Limit slept_ticks when oversleep is within tolerance to prevent assertion failure */
-        if ((slept_ticks > xExpectedIdleTime) &&
-            (slept_ticks <= (xExpectedIdleTime + CONFIG_PM_LIGHTSLEEP_TICK_OVERFLOW_TOLERANCE))) {
-            slept_ticks = xExpectedIdleTime;
-        }
-#endif // CONFIG_PM_LIGHTSLEEP_TICK_OVERFLOW_PROTECTION
-        if (slept_ticks > xExpectedIdleTime) {
-            ESP_EARLY_LOGE(TAG, "Light sleep overslept: expect %"PRIu32" idle ticks but slept %"PRIu32" ticks.",
-                     (uint32_t)xExpectedIdleTime, slept_ticks);
-        }
         /* Adjust RTOS tick count based on the amount of time spent in sleep */
         vTaskStepTick(slept_ticks);
 
@@ -1143,7 +870,11 @@ void vApplicationSleep( TickType_t xExpectedIdleTime )
     int core_id = xPortGetCoreID();
     if (!should_skip_light_sleep(core_id)) {
         /* Calculate how much we can sleep */
-        int64_t sleep_time_us = pm_get_min_idle_us(xExpectedIdleTime);
+        int64_t next_esp_timer_alarm = esp_timer_get_next_alarm_for_wake_up();
+        int64_t now = esp_timer_get_time();
+        int64_t time_until_next_alarm = next_esp_timer_alarm - now;
+        int64_t wakeup_delay_us = portTICK_PERIOD_MS * 1000LL * xExpectedIdleTime;
+        int64_t sleep_time_us = MIN(wakeup_delay_us, time_until_next_alarm);
         int64_t slept_us = 0;
 #if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
         uint32_t cycle = esp_cpu_get_cycle_count();
@@ -1151,7 +882,7 @@ void vApplicationSleep( TickType_t xExpectedIdleTime )
         sleep_time_us -= (esp_cpu_get_cycle_count() - cycle) / (esp_clk_cpu_freq() / 1000000ULL);
 #endif
         if (sleep_time_us >= configEXPECTED_IDLE_TIME_BEFORE_SLEEP * portTICK_PERIOD_MS * 1000LL) {
-            esp_sleep_enable_timer_wakeup(sleep_time_us - TICKLESS_IDLE_EARLY_WAKEUP_US);
+            esp_sleep_enable_timer_wakeup(sleep_time_us - LIGHT_SLEEP_EARLY_WAKEUP_US);
             /* Enter sleep */
             ESP_PM_TRACE_ENTER(SLEEP, core_id);
             int64_t sleep_start = esp_timer_get_time();
@@ -1162,7 +893,7 @@ void vApplicationSleep( TickType_t xExpectedIdleTime )
             // In this case, there is no need to call vTaskStepTick, because the OS tick count will
             // automatically catch up in the next systick interrupt handler.
             if (err == ESP_OK) {
-                pm_step_tick(slept_us, xExpectedIdleTime);
+                pm_step_tick(slept_us);
             }
             other_core_should_skip_light_sleep(core_id);
 #ifdef WITH_PROFILING
@@ -1177,35 +908,6 @@ void vApplicationSleep( TickType_t xExpectedIdleTime )
         esp_pm_execute_exit_sleep_callbacks(slept_us);
 #endif
     }
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-    else {
-        /* Light sleep was skipped. This covers both the case where light sleep is globally
-         * disabled (DFS-only configuration, s_light_sleep_en == false) and the case where it is
-         * enabled but currently forbidden (a power management lock keeps s_mode away from
-         * PM_MODE_LIGHT_SLEEP, a mode switch is in progress, or a peripheral vetoed sleep). In all
-         * of these we can still suppress the OS tick and enter WAITI to save power.
-         *
-         * WFI must run with interrupts enabled, which is not the case here (xKernelLock is held).
-         * esp_pm_impl_tickless_waiti() enters WFI on the next idle-loop iteration.
-         * On failure to tickless-park, esp_pm_impl_waiti() handles plain WFI. */
-        int64_t sleep_time_us = pm_get_min_idle_us(xExpectedIdleTime);
-
-        if ((sleep_time_us >= configEXPECTED_IDLE_TIME_BEFORE_SLEEP * portTICK_PERIOD_MS * 1000LL)
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-            /* core 0 owns the global tick; it must not suppress it while core 1 is still active. */
-            && (core_id != 0 || (s_waiti_parked_mask & BIT(1)))
-#endif
-        ) {
-            s_waiti_plan[core_id].deadline_us = esp_timer_get_time() + sleep_time_us;
-            s_waiti_plan[core_id].valid = true;
-            /* Wake slightly early so that slow-clock inaccuracy biases towards an early
-             * (rather than late) wakeup; xTaskCatchUpTicks() on core 0 recover the exact
-             * tick count after WFI. */
-            tickless_waiti_arm_alarm(core_id, sleep_time_us - TICKLESS_IDLE_EARLY_WAKEUP_US);
-            tickless_waiti_suppress_sys_tick_intr(core_id);
-        }
-    }
-#endif /* CONFIG_PM_TICKLESS_IDLE_WAITI */
     portEXIT_CRITICAL(&s_switch_lock);
 }
 #endif //CONFIG_FREERTOS_USE_TICKLESS_IDLE
@@ -1284,7 +986,7 @@ void esp_pm_impl_init(void)
 
     ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)clk_source, true));
     /* When DFS is enabled, override system setting and use REFTICK as UART clock source */
-    PERIPH_RCC_ATOMIC() {
+    HP_UART_SRC_CLK_ATOMIC() {
         uart_ll_set_sclk(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), (soc_module_clk_t)clk_source);
     }
     uint32_t sclk_freq;
@@ -1292,7 +994,7 @@ void esp_pm_impl_init(void)
     // Return value unused if asserts are disabled
     esp_err_t __attribute__((unused)) err = esp_clk_tree_src_get_freq_hz((soc_module_clk_t)clk_source, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &sclk_freq);
     assert(err == ESP_OK);
-    PERIPH_RCC_ATOMIC() {
+    HP_UART_SRC_CLK_ATOMIC() {
         uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), CONFIG_ESP_CONSOLE_UART_BAUDRATE, sclk_freq);
     }
 #endif // CONFIG_ESP_CONSOLE_UART
@@ -1321,10 +1023,6 @@ void esp_pm_impl_init(void)
     for (size_t i = 0; i < PM_MODE_COUNT; ++i) {
         s_cpu_freq_by_mode[i] = default_config;
     }
-
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-    tickless_waiti_init();
-#endif
 
 #ifdef CONFIG_PM_DFS_INIT_AUTO
     int xtal_freq_mhz = esp_clk_xtal_freq() / MHZ;

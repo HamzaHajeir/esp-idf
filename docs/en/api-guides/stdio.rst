@@ -21,7 +21,7 @@ On {IDF_TARGET_NAME}, ESP-IDF provides implementations of VFS drivers for I/O ov
 
     - UART
     :SOC_USB_SERIAL_JTAG_SUPPORTED: - USB Serial/JTAG
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - USB CDC (using USB_OTG peripheral)
+    :esp32s2 or esp32s3: - USB CDC (using USB_OTG peripheral)
     - "Null" (no output)
 
 Standard I/O is not limited to these options, though. See below on enabling custom destinations for standard I/O.
@@ -33,11 +33,11 @@ Built-in implementations of standard I/O can be selected using several Kconfig o
 
 .. list::
 
-    - :menuitem:`CONFIG_ESP_CONSOLE_UART_DEFAULT` — Enables UART with default options (pin numbers, baud rate) for standard I/O.
-    - :menuitem:`CONFIG_ESP_CONSOLE_UART_CUSTOM` — Enables UART for standard I/O, with TX/RX pin numbers and baud rate configurable via Kconfig.
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - :menuitem:`CONFIG_ESP_CONSOLE_USB_CDC` — Enables USB CDC (using USB_OTG peripheral) for standard I/O. See :doc:`usb-otg-console` for details about hardware connections required.
-    :SOC_USB_SERIAL_JTAG_SUPPORTED: - :menuitem:`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` — Enables USB Serial/JTAG for standard I/O. See :doc:`usb-serial-jtag-console` for details about hardware connections required.
-    - :menuitem:`CONFIG_ESP_CONSOLE_NONE` — Disables standard I/O. If this option is selected, ``stdin``, ``stdout``, and ``stderr`` will be mapped to ``/dev/null`` and won't produce any output or generate any input.
+    - :ref:`CONFIG_ESP_CONSOLE_UART_DEFAULT<CONFIG_ESP_CONSOLE_UART_DEFAULT>` — Enables UART with default options (pin numbers, baud rate) for standard I/O.
+    - :ref:`CONFIG_ESP_CONSOLE_UART_CUSTOM<CONFIG_ESP_CONSOLE_UART_CUSTOM>` — Enables UART for standard I/O, with TX/RX pin numbers and baud rate configurable via Kconfig.
+    :esp32s2 or esp32s3: - :ref:`CONFIG_ESP_CONSOLE_USB_CDC<CONFIG_ESP_CONSOLE_USB_CDC>` — Enables USB CDC (using USB_OTG peripheral) for standard I/O. See :doc:`usb-otg-console` for details about hardware connections required.
+    :SOC_USB_SERIAL_JTAG_SUPPORTED: - :ref:`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG<CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG>` — Enables USB Serial/JTAG for standard I/O. See :doc:`usb-serial-jtag-console` for details about hardware connections required.
+    - :ref:`CONFIG_ESP_CONSOLE_NONE<CONFIG_ESP_CONSOLE_NONE>` — Disables standard I/O. If this option is selected, ``stdin``, ``stdout``, and ``stderr`` will be mapped to ``/dev/null`` and won't produce any output or generate any input.
 
 Enabling one of these options will cause the corresponding VFS driver to be built into the application and used to open ``stdin``, ``stdout``, and ``stderr`` streams. Data written to ``stdout`` and ``stderr`` will be sent over the selected interface, and input from the selected interface will be available on ``stdin``.
 
@@ -55,12 +55,12 @@ Enabling one of these options will cause the corresponding VFS driver to be buil
 
     The following secondary console options are available:
 
-        - :menuitem:`CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG`
+        - :ref:`CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG<CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG>`
 
 Standard Streams and FreeRTOS Tasks
 -----------------------------------
 
-ESP-IDF provides two different implementations of standard I/O streams based on the selected LibC implementation defined by :menuitem:`CONFIG_LIBC`. The behavior of ``stdin``, ``stdout``, and ``stderr`` streams differs between these implementations, particularly regarding how they are shared across FreeRTOS tasks.
+ESP-IDF provides two different implementations of standard I/O streams based on the selected LibC implementation defined by :ref:`CONFIG_LIBC`. The behavior of ``stdin``, ``stdout``, and ``stderr`` streams differs between these implementations, particularly regarding how they are shared across FreeRTOS tasks.
 
 Common to both implementations, each stream (``stdin``, ``stdout``, ``stderr``) has a mutex associated with it to protect the stream from concurrent access by multiple tasks. For example, if two tasks are writing to ``stdout`` at the same time, the mutex ensures that the outputs from each task are not mixed together.
 
@@ -102,7 +102,7 @@ When the interrupt-driven driver is installed, it is also possible to enable/dis
 
     When the interrupt-driven driver is installed, it is also possible to enable/disable non-blocking behavior using ``fcntl`` function with ``O_NONBLOCK`` flag.
 
-.. only:: SOC_USB_OTG_CONSOLE_SUPPORTED
+.. only:: esp32s2 or esp32s3
 
     USB CDC (using USB_OTG peripheral)
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -117,13 +117,13 @@ VFS drivers provide an optional newline conversion feature for input and output.
 Applications can configure this behavior globally using the following Kconfig options:
 
     - For output
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF`
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_CR`
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_LF`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF<CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF>`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_CR<CONFIG_LIBC_STDOUT_LINE_ENDING_CR>`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_LF<CONFIG_LIBC_STDOUT_LINE_ENDING_LF>`
     - For input
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_CRLF`
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_CR`
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_LF`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_CRLF<CONFIG_LIBC_STDIN_LINE_ENDING_CRLF>`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_CR<CONFIG_LIBC_STDIN_LINE_ENDING_CR>`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_LF<CONFIG_LIBC_STDIN_LINE_ENDING_LF>`
 
 
 It is also possible to configure line ending conversion for the specific VFS driver:
@@ -132,7 +132,7 @@ It is also possible to configure line ending conversion for the specific VFS dri
 
     - For UART: :cpp:func:`uart_vfs_dev_port_set_rx_line_endings` and :cpp:func:`uart_vfs_dev_port_set_tx_line_endings`
     :SOC_USB_SERIAL_JTAG_SUPPORTED: - For USB Serial/JTAG: :cpp:func:`usb_serial_jtag_vfs_set_rx_line_endings` and :cpp:func:`usb_serial_jtag_vfs_set_tx_line_endings`
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - For USB CDC (using USB_OTG peripheral): :cpp:func:`esp_vfs_dev_cdcacm_set_rx_line_endings` and :cpp:func:`esp_vfs_dev_cdcacm_set_tx_line_endings`
+    :esp32s2 or esp32s3: - For USB CDC (using USB_OTG peripheral): :cpp:func:`esp_vfs_dev_cdcacm_set_rx_line_endings` and :cpp:func:`esp_vfs_dev_cdcacm_set_tx_line_endings`
 
 Buffering
 ---------

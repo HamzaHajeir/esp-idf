@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,12 +9,13 @@
 #include "soc/soc_caps.h"
 #include "ulp_lp_core_i2c.h"
 #include "ulp_lp_core_utils.h"
+#include "soc/lp_i2c_reg.h"
 #include "soc/i2c_struct.h"
 #include "hal/i2c_ll.h"
 
-#if SOC_LP_CORE_SUPPORT_I2C
+#if SOC_LP_I2C_SUPPORTED
 
-#define LP_I2C_FIFO_LEN     I2C_LL_GET(LP_FIFO_LEN)
+#define LP_I2C_FIFO_LEN     SOC_LP_I2C_FIFO_LEN
 #define LP_I2C_READ_MODE    I2C_MASTER_READ
 #define LP_I2C_WRITE_MODE   I2C_MASTER_WRITE
 #define LP_I2C_ACK          I2C_MASTER_ACK
@@ -67,18 +68,18 @@ static void lp_core_i2c_format_cmd(uint32_t cmd_idx, uint8_t op_code, uint8_t ac
 static inline esp_err_t lp_core_i2c_wait_for_interrupt(uint32_t intr_mask, int32_t cycles_to_wait)
 {
     uint32_t intr_status = 0;
-    uint32_t start = ulp_lp_core_get_cpu_cycles();
+    uint32_t to = 0;
 
     while (1) {
         i2c_ll_get_intr_raw_mask(dev, &intr_status);
         if (intr_status & intr_mask) {
-            if (intr_status & I2C_LL_INTR_NACK) {
+            if (intr_status & LP_I2C_NACK_INT_ST) {
                 /* The ACK/NACK received during a WRITE operation does not match the expected ACK/NACK level
                  * Abort and return an error.
                  */
                 i2c_ll_clear_intr_mask(dev, intr_mask);
                 return ESP_ERR_INVALID_RESPONSE;
-            } else if (intr_status & I2C_LL_INTR_MST_COMPLETE) {
+            } else if (intr_status & LP_I2C_TRANS_COMPLETE_INT_ST_M) {
                 /* Transaction complete.
                  * Clear interrupt bits and break
                  */
@@ -95,10 +96,17 @@ static inline esp_err_t lp_core_i2c_wait_for_interrupt(uint32_t intr_mask, int32
             break;
         }
 
-        if (ulp_lp_core_is_timeout_elapsed(start, cycles_to_wait)) {
-            /* Timeout. Clear interrupt bits and return an error */
-            i2c_ll_clear_intr_mask(dev, intr_mask);
-            return ESP_ERR_TIMEOUT;
+        if (cycles_to_wait > -1) {
+            /* If the cycles_to_wait value is not -1, keep track of cycles and
+             * break from the loop once the timeout is reached.
+             */
+            ulp_lp_core_delay_cycles(1);
+            to++;
+            if (to >= cycles_to_wait) {
+                /* Timeout. Clear interrupt bits and return an error */
+                i2c_ll_clear_intr_mask(dev, intr_mask);
+                return ESP_ERR_TIMEOUT;
+            }
         }
     }
 
@@ -157,7 +165,7 @@ esp_err_t lp_core_i2c_master_read_from_device(i2c_port_t lp_i2c_num, uint16_t de
     lp_core_i2c_config_device_addr(cmd_idx++, device_addr, LP_I2C_READ_MODE, &addr_len);
 
     /* Enable trans complete interrupt and end detect interrupt for read/write operation */
-    uint32_t intr_mask = I2C_LL_INTR_MST_COMPLETE | I2C_LL_INTR_END_DETECT;
+    uint32_t intr_mask = (1 << LP_I2C_TRANS_COMPLETE_INT_ST_S) | (1 << LP_I2C_END_DETECT_INT_ST_S);
     i2c_ll_clear_intr_mask(dev, intr_mask);
 
     /* Read data */
@@ -257,10 +265,10 @@ esp_err_t lp_core_i2c_master_write_to_device(i2c_port_t lp_i2c_num, uint16_t dev
     lp_core_i2c_config_device_addr(cmd_idx++, device_addr, LP_I2C_WRITE_MODE, &addr_len);
 
     /* Enable trans complete interrupt and end detect interrupt for read/write operation */
-    uint32_t intr_mask = I2C_LL_INTR_MST_COMPLETE | I2C_LL_INTR_END_DETECT;
+    uint32_t intr_mask = (1 << LP_I2C_TRANS_COMPLETE_INT_ST_S) | (1 << LP_I2C_END_DETECT_INT_ST_S);
     if (s_ack_check_en) {
-        /* Enable NACK interrupt to check for ACK errors */
-        intr_mask |= I2C_LL_INTR_NACK;
+        /* Enable LP_I2C_NACK_INT to check for ACK errors */
+        intr_mask |= (1 << LP_I2C_NACK_INT_ST_S);
     }
     i2c_ll_clear_intr_mask(dev, intr_mask);
 
@@ -342,10 +350,10 @@ esp_err_t lp_core_i2c_master_write_read_device(i2c_port_t lp_i2c_num, uint16_t d
     i2c_ll_rxfifo_rst(dev);
 
     /* Enable trans complete interrupt and end detect interrupt for read/write operation */
-    uint32_t intr_mask = I2C_LL_INTR_MST_COMPLETE | I2C_LL_INTR_END_DETECT;
+    uint32_t intr_mask = (1 << LP_I2C_TRANS_COMPLETE_INT_ST_S) | (1 << LP_I2C_END_DETECT_INT_ST_S);
     if (s_ack_check_en) {
-        /* Enable NACK interrupt to check for ACK errors */
-        intr_mask |= I2C_LL_INTR_NACK;
+        /* Enable LP_I2C_NACK_INT to check for ACK errors */
+        intr_mask |= (1 << LP_I2C_NACK_INT_ST_S);
     }
     i2c_ll_clear_intr_mask(dev, intr_mask);
 
@@ -470,4 +478,4 @@ esp_err_t lp_core_i2c_master_write_read_device(i2c_port_t lp_i2c_num, uint16_t d
     return ret;
 }
 
-#endif /* SOC_LP_CORE_SUPPORT_I2C */
+#endif /* SOC_LP_I2C_SUPPORTED */

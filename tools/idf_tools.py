@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -183,17 +183,10 @@ def print_hints_on_download_error(err: str) -> None:
         info('Certificate issues are usually caused by an outdated certificate database on your computer.')
         info('Please check the documentation of your operating system for how to upgrade it.')
 
-        info('The following commands may help resolve this issue:')
         if sys.platform == 'darwin':
-            # Python.org macOS installer puts Install Certificates.command in /Applications/Python X.Y/
-            app_certs = (
-                f'/Applications/Python {sys.version_info.major}.{sys.version_info.minor}/Install Certificates.command'
-            )
-            if os.path.isfile(app_certs):
-                info(f'\tRun: open "{app_certs}"  (or double-click it in Finder)')
-            else:
-                info('\tGo to Python installation location and execute: ./Install\\ Certificates.command')
-        info(f'\t{sys.executable} -m pip install --upgrade pip-system-certs certifi')
+            info('Running "./Install\\ Certificates.command" might be able to fix this issue.')
+
+        info(f'Running "{sys.executable} -m pip install --upgrade certifi" can also resolve this issue in some cases.')
 
     # Certificate issue on Windows can be hidden under different errors which might be even translated,
     # e.g. "[WinError -2146881269] ASN1 valor de tag inválido encontrado"
@@ -209,7 +202,6 @@ PYTHON_PLATFORM = f'{platform.system()}-{platform.machine()}'
 # Identifiers used in tools.json for different platforms.
 PLATFORM_WIN32 = 'win32'
 PLATFORM_WIN64 = 'win64'
-PLATFORM_WIN_ARM64 = 'win-arm64'
 PLATFORM_MACOS = 'macos'
 PLATFORM_MACOS_ARM64 = 'macos-arm64'
 PLATFORM_LINUX32 = 'linux-i686'
@@ -240,9 +232,7 @@ class Platforms:
         'Windows-x86_64': PLATFORM_WIN64,
         'Windows-AMD64': PLATFORM_WIN64,
         'x86_64-w64-mingw32': PLATFORM_WIN64,
-        PLATFORM_WIN_ARM64: PLATFORM_WIN_ARM64,
-        'Windows-ARM64': PLATFORM_WIN_ARM64,
-        'aarch64-w64-mingw32': PLATFORM_WIN_ARM64,
+        'Windows-ARM64': PLATFORM_WIN64,
         # macOS
         PLATFORM_MACOS: PLATFORM_MACOS,
         'osx': PLATFORM_MACOS,
@@ -270,7 +260,6 @@ class Platforms:
         'Linux-aarch64': PLATFORM_LINUX_ARM64,
         'Linux-armv8l': PLATFORM_LINUX_ARM64,
         'aarch64': PLATFORM_LINUX_ARM64,
-        'aarch64-linux-gnu': PLATFORM_LINUX_ARM64,
         PLATFORM_LINUX_ARMHF: PLATFORM_LINUX_ARMHF,
         'arm-linux-gnueabihf': PLATFORM_LINUX_ARMHF,
         PLATFORM_LINUX_ARM32: PLATFORM_LINUX_ARM32,
@@ -784,15 +773,11 @@ class IDFToolVersion:
     def get_download_for_platform(self, platform_name: str | None) -> IDFToolDownload | None:
         """
         Get download for given platform if usable download already exists.
-        On win-arm64, falls back to win64 when no native build is available.
         """
         try:
             platform_name = Platforms.get(platform_name)
             if platform_name in self.downloads.keys():
                 return self.downloads[platform_name]
-            # On Windows ARM64, use win64 (x86_64) build when no native win-arm64 exists
-            if platform_name == PLATFORM_WIN_ARM64 and PLATFORM_WIN64 in self.downloads:
-                return self.downloads[PLATFORM_WIN64]
         # exception can be omitted, as not detected platform is handled without err message
         except ValueError:
             pass
@@ -998,25 +983,7 @@ class IDFTool:
                 f'non-zero exit code ({e.returncode}) with message: {e.stderr.decode("utf-8", errors="ignore")}'
             )  # type: ignore
 
-        version_str = version_cmd_result.decode('utf-8')
-        if not version_str.strip():
-            # The tool ran and exited successfully, but produced no output when its
-            # output was captured. On some Windows systems, antivirus, endpoint-security
-            # or DLP/encryption software intercepts short-lived toolchain processes and
-            # strips their stdout when it is captured through a pipe, while the same
-            # command works when run directly in a terminal. Surface an actionable hint
-            # instead of silently reporting the version as 'unknown', which otherwise
-            # sends users into a fruitless reinstall loop.
-            # See https://github.com/espressif/esp-idf/issues/18727
-            warn(
-                f'tool {self.name} ran but returned no version output. This is usually caused by '
-                'antivirus, endpoint-security or DLP/encryption software stripping the output of '
-                'toolchain processes; the same command often works when run directly in a terminal. '
-                'Add an exclusion for the ESP-IDF tools directory in that software. If the problem '
-                'persists, run the tool manually to check for a missing DLL.'
-            )
-            return UNKNOWN_VERSION
-        return self.parse_tool_version(version_str)
+        return self.parse_tool_version(version_cmd_result.decode('utf-8'))
 
     def get_version_from_file(self, version: str) -> str:
         """
@@ -2766,6 +2733,13 @@ def action_install_python_env(args):  # type: ignore
             # Reinstallation of the virtual environment could help if pip was installed for the main Python
             reinstall = True
 
+        if sys.platform != 'win32':
+            try:
+                subprocess.check_call([virtualenv_python, '-c', 'import curses'], stdout=sys.stdout, stderr=sys.stderr)
+            except subprocess.CalledProcessError:
+                warn('curses can not be imported, new virtual environment will be created.')
+                reinstall = True
+
     if reinstall and os.path.exists(idf_python_env_path):
         warn(f'Removing the existing Python environment in {idf_python_env_path}')
         shutil.rmtree(idf_python_env_path)
@@ -3026,10 +3000,6 @@ def action_add_version(args: Any) -> None:
     )
     updated_tools = []
     for file_size, file_sha256, file_name in checksum_info:
-        skip_files = ['debug-sections', 'esp8266-multilib']
-        if any(skip_file in file_name for skip_file in skip_files):
-            continue
-
         xz_file = file_name.replace('.tar.gz', '.tar.xz')
         if xz_file in updated_tools:
             # .tar.xz archives are preferable, but .tar.gz is needed, for example, when using PlatformIO
@@ -3141,7 +3111,6 @@ def action_uninstall(args: Any) -> None:
             else:
                 tool_name, tool_version = tool_spec.split('@', 1)
             tool_obj = tools_info_for_platform[tool_name]
-            archive_version = None
             if tool_version is None:
                 tool_version = tool_obj.get_preferred_installed_version()
             # mypy-checks
@@ -3149,8 +3118,9 @@ def action_uninstall(args: Any) -> None:
                 archive_version = tool_obj.versions[tool_version].get_download_for_platform(CURRENT_PLATFORM)
             if archive_version is not None:
                 archive_version_url = archive_version.url
-                archive = os.path.basename(archive_version_url)
-                used_archives.append(archive)
+
+            archive = os.path.basename(archive_version_url)
+            used_archives.append(archive)
 
         downloaded_archives = os.listdir(dist_path)
         for archive in downloaded_archives:

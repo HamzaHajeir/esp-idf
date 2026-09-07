@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,38 +50,16 @@ typedef union twai_ll_frame_buffer_t twai_hal_frame_t;
 #define TWAI_HAL_EVENT_BUS_ERR                  (1 << 7)
 #define TWAI_HAL_EVENT_ARB_LOST                 (1 << 8)
 #define TWAI_HAL_EVENT_RX_BUFF_FRAME            (1 << 9)
-#define TWAI_HAL_EVENT_NEED_PERIPH_RESET        (1 << 10)
-#define TWAI_HAL_EVENT_TX0_DONE                 (1 << 11)
-#define TWAI_HAL_EVENT_TX0_SUCCESS              (1 << 12)
-#define TWAI_HAL_EVENT_TX1_DONE                 (1 << 13)
-#define TWAI_HAL_EVENT_TX1_SUCCESS              (1 << 14)
-#define TWAI_HAL_EVENT_TX2_DONE                 (1 << 15)
-#define TWAI_HAL_EVENT_TX2_SUCCESS              (1 << 16)
-#define TWAI_HAL_EVENT_TX3_DONE                 (1 << 17)
-#define TWAI_HAL_EVENT_TX3_SUCCESS              (1 << 18)
-#define TWAI_HAL_EVENT_TX4_DONE                 (1 << 19)
-#define TWAI_HAL_EVENT_TX4_SUCCESS              (1 << 20)
-#define TWAI_HAL_EVENT_TX5_DONE                 (1 << 21)
-#define TWAI_HAL_EVENT_TX5_SUCCESS              (1 << 22)
-#define TWAI_HAL_EVENT_TX6_DONE                 (1 << 23)
-#define TWAI_HAL_EVENT_TX6_SUCCESS              (1 << 24)
-#define TWAI_HAL_EVENT_TX7_DONE                 (1 << 25)
-#define TWAI_HAL_EVENT_TX7_SUCCESS              (1 << 26)
-#define TWAI_HAL_TX_BUFFER_SLOT_NUM             8   // support up to 8 TX slots in hal layer
-
-#define TWAI_HAL_EVENT_TX_DONE_MASK             (TWAI_HAL_EVENT_TX0_DONE | TWAI_HAL_EVENT_TX1_DONE | TWAI_HAL_EVENT_TX2_DONE | TWAI_HAL_EVENT_TX3_DONE | \
-                                                TWAI_HAL_EVENT_TX4_DONE | TWAI_HAL_EVENT_TX5_DONE | TWAI_HAL_EVENT_TX6_DONE | TWAI_HAL_EVENT_TX7_DONE)
-#define TWAI_HAL_EVENT_TX_DONE_SLOT(buffer_idx) (TWAI_HAL_EVENT_TX0_DONE << ((buffer_idx) * 2))
-#define TWAI_HAL_EVENT_TX_SUCC_SLOT(buffer_idx) (TWAI_HAL_EVENT_TX0_SUCCESS << ((buffer_idx) * 2))
+#define TWAI_HAL_EVENT_TX_BUFF_FREE             (1 << 10)
+#define TWAI_HAL_EVENT_NEED_PERIPH_RESET        (1 << 11)
+#define TWAI_HAL_EVENT_TX_SUCCESS               (1 << 12)
 
 typedef struct {
     twai_soc_handle_t dev; // TWAI SOC layer handle (i.e. register base address)
     uint32_t state_flags;
     uint32_t clock_source_hz;
-    uint32_t timer_overflow_cnt;
     twai_error_flags_t errors;
     uint8_t sja1000_filter_id_type;    // hardware don't check id type, check in software, 0:no_filter, 1: std_id_only, 2: ext_id_only
-    uint8_t tx_buffer_num;
     int8_t retry_cnt;
     bool enable_self_test;
     bool enable_loopback;
@@ -94,14 +72,12 @@ typedef struct {
 typedef struct {
     int controller_id;
     uint32_t clock_source_hz;
-    uint32_t timer_freq;
     uint32_t intr_mask;
     int8_t retry_cnt;
     bool no_receive_rtr;
     bool enable_self_test;
     bool enable_loopback;
     bool enable_listen_only;
-    bool enable_time_trigger_tx;
 } twai_hal_config_t;
 
 /**
@@ -133,20 +109,6 @@ bool twai_hal_init(twai_hal_context_t *hal_ctx, const twai_hal_config_t *config)
 void twai_hal_deinit(twai_hal_context_t *hal_ctx);
 
 /**
- * @brief Get the hardware-dependent timing limits const
- *
- * @param t_const Pointer to timing limits const structure
- */
-void twai_hal_get_timing_limits(twai_timing_limits_t *t_const);
-
-/**
- * @brief Get the hardware-dependent timing limits const for FD data timing
- *
- * @param t_const_fd Pointer to timing limits const structure for FD data
- */
-void twai_hal_get_timing_limits_fd(twai_timing_limits_t *t_const_fd);
-
-/**
  * @brief Configure the TWAI peripheral for legacy driver (deprecated)
  *
  * @param hal_ctx Context of the HAL layer
@@ -157,14 +119,13 @@ void twai_hal_get_timing_limits_fd(twai_timing_limits_t *t_const_fd);
 void twai_hal_configure(twai_hal_context_t *hal_ctx, const twai_timing_config_t *t_config, const twai_filter_config_t *f_config, uint32_t clkout_divider);
 
 /**
- * @brief Check if the timing value valid for hardware register
+ * @brief Check if the brp value valid for hardware register
  *
  * @param hal_ctx Context of the HAL layer
- * @param t_config Pointer to timing configuration structure
- * @param is_fd True if the timing is for FD data, false for classic TWAI
+ * @param brp Bit rate prescaler value
  * @return true or False
  */
-bool twai_hal_check_timing_valid(twai_hal_context_t *hal_ctx, const twai_timing_advanced_config_t *t_config, bool is_fd);
+bool twai_hal_check_brp_validation(twai_hal_context_t *hal_ctx, uint32_t brp);
 
 /**
  * @brief Configure the TWAI timing
@@ -229,19 +190,6 @@ void twai_hal_start(twai_hal_context_t *hal_ctx);
  * @param hal_ctx Context of the HAL layer
  */
 void twai_hal_stop(twai_hal_context_t *hal_ctx);
-
-/**
- * @brief Start the TWAI timer with a start value
- *
- * @param hal_ctx Context of the HAL layer
- * @param preload_value Preload value for the timer
- */
-void twai_hal_timer_start_with(twai_hal_context_t *hal_ctx, uint64_t preload_value);
-
-/**
- * @brief Stop the TWAI timer
- */
-void twai_hal_timer_stop(twai_hal_context_t *hal_ctx);
 
 /**
  * @brief Start bus recovery
@@ -317,9 +265,7 @@ twai_error_state_t twai_hal_get_err_state(twai_hal_context_t *hal_ctx);
 __attribute__((always_inline))
 static inline twai_error_flags_t twai_hal_get_err_flags(twai_hal_context_t *hal_ctx)
 {
-    twai_error_flags_t error_flags = hal_ctx->errors;
-    hal_ctx->errors.val = 0;    // clear ctx for next errors
-    return error_flags;
+    return hal_ctx->errors;
 }
 
 /* ------------------------------- TX and RX -------------------------------- */
@@ -331,14 +277,6 @@ static inline twai_error_flags_t twai_hal_get_err_flags(twai_hal_context_t *hal_
  * @return RX message count
  */
 uint32_t twai_hal_get_rx_msg_count(twai_hal_context_t *hal_ctx);
-
-/**
- * @brief Get the number of TX buffers supported by the hardware
- *
- * @param hal_ctx Context of the HAL layer
- * @return TX buffer count
- */
-#define twai_hal_get_tx_slot_num(hal_ctx) (hal_ctx->tx_buffer_num)
 
 /**
  * @brief TWAI hal transaction description type
@@ -372,11 +310,10 @@ void twai_hal_format_frame(const twai_hal_trans_desc_t *trans_desc, twai_hal_fra
  * This function takes a TWAI frame (in the format of the RX frame buffer) and
  * parses it to a TWAI message (containing ID, DLC, data and flags).
  *
- * @param hal_ctx Context of the HAL layer
  * @param frame Pointer to frame structure
  * @param message Pointer to empty message structure
  */
-void twai_hal_parse_frame(twai_hal_context_t *hal_ctx, twai_hal_frame_t *frame, twai_frame_header_t *header, uint8_t *buffer, uint8_t buffer_len);
+void twai_hal_parse_frame(const twai_hal_frame_t *frame, twai_frame_header_t *header, uint8_t *buffer, uint8_t buffer_len);
 
 /**
  * @brief Copy a frame into the TX buffer and transmit

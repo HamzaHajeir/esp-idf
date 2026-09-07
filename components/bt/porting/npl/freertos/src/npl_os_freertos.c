@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,9 +24,6 @@
 #include "bt_osi_mem.h"
 
 portMUX_TYPE ble_port_mutex = portMUX_INITIALIZER_UNLOCKED;
-
-static SemaphoreHandle_t npl_eventq_sync;
-static uint8_t hw_critical_state_status[portNUM_PROCESSORS];
 
 #if BLE_NPL_USE_ESP_TIMER
 static const char *TAG = "Timer";
@@ -168,10 +165,6 @@ npl_freertos_eventq_deinit(struct ble_npl_eventq *evq)
 {
     struct ble_npl_eventq_freertos *eventq = (struct ble_npl_eventq_freertos *)evq->eventq;
 
-    /* Deinit can be invoked twice without init . Handle this case */
-    if (eventq == NULL) {
-        return;
-    }
     BLE_LL_ASSERT(eventq);
     vQueueDelete(eventq->q);
 #if OS_MEM_ALLOC
@@ -200,103 +193,6 @@ IRAM_ATTR in_isr(void)
     return xPortInIsrContext() != 0;
 }
 
-static void
-npl_eventq_sync_init(void)
-{
-    if (npl_eventq_sync == NULL) {
-        npl_eventq_sync = xSemaphoreCreateRecursiveMutex();
-        BLE_LL_ASSERT(npl_eventq_sync);
-    }
-}
-
-static bool
-npl_eventq_lock(void)
-{
-    BaseType_t core;
-
-    if (in_isr()) {
-        return false;
-    }
-
-    core = xPortGetCoreID();
-    if (core >= portNUM_PROCESSORS || hw_critical_state_status[core] != 0) {
-        return false;
-    }
-
-    BLE_LL_ASSERT(npl_eventq_sync);
-    xSemaphoreTakeRecursive(npl_eventq_sync, portMAX_DELAY);
-    return true;
-}
-
-static void
-npl_eventq_unlock(bool locked)
-{
-    if (locked) {
-        xSemaphoreGiveRecursive(npl_eventq_sync);
-    }
-}
-
-static bool IRAM_ATTR
-npl_eventq_queued_get_isr(struct ble_npl_event_freertos *event)
-{
-    bool queued;
-
-    portENTER_CRITICAL_ISR(&ble_port_mutex);
-    queued = event->queued;
-    portEXIT_CRITICAL_ISR(&ble_port_mutex);
-    return queued;
-}
-
-static void IRAM_ATTR
-npl_eventq_queued_set_task(struct ble_npl_event_freertos *event, bool queued)
-{
-    portENTER_CRITICAL(&ble_port_mutex);
-    event->queued = queued;
-    portEXIT_CRITICAL(&ble_port_mutex);
-}
-
-static bool IRAM_ATTR
-npl_eventq_queued_get_task(struct ble_npl_event_freertos *event)
-{
-    bool queued;
-
-    portENTER_CRITICAL(&ble_port_mutex);
-    queued = event->queued;
-    portEXIT_CRITICAL(&ble_port_mutex);
-    return queued;
-}
-
-static bool IRAM_ATTR
-npl_eventq_queued_claim(struct ble_npl_event_freertos *event)
-{
-    bool already;
-
-    portENTER_CRITICAL(&ble_port_mutex);
-    already = event->queued;
-    if (!already) {
-        event->queued = true;
-    }
-    portEXIT_CRITICAL(&ble_port_mutex);
-    return already;
-}
-
-static void IRAM_ATTR
-npl_eventq_lost_event_clear(struct ble_npl_event *ev)
-{
-    struct ble_npl_event_freertos *lost;
-
-    if (ev == NULL) {
-        return;
-    }
-
-    lost = (struct ble_npl_event_freertos *)ev->event;
-    if (lost == NULL) {
-        return;
-    }
-
-    lost->queued = false;
-}
-
 struct ble_npl_event *
 IRAM_ATTR npl_freertos_eventq_get(struct ble_npl_eventq *evq, ble_npl_time_t tmo)
 {
@@ -307,74 +203,20 @@ IRAM_ATTR npl_freertos_eventq_get(struct ble_npl_eventq *evq, ble_npl_time_t tmo
 
     if (in_isr()) {
         BLE_LL_ASSERT(tmo == 0);
-        woken = pdFALSE;
-
-        portENTER_CRITICAL_ISR(&ble_port_mutex);
         ret = xQueueReceiveFromISR(eventq->q, &ev, &woken);
-        if (ret == pdPASS && ev != NULL) {
-            struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
-            if (event) {
-                event->queued = false;
-            }
-        }
-        portEXIT_CRITICAL_ISR(&ble_port_mutex);
-
-        if (woken == pdTRUE) {
+        if( woken == pdTRUE ) {
             portYIELD_FROM_ISR();
         }
-        BLE_LL_ASSERT(ret == pdPASS || ret == errQUEUE_EMPTY);
-    } else if (tmo == 0) {
-        bool locked = npl_eventq_lock();
-
-        portENTER_CRITICAL(&ble_port_mutex);
-        ret = xQueueReceive(eventq->q, &ev, 0);
-        if (ret == pdPASS && ev != NULL) {
-            struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
-            if (event) {
-                event->queued = false;
-            }
-        }
-        portEXIT_CRITICAL(&ble_port_mutex);
-        npl_eventq_unlock(locked);
     } else {
-        TickType_t deadline = 0;
-        TickType_t remaining;
+        ret = xQueueReceive(eventq->q, &ev, tmo);
+    }
+    BLE_LL_ASSERT(ret == pdPASS || ret == errQUEUE_EMPTY);
 
-        if (tmo != portMAX_DELAY) {
-            deadline = xTaskGetTickCount() + tmo;
-        }
-
-        for (;;) {
-            if (tmo == portMAX_DELAY) {
-                ret = xQueuePeek(eventq->q, &ev, portMAX_DELAY);
-            } else {
-                remaining = deadline - xTaskGetTickCount();
-                if (remaining > tmo) {
-                    return NULL;
-                }
-                ret = xQueuePeek(eventq->q, &ev, remaining);
-            }
-            if (ret != pdPASS) {
-                return NULL;
-            }
-
-            bool locked = npl_eventq_lock();
-
-            portENTER_CRITICAL(&ble_port_mutex);
-            ret = xQueueReceive(eventq->q, &ev, 0);
-            if (ret == pdPASS && ev != NULL) {
-                struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
-                if (event) {
-                    event->queued = false;
-                }
-            }
-            portEXIT_CRITICAL(&ble_port_mutex);
-            if (ret == pdPASS && ev != NULL) {
-                npl_eventq_unlock(locked);
-                break;
-            }
-            npl_eventq_unlock(locked);
-        }
+    if (ev) {
+	struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
+	if (event) {
+            event->queued = false;
+	}
     }
 
     return ev;
@@ -388,43 +230,22 @@ IRAM_ATTR npl_freertos_eventq_put(struct ble_npl_eventq *evq, struct ble_npl_eve
     struct ble_npl_eventq_freertos *eventq = (struct ble_npl_eventq_freertos *)evq->eventq;
     struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
 
+    if (event->queued) {
+        return;
+    }
+
+    event->queued = true;
+
     if (in_isr()) {
-        woken = pdFALSE;
-
-        portENTER_CRITICAL_ISR(&ble_port_mutex);
-        if (event->queued) {
-            portEXIT_CRITICAL_ISR(&ble_port_mutex);
-            return;
-        }
-        event->queued = true;
-
         ret = xQueueSendToBackFromISR(eventq->q, &ev, &woken);
-        if (ret != pdPASS) {
-            event->queued = false;
-            portEXIT_CRITICAL_ISR(&ble_port_mutex);
-            return;
-        }
-        portEXIT_CRITICAL_ISR(&ble_port_mutex);
-
-        if (woken == pdTRUE) {
+        if( woken == pdTRUE ) {
             portYIELD_FROM_ISR();
         }
-        return;
     } else {
-        bool locked = npl_eventq_lock();
-
-        if (npl_eventq_queued_claim(event)) {
-            npl_eventq_unlock(locked);
-            return;
-        }
-
-        ret = xQueueSendToBack(eventq->q, &ev, 0);
-        if (ret != pdPASS) {
-            ESP_LOGW("NimBLE", "eventq put: queue full, event dropped");
-            npl_eventq_queued_set_task(event, false);
-        }
-        npl_eventq_unlock(locked);
+        ret = xQueueSendToBack(eventq->q, &ev, portMAX_DELAY);
     }
+
+    BLE_LL_ASSERT(ret == pdPASS);
 }
 
 void
@@ -435,43 +256,22 @@ IRAM_ATTR npl_freertos_eventq_put_to_front(struct ble_npl_eventq *evq, struct bl
     struct ble_npl_eventq_freertos *eventq = (struct ble_npl_eventq_freertos *)evq->eventq;
     struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
 
+    if (event->queued) {
+        return;
+    }
+
+    event->queued = true;
+
     if (in_isr()) {
-        woken = pdFALSE;
-
-        portENTER_CRITICAL_ISR(&ble_port_mutex);
-        if (event->queued) {
-            portEXIT_CRITICAL_ISR(&ble_port_mutex);
-            return;
-        }
-        event->queued = true;
-
         ret = xQueueSendToFrontFromISR(eventq->q, &ev, &woken);
-        if (ret != pdPASS) {
-            event->queued = false;
-            portEXIT_CRITICAL_ISR(&ble_port_mutex);
-            return;
-        }
-        portEXIT_CRITICAL_ISR(&ble_port_mutex);
-
-        if (woken == pdTRUE) {
+        if( woken == pdTRUE ) {
             portYIELD_FROM_ISR();
         }
-        return;
     } else {
-        bool locked = npl_eventq_lock();
-
-        if (npl_eventq_queued_claim(event)) {
-            npl_eventq_unlock(locked);
-            return;
-        }
-
-        ret = xQueueSendToFront(eventq->q, &ev, 0);
-        if (ret != pdPASS) {
-            ESP_LOGW("NimBLE", "eventq put_to_front: queue full, event dropped");
-            npl_eventq_queued_set_task(event, false);
-        }
-        npl_eventq_unlock(locked);
+        ret = xQueueSendToFront(eventq->q, &ev, portMAX_DELAY);
     }
+
+    BLE_LL_ASSERT(ret == pdPASS);
 }
 
 void
@@ -482,10 +282,13 @@ IRAM_ATTR npl_freertos_eventq_remove(struct ble_npl_eventq *evq,
     BaseType_t ret;
     int i;
     int count;
-    bool removed;
     BaseType_t woken, woken2;
     struct ble_npl_eventq_freertos *eventq = (struct ble_npl_eventq_freertos *)evq->eventq;
     struct ble_npl_event_freertos *event = (struct ble_npl_event_freertos *)ev->event;
+
+    if (!event->queued) {
+        return;
+    }
 
     /*
      * XXX We cannot extract element from inside FreeRTOS queue so as a quick
@@ -495,77 +298,47 @@ IRAM_ATTR npl_freertos_eventq_remove(struct ble_npl_eventq *evq,
      */
 
     if (in_isr()) {
-        if (!npl_eventq_queued_get_isr(event)) {
-            return;
-        }
-
-        removed = false;
         woken = pdFALSE;
 
-        portENTER_CRITICAL_ISR(&ble_port_mutex);
         count = uxQueueMessagesWaitingFromISR(eventq->q);
         for (i = 0; i < count; i++) {
             ret = xQueueReceiveFromISR(eventq->q, &tmp_ev, &woken2);
-            if (ret != pdPASS) {
-                break;
-            }
+            BLE_LL_ASSERT(ret == pdPASS);
             woken |= woken2;
 
             if (tmp_ev == ev) {
-                removed = true;
                 continue;
             }
 
             ret = xQueueSendToBackFromISR(eventq->q, &tmp_ev, &woken2);
-            if (ret != pdPASS) {
-                npl_eventq_lost_event_clear(tmp_ev);
-                break;
-            }
+            BLE_LL_ASSERT(ret == pdPASS);
             woken |= woken2;
         }
-        if (removed) {
-            event->queued = false;
-        }
-        portEXIT_CRITICAL_ISR(&ble_port_mutex);
 
         if( woken == pdTRUE ) {
             portYIELD_FROM_ISR();
         }
     } else {
-        removed = false;
+        portMUX_TYPE ble_npl_mut = portMUX_INITIALIZER_UNLOCKED;
+        portENTER_CRITICAL(&ble_npl_mut);
 
-        bool locked = npl_eventq_lock();
-
-        if (!npl_eventq_queued_get_task(event)) {
-            npl_eventq_unlock(locked);
-            return;
-        }
-
-        portENTER_CRITICAL(&ble_port_mutex);
         count = uxQueueMessagesWaiting(eventq->q);
         for (i = 0; i < count; i++) {
             ret = xQueueReceive(eventq->q, &tmp_ev, 0);
-            if (ret != pdPASS) {
-                break;
-            }
+            BLE_LL_ASSERT(ret == pdPASS);
 
             if (tmp_ev == ev) {
-                removed = true;
                 continue;
             }
 
             ret = xQueueSendToBack(eventq->q, &tmp_ev, 0);
-            if (ret != pdPASS) {
-                npl_eventq_lost_event_clear(tmp_ev);
-                break;
-            }
+            BLE_LL_ASSERT(ret == pdPASS);
         }
-        if (removed) {
-            event->queued = false;
-        }
-        portEXIT_CRITICAL(&ble_port_mutex);
-        npl_eventq_unlock(locked);
+
+        portEXIT_CRITICAL(&ble_npl_mut);
     }
+
+    event->queued = 0;
 }
 
 ble_npl_error_t
@@ -1011,9 +784,6 @@ IRAM_ATTR npl_freertos_callout_reset(struct ble_npl_callout *co, ble_npl_time_t 
     struct ble_npl_callout_freertos *callout = (struct ble_npl_callout_freertos *)co->co;
 #if BLE_NPL_USE_ESP_TIMER
     esp_timer_stop(callout->handle);
-    if (callout->evq) {
-        npl_freertos_eventq_remove(callout->evq, &callout->ev);
-    }
 
     return esp_err_to_npl_error(esp_timer_start_once(callout->handle, ticks*1000));
 #else
@@ -1025,9 +795,6 @@ IRAM_ATTR npl_freertos_callout_reset(struct ble_npl_callout *co, ble_npl_time_t 
     }
     if (in_isr()) {
         xTimerStopFromISR(callout->handle, &woken1);
-        if (callout->evq) {
-            npl_freertos_eventq_remove(callout->evq, &callout->ev);
-        }
         xTimerChangePeriodFromISR(callout->handle, ticks, &woken2);
         xTimerResetFromISR(callout->handle, &woken3);
 
@@ -1036,9 +803,6 @@ IRAM_ATTR npl_freertos_callout_reset(struct ble_npl_callout *co, ble_npl_time_t 
         }
     } else {
         xTimerStop(callout->handle, portMAX_DELAY);
-        if (callout->evq) {
-            npl_freertos_eventq_remove(callout->evq, &callout->ev);
-        }
         xTimerChangePeriod(callout->handle, ticks, portMAX_DELAY);
         xTimerReset(callout->handle, portMAX_DELAY);
     }
@@ -1057,24 +821,10 @@ IRAM_ATTR npl_freertos_callout_stop(struct ble_npl_callout *co)
     }
 
 #if BLE_NPL_USE_ESP_TIMER
-    if (!in_isr()) {
-        esp_timer_stop(callout->handle);
-    }
+    esp_timer_stop(callout->handle);
 #else
-    if (in_isr()) {
-        BaseType_t woken = pdFALSE;
-        xTimerStopFromISR(callout->handle, &woken);
-        if (woken == pdTRUE) {
-            portYIELD_FROM_ISR();
-        }
-    } else {
-        xTimerStop(callout->handle, portMAX_DELAY);
-    }
+    xTimerStop(callout->handle, portMAX_DELAY);
 #endif
-
-    if (callout->evq) {
-        npl_freertos_eventq_remove(callout->evq, &callout->ev);
-    }
 }
 
 bool
@@ -1253,40 +1003,26 @@ IRAM_ATTR npl_freertos_time_delay(ble_npl_time_t ticks)
 }
 
 
+uint8_t hw_critical_state_status = 0;
+
 uint32_t
 IRAM_ATTR npl_freertos_hw_enter_critical(void)
 {
-    BaseType_t core;
-
+    ++hw_critical_state_status;
     portENTER_CRITICAL(&ble_port_mutex);
-    core = xPortGetCoreID();
-    if (core < portNUM_PROCESSORS) {
-        ++hw_critical_state_status[core];
-    }
     return 0;
 }
 
 uint8_t
 IRAM_ATTR npl_freertos_hw_is_in_critical(void)
 {
-    BaseType_t core;
-
-    core = xPortGetCoreID();
-    if (core >= portNUM_PROCESSORS) {
-        return 0;
-    }
-    return hw_critical_state_status[core];
+    return hw_critical_state_status;
 }
 
 void
 IRAM_ATTR npl_freertos_hw_exit_critical(uint32_t ctx)
 {
-    BaseType_t core;
-
-    core = xPortGetCoreID();
-    if (core < portNUM_PROCESSORS && hw_critical_state_status[core] > 0) {
-        --hw_critical_state_status[core];
-    }
+    --hw_critical_state_status;
     portEXIT_CRITICAL(&ble_port_mutex);
 
 }
@@ -1377,9 +1113,6 @@ int npl_freertos_set_controller_npl_info(ble_npl_count_info_t *ctrl_npl_info)
 int npl_freertos_mempool_init(void)
 {
     int rc = -1;
-
-    npl_eventq_sync_init();
-
     uint16_t ble_total_evt_count = 0;
     uint16_t ble_total_co_count = 0;
     uint16_t ble_total_evtq_count = 0;
@@ -1469,11 +1202,6 @@ int npl_freertos_mempool_init(void)
 
     return 0;
 _error:
-    if (npl_eventq_sync) {
-        vSemaphoreDelete(npl_eventq_sync);
-        npl_eventq_sync = NULL;
-    }
-
     if (ble_freertos_ev_buf) {
         bt_osi_mem_free_internal(ble_freertos_ev_buf);
         ble_freertos_ev_buf = NULL;
@@ -1503,11 +1231,6 @@ _error:
 
 void npl_freertos_mempool_deinit(void)
 {
-    if (npl_eventq_sync) {
-        vSemaphoreDelete(npl_eventq_sync);
-        npl_eventq_sync = NULL;
-    }
-
     if (ble_freertos_ev_buf) {
         bt_osi_mem_free_internal(ble_freertos_ev_buf);
         ble_freertos_ev_buf = NULL;

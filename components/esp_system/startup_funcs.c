@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,17 +12,24 @@
 #include "esp_err.h"
 #include "esp_check.h"
 #include "esp_system.h"
+#include "esp_private/log_util.h"
 #include "esp_log.h"
+#include "esp_private/cache_utils.h"
+#include "spi_flash_mmap.h"
+#include "esp_flash_internal.h"
+#include "esp_newlib.h"
 #include "esp_xt_wdt.h"
 #include "esp_cpu.h"
 #include "esp_private/startup_internal.h"
-#include "freertos/FreeRTOS.h"
 #include "soc/soc_caps.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/uart_types.h"
 #include "hal/uart_ll.h"
+#include "freertos/FreeRTOS.h"
+
+#if CONFIG_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE
+#include "private/esp_coexist_internal.h"
+#endif
 
 #if CONFIG_PM_ENABLE || CONFIG_PM_WORKAROUND_FREQ_LIMIT_ENABLED
 #include "esp_pm.h"
@@ -30,6 +37,7 @@
 #endif
 
 #include "esp_private/esp_clk.h"
+#include "esp_private/spi_flash_os.h"
 #include "esp_private/brownout.h"
 #include "esp_private/vbat.h"
 
@@ -65,7 +73,7 @@ ESP_SYSTEM_INIT_FN(init_show_cpu_freq, CORE, BIT(0), 10)
  * as it is a critical module for device functioning.
  */
 #if SOC_BOD_SUPPORTED && !CONFIG_SECURE_ENABLE_TEE
-ESP_SYSTEM_INIT_FN(init_brownout, CORE, BIT(0), 105)
+ESP_SYSTEM_INIT_FN(init_brownout, CORE, BIT(0), 104)
 {
     // [refactor-todo] leads to call chain rtc_is_register (driver) -> esp_intr_alloc (esp32/esp32s2) ->
     // malloc (esp_libc) -> heap_caps_malloc (heap), so heap must be at least initialized
@@ -89,6 +97,35 @@ ESP_SYSTEM_INIT_FN(init_brownout, CORE, BIT(0), 105)
     return ret;
 }
 #endif
+
+ESP_SYSTEM_INIT_FN(init_newlib_time, CORE, BIT(0), 105)
+{
+    esp_libc_time_init();
+    return ESP_OK;
+}
+
+#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
+ESP_SYSTEM_INIT_FN(init_flash, CORE, BIT(0), 130)
+{
+#if CONFIG_SPI_FLASH_ROM_IMPL
+    spi_flash_rom_impl_init();
+#endif
+
+    esp_flash_app_init();
+    esp_err_t flash_ret = esp_flash_init_default_chip();
+    assert(flash_ret == ESP_OK);
+    (void)flash_ret;
+#if CONFIG_SPI_FLASH_BROWNOUT_RESET
+    spi_flash_needs_reset_check();
+#endif // CONFIG_SPI_FLASH_BROWNOUT_RESET
+    // The log library will call the registered callback function to check if the cache is disabled.
+    esp_log_util_set_cache_enabled_cb(spi_flash_cache_enabled);
+#if CONFIG_PM_WORKAROUND_FREQ_LIMIT_ENABLED
+    esp_pm_flash_freq_limit_init();
+#endif // CONFIG_PM_WORKAROUND_FREQ_LIMIT_ENABLED
+    return ESP_OK;
+}
+#endif // !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
 
 #if CONFIG_ESP_XT_WDT
 ESP_SYSTEM_INIT_FN(init_xt_wdt, CORE, BIT(0), 170)
@@ -118,6 +155,15 @@ ESP_SYSTEM_INIT_FN(init_apb_dma, SECONDARY, BIT(0), 203)
 }
 #endif
 
+#if CONFIG_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE
+ESP_SYSTEM_INIT_FN(init_coexist, SECONDARY, BIT(0), 204)
+{
+    esp_coex_adapter_register(&g_coex_adapter_funcs);
+    coex_pre_init();
+    return ESP_OK;
+}
+#endif // CONFIG_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE
+
 #if SOC_RECOVERY_BOOTLOADER_SUPPORTED
 ESP_SYSTEM_INIT_FN(init_bootloader_offset, SECONDARY, BIT(0), 205)
 {
@@ -129,7 +175,7 @@ ESP_SYSTEM_INIT_FN(init_bootloader_offset, SECONDARY, BIT(0), 205)
 }
 #endif // SOC_RECOVERY_BOOTLOADER_SUPPORTED
 
-#if SOC_RTC_WDT_SUPPORTED && !defined(CONFIG_BOOTLOADER_WDT_DISABLE_IN_USER_CODE)
+#ifndef CONFIG_BOOTLOADER_WDT_DISABLE_IN_USER_CODE
 ESP_SYSTEM_INIT_FN(init_disable_rtc_wdt, SECONDARY, BIT(0), 999)
 {
     wdt_hal_context_t rtc_wdt_ctx = RWDT_HAL_CONTEXT_DEFAULT();
@@ -138,4 +184,4 @@ ESP_SYSTEM_INIT_FN(init_disable_rtc_wdt, SECONDARY, BIT(0), 999)
     wdt_hal_write_protect_enable(&rtc_wdt_ctx);
     return ESP_OK;
 }
-#endif // SOC_RTC_WDT_SUPPORTED && !CONFIG_BOOTLOADER_WDT_DISABLE_IN_USER_CODE
+#endif // CONFIG_BOOTLOADER_WDT_DISABLE_IN_USER_CODE

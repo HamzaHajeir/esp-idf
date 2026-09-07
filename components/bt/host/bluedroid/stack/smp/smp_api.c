@@ -35,9 +35,7 @@
 #include "stack/hcimsgs.h"
 
 #include "stack/btu.h"
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
 #include "p_256_ecc_pp.h"
-#endif
 #include "osi/allocator.h"
 
 /*******************************************************************************
@@ -53,16 +51,12 @@ void SMP_Init(void)
 {
 #if SMP_DYNAMIC_MEMORY
     smp_cb_ptr = (tSMP_CB *)osi_malloc(sizeof(tSMP_CB));
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
     curve_ptr = (elliptic_curve_t *)osi_malloc(sizeof(elliptic_curve_t));
     curve_p256_ptr = (elliptic_curve_t *)osi_malloc(sizeof(elliptic_curve_t));
 #endif
-#endif
     memset(&smp_cb, 0, sizeof(tSMP_CB));
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
     memset(&curve, 0, sizeof(elliptic_curve_t));
     memset(&curve_p256, 0, sizeof(elliptic_curve_t));
-#endif
 
 #if defined(SMP_INITIAL_TRACE_LEVEL)
     smp_cb.trace_level = SMP_INITIAL_TRACE_LEVEL;
@@ -72,10 +66,8 @@ void SMP_Init(void)
     SMP_TRACE_EVENT ("%s", __FUNCTION__);
 
     smp_l2cap_if_init();
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
     /* initialization of P-256 parameters */
     p_256_init_curve(KEY_LENGTH_DWORDS_P256);
-#endif
 }
 
 void SMP_Free(void)
@@ -83,10 +75,8 @@ void SMP_Free(void)
     memset(&smp_cb, 0, sizeof(tSMP_CB));
 #if SMP_DYNAMIC_MEMORY
     FREE_AND_RESET(smp_cb_ptr);
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
     FREE_AND_RESET(curve_ptr);
     FREE_AND_RESET(curve_p256_ptr);
-#endif
 #endif /* #if SMP_DYNAMIC_MEMORY */
 }
 
@@ -217,7 +207,7 @@ tSMP_STATUS SMP_BR_PairWith (BD_ADDR bd_addr)
 
     if (!L2CA_ConnectFixedChnl (L2CAP_SMP_BR_CID, bd_addr, BLE_ADDR_UNKNOWN_TYPE, FALSE, FALSE, 0xFF, 0xFF)) {
         SMP_TRACE_ERROR("%s: L2C connect fixed channel failed.", __FUNCTION__);
-        smp_reset_control_value(p_cb);
+        smp_br_state_machine_event(p_cb, SMP_BR_AUTH_CMPL_EVT, &status);
         return status;
     }
 
@@ -443,17 +433,6 @@ void SMP_OobDataReply(BD_ADDR bd_addr, tSMP_STATUS res, UINT8 len, UINT8 *p_data
         return;
     }
 
-    /* Reject an OOB reply that does not match the device currently pairing. */
-    if (memcmp(bd_addr, p_cb->pairing_bda, BD_ADDR_LEN) != 0) {
-        SMP_TRACE_ERROR("%s() - Wrong BD Addr", __func__);
-        return;
-    }
-
-    if (btm_find_dev(bd_addr) == NULL) {
-        SMP_TRACE_ERROR("%s() - no dev CB", __func__);
-        return;
-    }
-
     if (res != SMP_SUCCESS || len == 0 || !p_data) {
         SMP_TRACE_ERROR("%s pairing failed, res=0x%x len=%u p_data=%p",
             __func__, res, len, p_data);
@@ -494,10 +473,6 @@ void SMP_SecureConnectionOobDataReply(UINT8 *p_data)
         return;
     }
 
-    if (p_cb->state != SMP_STATE_WAIT_APP_RSP || p_cb->cb_evt != SMP_SC_OOB_REQ_EVT) {
-        return;
-    }
-
     /* Set local oob data when req_oob_type = SMP_OOB_BOTH */
     memcpy(&p_oob->loc_oob_data, smp_get_local_oob_data(), sizeof(tSMP_LOC_OOB_DATA));
 
@@ -505,6 +480,10 @@ void SMP_SecureConnectionOobDataReply(UINT8 *p_data)
                      "peer_oob_data.present: %d",
                      __FUNCTION__, p_cb->req_oob_type, p_oob->loc_oob_data.present,
                      p_oob->peer_oob_data.present);
+
+    if (p_cb->state != SMP_STATE_WAIT_APP_RSP || p_cb->cb_evt != SMP_SC_OOB_REQ_EVT) {
+        return;
+    }
 
     BOOLEAN  data_missing = FALSE;
     switch (p_cb->req_oob_type) {

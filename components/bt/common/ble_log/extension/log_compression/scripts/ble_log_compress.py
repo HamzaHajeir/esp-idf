@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 # The current project needs to support environments before Python 3.9,
@@ -20,7 +20,6 @@ This script processes Bluetooth source files to compress logging statements.
 import argparse
 import enum
 import importlib.util
-import json
 import logging
 import os
 import re
@@ -39,7 +38,6 @@ from typing import cast
 
 import tree_sitter_c as tsc
 import yaml
-from c_format_parse import FormatToken
 from c_format_parse import parse_format_string
 from inttypes_map import TYPES_MACRO_MAP
 from LogDBManager import LogDBManager
@@ -77,8 +75,6 @@ SOURCE_ENUM_MAP = {
     'BLE_HOST': 0,
     'BLE_MESH': 1,
     'BLE_MESH_LIB': 2,
-    'BLE_ISO': 3,
-    'BLE_AUDIO_LIB': 4,
 }
 
 # Functions that require hex formatting
@@ -130,10 +126,6 @@ FUNC_MACROS = {'__func__', '__FUNCTION__'}
 LINE_MACROS = {
     '__LINE__',
 }
-
-MIRRORED_INCLUDE_SUFFIXES = frozenset({'.h', '.inc'})
-MIRRORED_INCLUDE_MANIFEST = '.mirrored_includes.json'
-MIRRORED_INCLUDE_MANIFEST_VERSION = 1
 
 
 class ARG_SIZE_TYPE(enum.IntEnum):
@@ -291,11 +283,11 @@ class LogCompressor:
         for node in log_nodes:
             try:
                 log_info = self._process_log_node(node, function_boundaries)
-                if log_info and log_info['hexify']:
+                if log_info:
                     logs.append(log_info)
             except Exception as e:
                 LOGGER.error(f'Error processing log node: {e}\n{traceback.format_exc()}')
-                continue
+                raise
 
         return logs
 
@@ -335,23 +327,10 @@ class LogCompressor:
         if not fmt_node:
             return None
 
-        nimble_nodes = False
         if fmt_node.type == 'concatenated_string':
             log_fmt = self._process_concatenated_string(fmt_node)
         elif fmt_node.type == 'string_literal':
             log_fmt = fmt_node.text.decode('utf-8')[1:-1]  # Remove quotes
-        elif fmt_node.type == 'identifier':
-            # NimBLE style: BLE_HS_LOG(level, "fmt", ...)
-            nimble_nodes = True
-            fmt_node = valid_arg_childrn[1] if len(valid_arg_childrn) > 1 else None
-            if not fmt_node:
-                return None
-            if fmt_node.type == 'concatenated_string':
-                log_fmt = self._process_concatenated_string(fmt_node)
-            elif fmt_node.type == 'string_literal':
-                log_fmt = fmt_node.text.decode('utf-8')[1:-1]
-            else:
-                return None
         else:
             return None
 
@@ -360,31 +339,17 @@ class LogCompressor:
         # Parse format tokens
         tokens = parse_format_string(f'"{log_fmt}"')
         tokens_tuple_map: list[int] = []
-        need_args = 0
         for idx, tk in enumerate(tokens):
-            if isinstance(tk, FormatToken):
+            if isinstance(tk, tuple):
                 tokens_tuple_map.append(idx)
-                need_args = need_args + 1
-                if tk.width == '*':  # dynamic width
-                    need_args = need_args + 1
-                    log_info['hexify'] = False
-                    return log_info
-                if tk.precision == '*':  # dynamic precision
-                    need_args = need_args + 1
-                    log_info['hexify'] = False
-                    return log_info
 
-        arguments: list[Node] = []
-        if nimble_nodes:
-            arguments = valid_arg_childrn[2:]
-        else:
-            arguments = valid_arg_childrn[1:]
+        arguments: list[Node] = valid_arg_childrn[1:]
 
-        if len(arguments) != need_args:
+        if len(arguments) != len(tokens_tuple_map):
             raise SyntaxError(f'LogSyntaxError:{node.text.decode("utf-8")}')
 
         # Process each argument
-        for i, (token, arg_node) in enumerate(zip([t for t in tokens if isinstance(t, FormatToken)], arguments)):
+        for i, (token, arg_node) in enumerate(zip([t for t in tokens if isinstance(t, tuple)], arguments)):
             arg_text = arg_node.text.decode('utf-8')
             log_info['arguments'].append((arg_text, arg_node.start_byte, arg_node.end_byte))
 
@@ -394,9 +359,13 @@ class LogCompressor:
 
             # Handle special identifiers
             if arg_text in FUNC_MACROS:
-                tokens[tokens_tuple_map[i]] = token._replace(conv_char='@func')
+                token_list = list(token)
+                token_list[6] = '@func'  # Modify conversion char to special marker
+                tokens[tokens_tuple_map[i]] = tuple(token_list)
             elif arg_text in LINE_MACROS:
-                tokens[tokens_tuple_map[i]] = token._replace(conv_char='@line')
+                token_list = list(token)
+                token_list[6] = '@line'
+                tokens[tokens_tuple_map[i]] = tuple(token_list)
 
             # Handle hex functions
             if (
@@ -414,7 +383,9 @@ class LogCompressor:
                         len_node = abs(hex_func_info[2])
                     else:
                         len_node = hex_args.named_children[hex_func_info[2]].text.decode('utf-8')
-                    tokens[tokens_tuple_map[i]] = token._replace(conv_char=f'@hex_func@{buf_node}@{len_node}')
+                    token_list = list(token)
+                    token_list[6] = f'@hex_func@{buf_node}@{len_node}'
+                    tokens[tokens_tuple_map[i]] = tuple(token_list)
 
         log_info['argu_tokens'] = tokens
 
@@ -442,9 +413,9 @@ class LogCompressor:
                 raise ValueError(f'Unsupported node in concatenated string: {child.type}')
         return ''.join(parts)
 
-    def _can_be_hexified(self, token: FormatToken, node: Node) -> bool:
+    def _can_be_hexified(self, token: tuple[int, int, str, str, str, str, str], node: Node) -> bool:
         """Determine if a node can be represented in hex format."""
-        if token.conv_char != 's':
+        if token[-1] != 's':
             return True
 
         if node.type == 'identifier' and node.text.decode('utf-8') in FUNC_MACROS:
@@ -504,7 +475,7 @@ class LogCompressor:
 
         if log_info['hexify']:
             # Count of arguments that are not special (__func__, __LINE__, etc.)
-            arg_tokens = [t for t in log_info['argu_tokens'] if isinstance(t, FormatToken)]
+            arg_tokens = [t for t in log_info['argu_tokens'] if isinstance(t, tuple)]
             arg_count = len(arg_tokens)
             arguments = []
             sizes = []
@@ -517,23 +488,23 @@ class LogCompressor:
                 [a[0] for a in log_info['arguments'][1:]],
             ):
                 # Skip special tokens
-                if token.conv_char in ('@func', '@line'):
+                if token[6] in ('@func', '@line'):
                     arg_count -= 1
                     continue
 
                 # Handle hex function
-                if token.conv_char.startswith('@hex_func'):
+                if token[6].startswith('@hex_func'):
                     if not hex_func:
                         hex_func = []
-                    hex_func.append(token.conv_char)
+                    hex_func.append(token[6])
                     arg_count -= 1
                     continue
 
                 arguments.append(argument)
 
-                if token.conv_char == 'f' or token.length == 'll':  # float or long long
+                if token[6] == 'f' or token[5] == 'll':  # float or long long
                     sizes.append(f'{int(ARG_SIZE_TYPE.U64)}')
-                elif token.conv_char == 's':
+                elif token[6] == 's':
                     sizes.append(f'{int(ARG_SIZE_TYPE.STR)}')
                 else:
                     sizes.append(f'{int(ARG_SIZE_TYPE.U32)}')
@@ -583,40 +554,6 @@ class LogCompressor:
             with open(file_path, 'rb') as f:
                 content = f.read()
 
-            # Normalize CRLF/CR to LF. On Windows the IDF sources are checked out
-            # with CRLF line endings (core.autocrlf=true). Without normalization the
-            # '\r' survives into generated log macros as '\' + '\r' + '\n' inside
-            # multi-line argument expressions, breaking the backslash
-            # line-continuation and producing syntax errors when the header is
-            # compiled. Normalizing once, right after the read, keeps every
-            # downstream step (tree-sitter parse, byte-offset tag replacement,
-            # generated macros) on consistent LF offsets.
-            content = content.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
-
-            # NimBLE host macros are emitted to nimble_log_index.h (module BLE_HOST when NimBLE is enabled).
-            # Ensure each compressed NimBLE source includes that header.
-            if (
-                module == 'BLE_HOST'
-                and self.module_info[module].get('log_index_file') == 'nimble_log_index.h'
-                and b'#include "nimble_log_index.h"' not in content
-            ):
-                lines = content.splitlines(keepends=True)
-                first_include = None
-                last_include = None
-                for idx, line in enumerate(lines):
-                    if line.lstrip().startswith(b'#include'):
-                        if first_include is None:
-                            first_include = idx
-                        last_include = idx
-                    elif first_include is not None and line.strip() and not line.lstrip().startswith(b'//'):
-                        break
-
-                if last_include is not None:
-                    lines.insert(last_include + 1, b'#include "nimble_log_index.h"\n')
-                    content = b''.join(lines)
-                else:
-                    content = b'#include "nimble_log_index.h"\n' + content
-
             new_content = bytearray(content)
             logs = self.extract_log_calls(content, self.module_info[module]['tags'])
             LOGGER.info(f'Processing {file_path} - found {len(logs)} logs')
@@ -638,16 +575,16 @@ class LogCompressor:
                 simple_fmt_list: list[str] = []
                 hex_buffer_cnt = 0
                 for token in log['argu_tokens']:
-                    if isinstance(token, FormatToken):
-                        if '@func' in token.conv_char or '@line' in token.conv_char:
+                    if isinstance(token, tuple):
+                        if '@func' in token[6] or '@line' in token[6]:
                             continue
-                        if '@hex_func' in token.conv_char:
+                        if '@hex_func' in token[6]:
                             simple_fmt_list.append(f'@hex_buffer{hex_buffer_cnt}')
                             no_buf_fmt += f'@hex_buffer{hex_buffer_cnt}'
                             hex_buffer_cnt += 1
                             continue
-                        simple_fmt_list.append(token.full_spec)
-                        no_buf_fmt += token.full_spec
+                        simple_fmt_list.append(token[2])
+                        no_buf_fmt += token[2]
                     else:
                         no_buf_fmt += token
                 simple_fmt_str = ' '.join(simple_fmt_list) if simple_fmt_list else None
@@ -702,151 +639,6 @@ class LogCompressor:
 
         return generated_macros
 
-    @staticmethod
-    def _require_path_within(path: Path, root: Path, label: str) -> None:
-        try:
-            path.relative_to(root)
-        except ValueError as error:
-            raise ValueError(f'{label} escapes allowed root {root}: {path}') from error
-
-    def _validated_mirror_destination(self, relative: Path) -> Path:
-        if relative.is_absolute() or '..' in relative.parts or relative.suffix not in MIRRORED_INCLUDE_SUFFIXES:
-            raise ValueError(f'Invalid mirrored include path: {relative}')
-
-        mirror_root = self.bt_compressed_srcs_path.resolve(strict=True)
-        destination = self.bt_compressed_srcs_path / relative
-        resolved_destination = destination.resolve(strict=False)
-        self._require_path_within(resolved_destination, mirror_root, 'Mirrored include destination')
-        return destination
-
-    def _discover_local_includes(self) -> dict[Path, Path]:
-        try:
-            code_base = self.code_base_path.resolve(strict=True)
-        except (FileNotFoundError, NotADirectoryError) as error:
-            raise ValueError(f'Invalid CODE_BASE_PATH: {self.code_base_path}') from error
-
-        if not code_base.is_dir():
-            raise ValueError(f'Invalid CODE_BASE_PATH: {code_base}')
-
-        includes: dict[Path, Path] = {}
-        for info in self.module_info.values():
-            for configured_path in info['code_path']:
-                candidate = Path(configured_path)
-                if not candidate.is_absolute():
-                    candidate = code_base / candidate
-                try:
-                    module_root = candidate.resolve(strict=True)
-                except (FileNotFoundError, NotADirectoryError) as error:
-                    raise ValueError(f'Invalid module code path: {configured_path}') from error
-                if not module_root.is_dir():
-                    raise ValueError(f'Invalid module code path: {configured_path}')
-                try:
-                    module_root.relative_to(code_base)
-                except ValueError as error:
-                    raise ValueError(f'Module code path escapes CODE_BASE_PATH: {module_root}') from error
-
-                for source in module_root.rglob('*'):
-                    if source.suffix not in MIRRORED_INCLUDE_SUFFIXES or not source.is_file():
-                        continue
-                    resolved_source = source.resolve(strict=True)
-                    self._require_path_within(resolved_source, module_root, 'Local include source')
-                    relative = source.relative_to(code_base)
-                    includes[relative] = source
-        return includes
-
-    def _load_mirrored_include_manifest(self) -> set[Path]:
-        manifest_path = self.bt_compressed_srcs_path / MIRRORED_INCLUDE_MANIFEST
-        if manifest_path.is_symlink():
-            raise ValueError(f'Invalid mirrored include manifest: {manifest_path}')
-        if not manifest_path.exists():
-            return set()
-        if not manifest_path.is_file():
-            raise ValueError(f'Invalid mirrored include manifest: {manifest_path}')
-
-        try:
-            payload = json.loads(manifest_path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ValueError(f'Invalid mirrored include manifest: {manifest_path}') from error
-        if (
-            not isinstance(payload, dict)
-            or payload.get('version') != MIRRORED_INCLUDE_MANIFEST_VERSION
-            or not isinstance(payload.get('files'), list)
-        ):
-            raise ValueError(f'Invalid mirrored include manifest: {manifest_path}')
-
-        relative_paths: set[Path] = set()
-        for value in payload['files']:
-            if not isinstance(value, str):
-                raise ValueError(f'Invalid mirrored include manifest entry: {value!r}')
-            relative = Path(value)
-            self._validated_mirror_destination(relative)
-            relative_paths.add(relative)
-        return relative_paths
-
-    def _remove_empty_mirror_parents(self, destination: Path) -> None:
-        mirror_root = self.bt_compressed_srcs_path.resolve(strict=True)
-        parent = destination.parent
-        while parent != mirror_root:
-            try:
-                parent.rmdir()
-            except OSError:
-                break
-            parent = parent.parent
-
-    def _remove_stale_mirrored_includes(self, stale_paths: set[Path]) -> None:
-        for relative in sorted(stale_paths, key=lambda path: len(path.parts), reverse=True):
-            destination = self._validated_mirror_destination(relative)
-            if destination.is_dir():
-                raise ValueError(f'Managed mirrored include is a directory: {destination}')
-            if destination.exists() or destination.is_symlink():
-                destination.unlink()
-                LOGGER.info(f'Removed stale mirrored include: {destination}')
-            self._remove_empty_mirror_parents(destination)
-
-    def _write_mirrored_include_manifest(self, relative_paths: set[Path]) -> None:
-        manifest_path = self.bt_compressed_srcs_path / MIRRORED_INCLUDE_MANIFEST
-        temporary_path = manifest_path.with_name(f'{manifest_path.name}.tmp')
-        if manifest_path.is_symlink() or (manifest_path.exists() and not manifest_path.is_file()):
-            raise ValueError(f'Invalid mirrored include manifest path: {manifest_path}')
-        if temporary_path.is_symlink() or temporary_path.exists():
-            if temporary_path.is_dir():
-                raise ValueError(f'Invalid manifest temporary path: {temporary_path}')
-            temporary_path.unlink()
-
-        payload = {
-            'version': MIRRORED_INCLUDE_MANIFEST_VERSION,
-            'files': sorted(path.as_posix() for path in relative_paths),
-        }
-        try:
-            temporary_path.write_text(f'{json.dumps(payload, indent=2)}\n', encoding='utf-8')
-            os.replace(temporary_path, manifest_path)
-        finally:
-            if temporary_path.exists() or temporary_path.is_symlink():
-                temporary_path.unlink()
-
-    def mirror_local_includes(self) -> None:
-        """Mirror unchanged local headers for generated C source include lookup."""
-        self.bt_compressed_srcs_path.mkdir(parents=True, exist_ok=True)
-        previous_paths = self._load_mirrored_include_manifest()
-        includes = self._discover_local_includes()
-        current_paths = set(includes)
-        newly_created_paths: set[Path] = set()
-        try:
-            for relative, source in sorted(includes.items(), key=lambda item: item[0].as_posix()):
-                destination = self._validated_mirror_destination(relative)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                if not destination.exists() and not destination.is_symlink():
-                    newly_created_paths.add(relative)
-                shutil.copy2(source, destination)
-                LOGGER.info(f'Mirrored local include: {source} -> {destination}')
-            self._remove_stale_mirrored_includes(previous_paths - current_paths)
-            self._write_mirrored_include_manifest(current_paths)
-        except Exception:
-            # Do not leave newly introduced headers unowned by the preserved
-            # manifest when copying, cleanup, or manifest replacement fails.
-            self._remove_stale_mirrored_includes(newly_created_paths)
-            raise
-
     def prepare_source_files(self, srcs: list[str]) -> None:
         """
         Prepare source files for processing.
@@ -861,15 +653,9 @@ class LogCompressor:
             compressed_file_cnt = 0
             total_cnt = 0
             for src in srcs:
-                # Convert absolute paths to relative (to code_base_path) for pattern matching
-                src_for_match = src
-                try:
-                    src_for_match = str(Path(src).relative_to(self.code_base_path))
-                except ValueError:
-                    pass  # Not under code_base_path, keep as-is
-                if pattern.match(src_for_match):
-                    src_path = self.code_base_path / src_for_match
-                    dest_path = self.bt_compressed_srcs_path / src_for_match
+                if pattern.match(src):
+                    src_path = self.code_base_path / src
+                    dest_path = self.bt_compressed_srcs_path / src
                     temp_path = f'{dest_path}.tmp'
                     total_cnt += 1
                     # Skip if already processed
@@ -940,13 +726,7 @@ class LogCompressor:
 
             header_content += f'#endif // __{module.upper()}_INTERNAL_LOG_INDEX_H\n'
 
-            # newline='' disables newline translation so the generated header is
-            # written with LF on every platform. On Windows the default text-mode
-            # write turns '\n' into '\r\n', which breaks the macro line-continuations
-            # below: a backslash must be followed immediately by '\n', but with CRLF
-            # it is followed by '\r' and the continuation (and hence the macro) is
-            # split, producing a flood of syntax errors when the header is compiled.
-            with open(header_path, 'w', newline='', encoding='utf-8') as f:
+            with open(header_path, 'w') as f:
                 f.write(header_content)
         else:
             append_content = ''
@@ -972,7 +752,7 @@ class LogCompressor:
             else:
                 raise RuntimeError('#endif not found')
             lines.insert(idx, append_content)
-            with open(header_path, 'w', encoding='utf-8', newline='') as f:
+            with open(header_path, 'w', encoding='utf-8') as f:
                 f.writelines(lines)
         LOGGER.info(f'Generated log index header: {header_path}')
 
@@ -998,10 +778,6 @@ class LogCompressor:
         for module in module_names:
             if module in modules:
                 self.module_info[module] = modules[module]
-                if module == 'BLE_HOST' and modules[module].get('log_index_file') == 'nimble_log_index.h':
-                    # Force a one-time DB/config refresh for NimBLE compression
-                    # when generator behavior changes (e.g. header injection).
-                    self.module_info[module]['generator_rev'] = 'nimble_include_fix_v1'
                 module_script_path = self.module_info[module]['script']
                 spec = self.module_mod[module] = importlib.util.spec_from_file_location(module, module_script_path)
                 if spec and spec.loader:
@@ -1046,20 +822,9 @@ class LogCompressor:
         )
 
         # Load configuration
-        # Strip surrounding quote chars before splitting. CMakeLists.txt wraps the
-        # semicolon-separated list in single quotes ("'${MODULES}'") to protect the
-        # ';' from POSIX shells, which strip them. cmd.exe on Windows does NOT treat
-        # single quotes as quoting characters, so args.module arrives literally as
-        # 'BLE_MESH;BLE_HOST' and the bare split(';') would yield "'BLE_MESH" /
-        # "BLE_HOST'" — which never match the YAML keys and every module gets
-        # skipped. Stripping is a no-op on Linux/macOS where the shell already
-        # removed the quotes.
-        modules = args.module.strip("'\"").split(';')
+        modules = args.module.split(';')
         config_path = self.build_dir / 'ble_log/module_info.yml'
         self.load_config(str(config_path), modules)
-
-        # Preserve local quoted-include semantics for generated C sources.
-        self.mirror_local_includes()
 
         # Initialize database
         db_path = self.build_dir / self.config.get('db_path', 'log_db')
@@ -1072,9 +837,7 @@ class LogCompressor:
         self.db_manager = db_manager
 
         # Prepare source files
-        # Same quote-stripping rationale as args.module above (cmd.exe passes the
-        # CMakeLists single quotes through literally on Windows).
-        src_list = args.srcs.strip("'\"").split(';')
+        src_list = args.srcs.split(';')
         self.prepare_source_files(src_list)
 
         # Collect files to process

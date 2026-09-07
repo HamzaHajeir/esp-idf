@@ -6,7 +6,6 @@
 #ifndef ESP_WPA3_H
 #define ESP_WPA3_H
 
-#include "sdkconfig.h"
 #include "esp_wifi_driver.h"
 
 #ifdef CONFIG_WPA3_SAE
@@ -28,10 +27,7 @@ static inline void esp_wpa3_free_sae_data(void)
 
 #endif /* CONFIG_WPA3_SAE */
 
-/* AP-side (hostap) SAE definitions require SoftAP; CONFIG_SAE alone may be set
- * for PASN. The #else branch provides a no-op esp_wifi_register_wpa3_ap_cb()
- * stub so callers link in PASN-only (SoftAP-disabled) builds. */
-#if defined(CONFIG_SAE) && defined(CONFIG_ESP_WIFI_SOFTAP_SUPPORT)
+#ifdef CONFIG_SAE
 enum SIG_WPA3_TASK {
     SIG_WPA3_RX_COMMIT,
     SIG_WPA3_RX_CONFIRM,
@@ -62,12 +58,12 @@ void esp_wifi_register_wpa3_ap_cb(struct wpa_funcs *wpa_cb);
 int wpa3_hostap_auth_init(void *data);
 bool wpa3_hostap_auth_deinit(void);
 
-#else /* CONFIG_SAE && CONFIG_ESP_WIFI_SOFTAP_SUPPORT */
+#else /* CONFIG_SAE */
 
 static inline void esp_wifi_register_wpa3_ap_cb(struct wpa_funcs *wpa_cb)
 {
     wpa_cb->wpa3_hostap_handle_auth = NULL;
 }
 
-#endif /* CONFIG_SAE && CONFIG_ESP_WIFI_SOFTAP_SUPPORT */
+#endif /* CONFIG_SAE */
 #endif /* ESP_WPA3_H */

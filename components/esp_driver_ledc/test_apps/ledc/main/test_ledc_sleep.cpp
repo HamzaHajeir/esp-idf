@@ -14,8 +14,8 @@
 #include "esp_private/sleep_cpu.h"
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_pmu.h"
+#include "hal/ledc_periph.h"
 #include "esp_private/sleep_retention.h"
-#include "esp_private/ledc_priv.h"
 #include "esp_rom_serial_output.h"
 
 // Note. Test cases in this file cannot run one after another without reset
@@ -59,7 +59,7 @@ static void test_ledc_sleep_retention(bool allow_pd)
 
     printf("Check if the sleep happened as expected\r\n");
     TEST_ASSERT_EQUAL(0, sleep_ctx.sleep_request_result);
-#if SOC_PMU_SUPPORTED
+#if SOC_PMU_SUPPORTED && !SOC_PM_TOP_PD_NOT_ALLOWED
     // check if the TOP power domain on/off as desired
     TEST_ASSERT_EQUAL(allow_pd ? PMU_SLEEP_PD_TOP : 0, (sleep_ctx.sleep_flags) & PMU_SLEEP_PD_TOP);
 #endif
@@ -86,8 +86,7 @@ TEST_CASE("ledc can output after light sleep (LEDC power domain pd)", "[ledc]")
     test_ledc_sleep_retention(true);
 
     // ledc driver does not have channel release, we will do retention release here to avoid memory leak
-    sleep_retention_module_t module = ledc_reg_retention_info[0].module_id;
-    sleep_retention_module_detach(module);
+    sleep_retention_module_t module = ledc_reg_retention_info.module_id;
     sleep_retention_module_free(module);
     sleep_retention_module_deinit(module);
 }

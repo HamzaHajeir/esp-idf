@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -17,8 +17,6 @@ extern "C" {
 #endif
 
 #if SOC_PAU_SUPPORTED
-
-#include "soc/retention_periph_defs.h"
 
 #define REGDMA_LINK_ENTRY_NUM   (SOC_PM_PAU_LINK_NUM) /* Maximum number of REG DMA linked list entries */
 
@@ -51,6 +49,7 @@ extern "C" {
 #define REGDMA_MODEM_BT_BB_LINK(_pri)       ((0x15 << 8) | _pri)
 #define REGDMA_MODEM_IEEE802154_LINK(_pri)  ((0x16 << 8) | _pri)
 #define REGDMA_GDMA_LINK(_pri)              ((0x17 << 8) | _pri)
+#define REGDMA_AHB_DMA_LINK(_pri)           ((0x17 << 8) | _pri)
 #define REGDMA_I2C_LINK(_pri)               ((0x18 << 8) | _pri)
 #define REGDMA_RMT_LINK(_pri)               ((0x19 << 8) | _pri)
 #define REGDMA_TG0_WDT_LINK(_pri)           ((0x1A << 8) | _pri)
@@ -67,26 +66,15 @@ extern "C" {
 #define REGDMA_MCPWM_LINK(_pri)             ((0x25 << 8) | _pri)
 #define REGDMA_SDM_LINK(_pri)               ((0x26 << 8) | _pri)
 #define REGDMA_EMAC_LINK(_pri)              ((0x27 << 8) | _pri)
-#define REGDMA_JPEG_LINK(_pri)              ((0x28 << 8) | _pri)
-#define REGDMA_LCDCAM_LINK(_pri)            ((0x29 << 8) | _pri)
-#define REGDMA_H264_LINK(_pri)              ((0x2A << 8) | _pri)
-#define REGDMA_PPA_LINK(_pri)               ((0x2B << 8) | _pri)
-#define REGDMA_DMA2D_LINK(_pri)             ((0x2C << 8) | _pri)
-#define REGDMA_ASRC_LINK(_pri)              ((0x2D << 8) | _pri)
-
-#define REGDMA_POWER_LINK(_pri)             ((0xFD << 8) | _pri)
-#define REGDMA_CLOCK_ICG_LINK(_pri)         ((0xFE << 8) | _pri)
 
 #define REGDMA_MODEM_FE_LINK(_pri)          ((0xFF << 8) | _pri)
 
 #define REGDMA_LINK_PRI_SYS_CLK                 REGDMA_LINK_PRI_0
 #define REGDMA_LINK_PRI_MODEM_CLK               REGDMA_LINK_PRI_1
-#define REGDMA_LINK_PRI_CLOCK_ICG               REGDMA_LINK_PRI_1
 #define REGDMA_LINK_PRI_CRITICAL_TEE_APM        REGDMA_LINK_PRI_2
 #define REGDMA_LINK_PRI_WIFI_MAC_BB             REGDMA_LINK_PRI_3
 #define REGDMA_LINK_PRI_NON_CRITICAL_TEE_APM    REGDMA_LINK_PRI_4
 #define REGDMA_LINK_PRI_BT_MAC_BB               REGDMA_LINK_PRI_5
-#define REGDMA_LINK_PRI_POWER                   REGDMA_LINK_PRI_5
 #define REGDMA_LINK_PRI_SYS_PERIPH_HIGH         REGDMA_LINK_PRI_5 // INT_MTX & HP_SYSTEM & Console UART
 #define REGDMA_LINK_PRI_SYS_PERIPH_LOW          REGDMA_LINK_PRI_6 // TG0 & IO MUX & SPI MEM & Systimer
 #define REGDMA_LINK_PRI_GENERAL_PERIPH          REGDMA_LINK_PRI_7 // Low retenion priority for general peripherals
@@ -106,12 +94,6 @@ extern "C" {
 #define REGDMA_LINK_PRI_MCPWM                   REGDMA_LINK_PRI_GENERAL_PERIPH
 #define REGDMA_LINK_PRI_SDM                     REGDMA_LINK_PRI_GENERAL_PERIPH
 #define REGDMA_LINK_PRI_EMAC                    REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_JPEG                    REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_LCDCAM                  REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_H264                    REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_PPA                     REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_DMA2D                   REGDMA_LINK_PRI_GENERAL_PERIPH
-#define REGDMA_LINK_PRI_ASRC                    REGDMA_LINK_PRI_GENERAL_PERIPH
 
 typedef enum {
     REGDMA_LINK_PRI_0 = 0,
@@ -194,15 +176,15 @@ typedef struct regdma_link_branch_write_wait_body {
     volatile uint32_t   mask;
 } regdma_link_branch_write_wait_body_t;
 
-ESP_STATIC_ASSERT(REGDMA_LINK_ENTRY_NUM < 16, "regdma link entry number must be less than 16 to pack module into stats");
+ESP_STATIC_ASSERT(REGDMA_LINK_ENTRY_NUM <= 16, "regdma link entry number should equal to and less than 16");
 typedef struct regdma_link_stats {
     volatile uint32_t   ref: REGDMA_LINK_ENTRY_NUM, /* a bitmap, identifies which entry has referenced the current link */
-             module: 16 - REGDMA_LINK_ENTRY_NUM, /* module id; width leaves room beside ref within the low 16 bits */
+#if REGDMA_LINK_ENTRY_NUM < 16
+             reserve: 16 - REGDMA_LINK_ENTRY_NUM,
+#endif
              id: 16; /* REGDMA linked list node unique identifier */
+    volatile int    module; /* a number used to identify the module to which the current node belongs */
 } regdma_link_stats_t;
-ESP_STATIC_ASSERT(sizeof(regdma_link_stats_t) == 4, "regdma_link_stats_t must be 4 bytes");
-ESP_STATIC_ASSERT(SLEEP_RETENTION_MODULE_MAX < (1u << (16 - REGDMA_LINK_ENTRY_NUM)),
-                  "module id exceeds bitfield width");
 
 typedef struct regdma_link_continuous {
     regdma_link_stats_t             stat;

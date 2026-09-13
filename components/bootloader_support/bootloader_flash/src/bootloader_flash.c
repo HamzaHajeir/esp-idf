@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +7,7 @@
 
 #include <bootloader_flash_priv.h>
 #include <esp_log.h>
-#include "esp_efuse.h"
+#include <esp_flash_encrypt.h>
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
 #include "hal/efuse_ll.h"
@@ -66,7 +66,7 @@ const void *bootloader_mmap(uint32_t src_addr, uint32_t size)
     const void *result = NULL;
     uint32_t src_page = src_addr & ~(SPI_FLASH_MMU_PAGE_SIZE - 1);
     size += (src_addr - src_page);
-    esp_err_t err = spi_flash_mmap(src_page, size, SPI_FLASH_MMAP_FLAG_DATA | SPI_FLASH_MMAP_FLAG_BLOCKS_WRITE, &result, &map);
+    esp_err_t err = spi_flash_mmap(src_page, size, SPI_FLASH_MMAP_DATA, &result, &map);
     if (err != ESP_OK) {
         ESP_EARLY_LOGE(TAG, "spi_flash_mmap failed: 0x%x", err);
         return NULL;
@@ -84,7 +84,7 @@ void bootloader_munmap(const void *mapping)
 
 esp_err_t bootloader_flash_read(size_t src, void *dest, size_t size, bool allow_decrypt)
 {
-    if (allow_decrypt && esp_efuse_is_flash_encryption_enabled()) {
+    if (allow_decrypt && esp_flash_encryption_enabled()) {
         return esp_flash_read_encrypted(NULL, src, dest, size);
     } else {
         return esp_flash_read(NULL, dest, src, size);
@@ -123,7 +123,15 @@ esp_err_t bootloader_flash_erase_range(uint32_t start_addr, uint32_t size)
 #include "hal/mmu_ll.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
-#include "esp_flash_chips/spi_flash_defs.h"
+
+#if CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/opi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32P4
+#include "esp32p4/rom/opi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32C5
+#include "esp32c5/rom/opi_flash.h"
+#endif
+#include "spi_flash/spi_flash_defs.h"
 
 #if ESP_TEE_BUILD
 #include "esp_fault.h"
@@ -224,20 +232,19 @@ static uint32_t current_read_mapping = UINT32_MAX;
  */
 static void rom_read_api_workaround(void)
 {
-#if CONFIG_ESP32C6_REV_MIN_FULL == 0
-    if (efuse_hal_chip_revision() == 0) {
-        extern void spi_common_set_dummy_output(esp_rom_spiflash_read_mode_t mode);
-        extern void spi_dummy_len_fix(uint8_t spi, uint8_t freqdiv);
+#if CONFIG_ESP32C6_REV_MIN_0
+    extern void spi_common_set_dummy_output(esp_rom_spiflash_read_mode_t mode);
+    extern void spi_dummy_len_fix(uint8_t spi, uint8_t freqdiv);
 
-        static bool is_first_call = true;
-        if (is_first_call) {
-            uint32_t dummy_val = UINT32_MAX;
-            uint32_t dest_addr = ESP_PARTITION_TABLE_OFFSET + ESP_PARTITION_TABLE_MAX_LEN;
-            esp_rom_spiflash_write(dest_addr, &dummy_val, sizeof(dummy_val));
-            is_first_call = false;
-        }
+    static bool is_first_call = true;
+    if (is_first_call) {
+        uint32_t dummy_val = UINT32_MAX;
+        uint32_t dest_addr = ESP_PARTITION_TABLE_OFFSET + ESP_PARTITION_TABLE_MAX_LEN;
+        esp_rom_spiflash_write(dest_addr, &dummy_val, sizeof(dummy_val));
+        is_first_call = false;
+    }
 
-        uint32_t freqdiv = 0;
+    uint32_t freqdiv = 0;
 
 #if CONFIG_ESPTOOLPY_FLASHFREQ_80M
     freqdiv = 1;
@@ -258,11 +265,10 @@ static void rom_read_api_workaround(void)
     read_mode = ESP_ROM_SPIFLASH_DOUT_MODE;
 #endif
 
-        esp_rom_spiflash_config_clk(freqdiv, 1);
-        spi_dummy_len_fix(1, freqdiv);
-        esp_rom_spiflash_config_readmode(read_mode);
-        spi_common_set_dummy_output(read_mode);
-    }
+    esp_rom_spiflash_config_clk(freqdiv, 1);
+    spi_dummy_len_fix(1, freqdiv);
+    esp_rom_spiflash_config_readmode(read_mode);
+    spi_common_set_dummy_output(read_mode);
 #endif
 }
 
@@ -282,7 +288,7 @@ static void rom_read_api_workaround(void)
  */
 static inline bool spi1_wb_mode_save_and_disable(void)
 {
-#if SPI_FLASH_LL_SUPPORT_WB_MODE_INDEPENDENT_CONTROL
+#if SOC_SPI_MEM_SUPPORT_WB_MODE_INDEPENDENT_CONTROL
     if (REG_GET_BIT(SPI_MEM_RD_STATUS_REG(1), SPI_MEM_WB_MODE_EN)) {
         REG_CLR_BIT(SPI_MEM_RD_STATUS_REG(1), SPI_MEM_WB_MODE_EN);
         return true;
@@ -293,7 +299,7 @@ static inline bool spi1_wb_mode_save_and_disable(void)
 
 static inline void spi1_wb_mode_restore(bool saved_state)
 {
-#if SPI_FLASH_LL_SUPPORT_WB_MODE_INDEPENDENT_CONTROL
+#if SOC_SPI_MEM_SUPPORT_WB_MODE_INDEPENDENT_CONTROL
     if (saved_state) {
         REG_SET_BIT(SPI_MEM_RD_STATUS_REG(1), SPI_MEM_WB_MODE_EN);
     }
@@ -416,8 +422,8 @@ void bootloader_munmap(const void *mapping)
         mmu_hal_unmap_all();
 #else
         cache_hal_suspend(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
-        cache_hal_invalidate_addr(FLASH_MMAP_VADDR, current_mapped_size);
         mmu_hal_unmap_region(0, FLASH_MMAP_VADDR, current_mapped_size);
+        cache_hal_invalidate_addr(FLASH_MMAP_VADDR, current_mapped_size);
         cache_hal_resume(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
 #endif
 #endif
@@ -531,8 +537,16 @@ static esp_err_t bootloader_flash_read_allow_decrypt(size_t src_addr, void *dest
 
 esp_err_t bootloader_flash_read(size_t src_addr, void *dest, size_t size, bool allow_decrypt)
 {
-    if ((src_addr & 3) || (size & 3) || ((intptr_t)dest & 3)) {
-        ESP_EARLY_LOGE(TAG, "bootloader_flash_read src_addr 0x%x, size 0x%x or dest 0x%x not 4-byte aligned", src_addr, size, (intptr_t)dest);
+    if (src_addr & 3) {
+        ESP_EARLY_LOGE(TAG, "bootloader_flash_read src_addr 0x%x not 4-byte aligned", src_addr);
+        return ESP_FAIL;
+    }
+    if (size & 3) {
+        ESP_EARLY_LOGE(TAG, "bootloader_flash_read size 0x%x not 4-byte aligned", size);
+        return ESP_FAIL;
+    }
+    if ((intptr_t)dest & 3) {
+        ESP_EARLY_LOGE(TAG, "bootloader_flash_read dest 0x%x not 4-byte aligned", (intptr_t)dest);
         return ESP_FAIL;
     }
 
@@ -689,7 +703,7 @@ void bootloader_flash_32bits_address_map_enable(esp_rom_spiflash_read_mode_t fla
         break;
     }
     cache_hal_disable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
-    esp_rom_spiflash_cache_mode_config(flash_mode, &cache_rd);
+    esp_rom_opiflash_cache_mode_config(flash_mode, &cache_rd);
     cache_hal_enable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
 }
 #endif
@@ -911,12 +925,6 @@ static IRAM_ATTR bool is_xmc_chip_strict(uint32_t rdid)
     uint32_t vendor_id = BYTESHIFT(rdid, 2);
     uint32_t mfid = BYTESHIFT(rdid, 1);
     uint32_t cpid = BYTESHIFT(rdid, 0);
-
-    // xmc vendor id begin with 0x46 means that it's a D-series chip
-    // which did not need the startup flow
-    if (vendor_id == 0x46) {
-        return true;
-    }
 
     if (vendor_id != XMC_VENDOR_ID_1) {
         return false;

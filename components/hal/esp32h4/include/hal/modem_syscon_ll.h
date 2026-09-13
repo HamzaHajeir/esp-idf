@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,21 +26,9 @@ static inline void modem_syscon_ll_enable_test_clk(modem_syscon_dev_t *hw, bool 
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_test_clk_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->test_conf.clk_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_pwdet_sar_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf.pwdet_sar_clock_ena = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_pwdet_sar_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.pwdet_sar_clock_ena;
 }
 
 __attribute__((always_inline))
@@ -74,21 +62,9 @@ static inline void modem_syscon_ll_enable_data_dump_mux_clock(modem_syscon_dev_t
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_data_dump_mux_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_data_dump_mux;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_etm_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf.clk_etm_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_etm_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_etm_en;
 }
 
 __attribute__((always_inline))
@@ -98,21 +74,9 @@ static inline void modem_syscon_ll_enable_ieee802154_apb_clock(modem_syscon_dev_
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_ieee802154_apb_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_zb_apb_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_ieee802154_mac_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf.clk_zbmac_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_ieee802154_mac_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_zbmac_en;
 }
 
 __attribute__((always_inline))
@@ -122,27 +86,7 @@ static inline void modem_syscon_ll_enable_modem_sec_clock(modem_syscon_dev_t *hw
     hw->clk_conf.clk_modem_sec_ecb_en = en;
     hw->clk_conf.clk_modem_sec_ccm_en = en;
     hw->clk_conf.clk_modem_sec_bah_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_modem_sec_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_modem_sec_en &&
-           hw->clk_conf.clk_modem_sec_ecb_en &&
-           hw->clk_conf.clk_modem_sec_ccm_en &&
-           hw->clk_conf.clk_modem_sec_bah_en;
-}
-
-__attribute__((always_inline))
-static inline void modem_syscon_ll_enable_modem_sec_apb_clock(modem_syscon_dev_t *hw, bool en)
-{
     hw->clk_conf.clk_modem_sec_apb_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_modem_sec_apb_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_modem_sec_apb_en;
 }
 
 __attribute__((always_inline))
@@ -152,21 +96,9 @@ static inline void modem_syscon_ll_enable_ble_timer_clock(modem_syscon_dev_t *hw
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_ble_timer_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_ble_timer_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_data_dump_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf.clk_data_dump_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_data_dump_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf.clk_data_dump_en;
 }
 
 __attribute__((always_inline))
@@ -355,20 +287,15 @@ static inline void modem_syscon_ll_reset_all(modem_syscon_dev_t *hw)
     hw->modem_rst_conf.val = 0;
 }
 
+
 __attribute__((always_inline))
 static inline void modem_syscon_ll_clk_conf1_configure(modem_syscon_dev_t *hw, bool en, uint32_t mask)
 {
-    if (en) {
+    if(en){
         hw->clk_conf1.val = hw->clk_conf1.val | mask;
     } else {
         hw->clk_conf1.val = hw->clk_conf1.val & ~mask;
     }
-}
-
-__attribute__((always_inline))
-static inline uint32_t modem_syscon_ll_clk_conf1_get(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.val;
 }
 
 __attribute__((always_inline))
@@ -378,21 +305,9 @@ static inline void modem_syscon_ll_enable_fe_txlogain_clock(modem_syscon_dev_t *
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_txlogain_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_txlogain_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_fe_16m_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf1.clk_fe_16m_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_16m_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_16m_en;
 }
 
 __attribute__((always_inline))
@@ -401,22 +316,11 @@ static inline void modem_syscon_ll_enable_fe_32m_clock(modem_syscon_dev_t *hw, b
     hw->clk_conf1.clk_fe_32m_en = en;
 }
 
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_32m_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_32m_en;
-}
 
 __attribute__((always_inline))
 static inline void modem_syscon_ll_enable_fe_sdm_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf1.clk_fe_sdm_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_sdm_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_sdm_en;
 }
 
 __attribute__((always_inline))
@@ -426,21 +330,9 @@ static inline void modem_syscon_ll_enable_fe_adc_clock(modem_syscon_dev_t *hw, b
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_adc_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_adc_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_fe_apb_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf1.clk_fe_apb_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_fe_apb_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_fe_apb_en;
 }
 
 __attribute__((always_inline))
@@ -450,21 +342,9 @@ static inline void modem_syscon_ll_enable_bt_apb_clock(modem_syscon_dev_t *hw, b
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_bt_apb_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_bt_apb_en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_bt_bb_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf1.clk_btbb_en = en;
-}
-
-__attribute__((always_inline))
-static inline bool modem_syscon_ll_bt_bb_clock_is_enabled(modem_syscon_dev_t *hw)
-{
-    return hw->clk_conf1.clk_btbb_en;
 }
 
 __attribute__((always_inline))
@@ -474,9 +354,11 @@ static inline void modem_syscon_ll_enable_bt_mac_clock(modem_syscon_dev_t *hw, b
 }
 
 __attribute__((always_inline))
-static inline bool modem_syscon_ll_bt_mac_clock_is_enabled(modem_syscon_dev_t *hw)
+static inline void modem_syscon_ll_enable_bt_clock(modem_syscon_dev_t *hw, bool en)
 {
-    return hw->clk_conf1.clk_btmac_en;
+    hw->clk_conf1.clk_bt_apb_en = en;
+    hw->clk_conf1.clk_btbb_en = en;
+    hw->clk_conf1.clk_btmac_en = en;
 }
 
 __attribute__((always_inline))

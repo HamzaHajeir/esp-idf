@@ -114,8 +114,6 @@ IoT 设备通常需要检查远程服务器是否可用。如果服务器离线�
 
 - :example:`protocols/icmp_echo` 演示了如何实现一个简单的 ping 命令行工具，使用 ICMP 回显请求数据包测试远程主机在 IP 网络上的可达性。
 
-- :example:`protocols/icmp/pmtu_probe` 演示了如何使用 ICMP 回显请求探测路径 MTU，并通过 :cpp:func:`esp_netif_set_mtu` 将探测结果应用到活动接口。
-
 API 参考
 --------------
 

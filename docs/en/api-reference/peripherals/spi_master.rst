@@ -264,13 +264,6 @@ Supported line modes for {IDF_TARGET_NAME} are listed as follows, to make use of
            SPI_TRANS_MULTILINE_CMD
          - SPICOMMON_BUSFLAG_OCTAL
 
-.. only:: SOC_SPI_SUPPORT_DDR_CLOCK
-
-    DDR Clock
-    ^^^^^^^^^
-
-    Set :c:macro:`SPI_TRANS_DDRCLK` in :cpp:member:`spi_transaction_t::flags` to use double data rate mode for the current transaction. In this mode, the command, address, and data phases are sent/sampled on both the rising and falling edges of the clock. If this flag is not set, the transaction uses the traditional single data rate mode. DDRCLK mode is supported in 2/4/8 line modes as well.
-
 Command and Address Phases
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -381,25 +374,6 @@ Transactions with Integers Other than ``uint8_t``
 An SPI Host reads and writes data into memory byte by byte. By default, data is sent with the most significant bit (MSB) first, as LSB is first used in rare cases. If a value of fewer than 8 bits needs to be sent, the bits should be written into memory in the MSB first manner.
 
 For example, if ``0b00010`` needs to be sent, it should be written into a ``uint8_t`` variable, and the length for reading should be set to 5 bits. The Device will still receive 8 bits with 3 additional "random" bits, so the reading must be performed correctly.
-
-Not all chips support data transmission with any bit lengths. Sending or receiving unsupported bit lengths will return :c:macro:`ESP_ERR_NOT_SUPPORTED` error. The supported lengths are shown in the table below (**YES** means support any bits length, **NO** means bytes (8 bits) only):
-
-+------+--------+-------+----------+--------------------+---------------------+
-|               | ESP32 | ESP32-S2 | ESP32-S3/C2/C3/C6  | ESP32-H2/P4/C5/C61  |
-+======+========+=======+==========+====================+=====================+
-| TX   | DMA    | YES   | YES      | (bit_len % 8) != 1 | YES                 |
-+      +--------+-------+----------+--------------------+---------------------+
-|      | NO DMA | YES   | YES      | (bit_len % 8) != 1 | YES                 |
-+------+--------+-------+----------+--------------------+---------------------+
-| RX   | DMA    | NO    | NO       | YES                | YES                 |
-+      +--------+-------+----------+--------------------+---------------------+
-|      | NO DMA | YES   | NO       | YES                | YES                 |
-+------+--------+-------+----------+--------------------+---------------------+
-
-If you still need to use unsupported bit lengths, you can use the following alternatives:
-
-1. Use :cpp:member:`spi_transaction_t::cmd` and :cpp:member:`spi_transaction_t::addr` and data phase combination. The drawback is that the command and address phases do not receive data from the slave device.
-2. Use two supported length transmissions combination, like ``2+7`` to implement ``9 bit`` transmission, while keeping the CS line valid. The drawback is that there is a minimum time interval between two transmissions (see :ref:`transaction_time_cost`), and the overall transfer rate is lower.
 
 On top of that, {IDF_TARGET_NAME} is a little-endian chip, which means that the least significant byte of ``uint16_t`` and ``uint32_t`` variables is stored at the smallest address. Hence, if ``uint16_t`` is stored in memory, bits [7:0] are sent first, followed by bits [15:8].
 
@@ -562,7 +536,6 @@ There are three factors limiting the transfer speed:
 
 The main parameter that determines the transfer speed for large transactions is clock frequency. For multiple small transactions, the transfer speed is mostly determined by the length of transaction intervals.
 
-.. _transaction_time_cost:
 
 Transaction Duration
 ^^^^^^^^^^^^^^^^^^^^
@@ -587,7 +560,7 @@ The typical transaction duration for one byte of data is given below.
 - Polling Transaction via DMA: {IDF_TARGET_MAX_TRANS_TIME_POLL_DMA} µs.
 - Polling Transaction via CPU: {IDF_TARGET_MAX_TRANS_TIME_POLL_CPU} µs.
 
-Note that these data are tested with :menuitem:`CONFIG_SPI_MASTER_ISR_IN_IRAM` enabled. SPI transaction related code are placed in the internal memory. If this option is turned off (for example, for internal memory optimization), the transaction duration may be affected.
+Note that these data are tested with :ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM` enabled. SPI transaction related code are placed in the internal memory. If this option is turned off (for example, for internal memory optimization), the transaction duration may be affected.
 
 SPI Clock Frequency
 ^^^^^^^^^^^^^^^^^^^
@@ -643,11 +616,11 @@ The transfer speed calculation of other phases (Command, Address, Dummy) is simi
 Cache Missing
 ^^^^^^^^^^^^^
 
-The default config puts only the ISR into the IRAM. Other SPI-related functions, including the driver itself and the callback, might suffer from cache misses and need to wait until the code is read from flash. Select :menuitem:`CONFIG_SPI_MASTER_IN_IRAM` to put the whole SPI driver into IRAM and put the entire callback(s) and its callee functions into IRAM to prevent cache missing.
+The default config puts only the ISR into the IRAM. Other SPI-related functions, including the driver itself and the callback, might suffer from cache misses and need to wait until the code is read from flash. Select :ref:`CONFIG_SPI_MASTER_IN_IRAM` to put the whole SPI driver into IRAM and put the entire callback(s) and its callee functions into IRAM to prevent cache missing.
 
 .. note::
 
-    SPI driver implementation is based on FreeRTOS APIs, to use :menuitem:`CONFIG_SPI_MASTER_IN_IRAM`, you should enable :menuitem:`CONFIG_FREERTOS_IN_IRAM`.
+    SPI driver implementation is based on FreeRTOS APIs, to use :ref:`CONFIG_SPI_MASTER_IN_IRAM`, you should enable :ref:`CONFIG_FREERTOS_IN_IRAM`.
 
 For an interrupt transaction, the overall cost is **20+8n/Fspi[MHz]** [µs] for n bytes transferred in one transaction. Hence, the transferring speed is: **n/(20+8n/Fspi)**. An example of transferring speed at 8 MHz clock speed is given in the following table.
 
@@ -688,7 +661,7 @@ For an interrupt transaction, the overall cost is **20+8n/Fspi[MHz]** [µs] for 
 
 When a transaction length is short, the cost of the transaction interval is high. If possible, try to squash several short transactions into one transaction to achieve a higher transfer speed.
 
-Please note that the ISR is disabled during flash operation by default. To keep sending transactions during flash operations, enable :menuitem:`CONFIG_SPI_MASTER_ISR_IN_IRAM` and set :c:macro:`ESP_INTR_FLAG_IRAM` in the member :cpp:member:`spi_bus_config_t::intr_flags`. In this case, all the transactions queued before starting flash operations are handled by the ISR in parallel. Also note that the callback of each Device and their ``callee`` functions should be in IRAM, or your callback will crash due to cache missing. For more details, see :ref:`iram-safe-interrupt-handlers`.
+Please note that the ISR is disabled during flash operation by default. To keep sending transactions during flash operations, enable :ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM` and set :c:macro:`ESP_INTR_FLAG_IRAM` in the member :cpp:member:`spi_bus_config_t::intr_flags`. In this case, all the transactions queued before starting flash operations are handled by the ISR in parallel. Also note that the callback of each Device and their ``callee`` functions should be in IRAM, or your callback will crash due to cache missing. For more details, see :ref:`iram-safe-interrupt-handlers`.
 
 .. only:: esp32h2
 
@@ -858,10 +831,6 @@ Please note that the ISR is disabled during flash operation by default. To keep 
     3. ``dummy_bits`` in :cpp:type:`spi_device_interface_config_t` and :cpp:type:`spi_transaction_ext_t` are not available when SPI Read and Write phases are both enabled (regardless of full duplex or half duplex mode).
 
     4. ``cs_ena_pretrans`` is not compatible with the Command and Address phases of full-duplex transactions.
-
-    .. only:: esp32
-
-        5. If DMA is enabled, the RX buffer should be word-aligned (starting from a 32-bit boundary and having a length of multiples of 4 bytes). Otherwise, DMA may overwrite the data in the unaligned part.
 
 
 Application Examples

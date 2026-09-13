@@ -51,11 +51,10 @@ OI_UINT32 OI_SBC_MaxBitpool(OI_CODEC_SBC_FRAME_INFO *frame)
     case SBC_STEREO:
     case SBC_JOINT_STEREO:
         return 32 * frame->nrof_subbands;
-    default:
-        ERROR(("Invalid frame mode %d", frame->mode));
-        OI_ASSERT(FALSE);
     }
 
+    ERROR(("Invalid frame mode %d", frame->mode));
+    OI_ASSERT(FALSE);
     return 0; /* Should never be reached */
 }
 
@@ -102,6 +101,10 @@ INLINE OI_UINT16 OI_SBC_CalculateFrameAndHeaderlen(OI_CODEC_SBC_FRAME_INFO *fram
     *headerLen_ = headerLen;
     return internal_CalculateFramelen(frame);
 }
+
+
+#define MIN(x, y)  ((x) < (y) ? (x) : (y))
+
 
 /*
  * Computes the bit need for each sample and as also returns a counts of bit needs that are greater
@@ -239,7 +242,7 @@ OI_UINT computeBitneed(OI_CODEC_SBC_COMMON_CONTEXT *common,
  *
  * @param bitpool   The bitpool we have to work within
  *
- * @param bitneeds  An array of bit needs (more acturately allocation priorities) for each
+ * @param bitneeds  An array of bit needs (more acturately allocation prioritities) for each
  *                  subband across all blocks in the SBC frame
  *
  * @param subbands  The number of subbands over which the adkustment is calculated. For mono and
@@ -306,7 +309,7 @@ OI_INT adjustToFitBitpool(const OI_UINT bitpool,
 
 
 /*
- * The bit allocator tries to avoid single bit allocations except as a last resort. So in the case
+ * The bit allocator trys to avoid single bit allocations except as a last resort. So in the case
  * where a bitneed of 1 was passed over during the adsjustment phase 2 bits are now allocated.
  */
 INLINE OI_INT allocAdjustedBits(OI_UINT8 *dest,
@@ -377,7 +380,7 @@ void oneChannelBitAllocation(OI_CODEC_SBC_COMMON_CONTEXT *common,
         ++sb;
     }
     sb = 0;
-    while (excess && (sb < nrof_subbands)) {
+    while (excess) {
         excess = allocExcessBits(&allocBits[sb], excess);
         ++sb;
     }

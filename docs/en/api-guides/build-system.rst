@@ -77,20 +77,6 @@ In the above list, the ``cmake`` command configures the project and generates bu
 
 It's not necessary to run ``cmake`` more than once. After the first build, you only need to run ``ninja`` each time. ``ninja`` will automatically re-invoke ``cmake`` if the project needs reconfiguration.
 
-You can control the number of parallel build jobs passed to the underlying build tool (Ninja or Make) with the ``-j``/``--jobs`` option of ``idf.py``. For example:
-
-.. code-block:: bash
-
-    idf.py -j 6 build
-
-The same value can be set with the ``IDF_PY_BUILD_JOBS`` environment variable, which is used as the default when ``-j``/``--jobs`` is not given:
-
-.. code-block:: bash
-
-    IDF_PY_BUILD_JOBS=6 idf.py build
-
-If you invoke CMake, ``ninja``, or ``make`` directly instead of ``idf.py``, use their native options or environment variables to control parallelism.
-
 If using CMake with ``ninja`` or ``make``, there are also targets for more of the ``idf.py`` sub-commands. For example, running ``make menuconfig`` or ``ninja menuconfig`` in the build directory will work the same as ``idf.py menuconfig``.
 
 .. note::
@@ -154,43 +140,6 @@ If using an IDE with CMake, setting the ``PYTHON`` value as a CMake cache overri
 
 To manage the Python version more generally via the command line, check out the tools pyenv_ or virtualenv_. These let you change the default Python version.
 
-
-.. _build-acceleration:
-
-Build Acceleration
-------------------
-
-ESP-IDF supports several tools to accelerate the build process. These tools work as compiler launchers that wrap the actual compiler invocation.
-
-CCache
-^^^^^^
-
-CCache_ is a compiler cache that speeds up recompilation by caching previous compilations. When enabled, if a compilation is repeated with the same source code and compiler flags, CCache returns the cached result instead of recompiling.
-
-See the :ref:`idf_py_global_options` section for more information about how to enable or disable it.
-
-Configdep Wrapper
-^^^^^^^^^^^^^^^^^
-
-The ``esp-idf-configdep`` tool post-processes compiler-generated dependency files to reduce unnecessary rebuilds caused by ``sdkconfig.h`` changes.
-
-Normally, every source file that includes ``sdkconfig.h`` would be rebuilt whenever any configuration option changes, because the compiler records ``sdkconfig.h`` as a direct dependency. The Configdep tool edits the dependency files after the initial build so that source files no longer depend directly on ``sdkconfig.h``. Instead, they depend on a special file structure created by ``esp-idf-kconfig``: each configuration option has its own file, and when a given option is changed, only the corresponding file is touched. That way only the source files that actually use the changed option are rebuilt, not the entire project.
-
-Important: source files are not modified. They still contain ``#include <sdkconfig.h>`` and there is no need to alter anything in the source code for Configdep to work. The tool operates purely on the generated dependency (``.d``) files.
-
-This is particularly useful when there are frequent changes of a small number of config options between rebuilds. Configdep is enabled by default.
-
-See the :ref:`idf_py_global_options` section for more information about how to enable or disable it.
-
-Chaining Acceleration Tools
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When multiple acceleration tools are enabled, they are chained together as compiler launchers. The chain is applied in a specific order:
-
-1. **esp-idf-configdep** (if enabled) - processes dependency files and optimizes rebuilds caused by ``sdkconfig.h`` changes
-2. **ccache** (if enabled) - caches compilations
-
-Each tool in the chain wraps the next, ultimately invoking the actual compiler. This allows combining the benefits of multiple tools. However, combining multiple tools may not always result in optimal performance, and it may be needed to experiment with different combinations of the acceleration tools to achieve the best performance for your project.
 
 .. _example-project-structure:
 
@@ -315,9 +264,6 @@ The build system provides special treatment to the ``main`` component. It is a c
 2. Set ``EXTRA_COMPONENT_DIRS`` in the project CMakeLists.txt to include the renamed ``main`` directory.
 3. Specify the dependencies in the renamed component's CMakeLists.txt file via REQUIRES or PRIV_REQUIRES arguments :ref:`on component registration <cmake_minimal_component_cmakelists>`.
 
-.. note::
-
-   A project without a ``main`` component cannot use the ``MINIMAL_BUILD`` :ref:`build property <cmake-build-properties>`, as this property explicitly relies on the presence of the ``main`` component. Ensure that the ``MINIMAL_BUILD`` build property is not set for projects that do not include a ``main`` component.
 
 Overriding Default Build Specifications
 ---------------------------------------
@@ -434,7 +380,7 @@ The following are some project/build variables that are available as build prope
 - ``IDF_TARGET``: Name of the target for which the project is being built.
 - ``PROJECT_VER``: Project version.
 
-  * If :menuitem:`CONFIG_APP_PROJECT_VER_FROM_CONFIG` option is set, the value of :menuitem:`CONFIG_APP_PROJECT_VER` will be used.
+  * If :ref:`CONFIG_APP_PROJECT_VER_FROM_CONFIG` option is set, the value of :ref:`CONFIG_APP_PROJECT_VER` will be used.
   * Else, if ``PROJECT_VER`` variable is set in project CMakeLists.txt file, its value will be used.
   * Else, if the ``PROJECT_DIR/version.txt`` exists, its contents will be used as ``PROJECT_VER``.
   * Else, if ``VERSION`` argument is passed to the ``project()`` call in the CMakeLists.txt file as ``project(... VERSION x.y.z.w )`` then it will be used as ``PROJECT_VER``. The ``VERSION`` argument must be compliant with the `cmake standard <https://cmake.org/cmake/help/v3.22/command/project.html>`_.
@@ -470,74 +416,6 @@ This can be useful if there is upstream code that emits warnings.
     CMake `set_source_files_properties`_ command is not applicable when the source files have been populated with help of the ``SRC_DIRS`` variable in ``idf_component_register``. See :ref:`cmake-file-globbing` for more details.
 
 When using these commands, place them after the call to ``idf_component_register`` in the component CMakeLists file.
-
-.. only:: esp32p4
-
-    .. _cmake-llvm-optimizations:
-
-    LLVM Optimizations
-    ^^^^^^^^^^^^^^^^^^
-
-    ESP-IDF can apply extra LLVM/Clang optimizations to selected sources. Enable the options in menuconfig. Mark a component or a file list in CMake. ESP-IDF sets the corresponding compiler flags, so projects do not write those flags by hand.
-
-    In :ref:`project-configuration-menu`, enable :menuitem:`CONFIG_COMPILER_LLVM_MEMCPY_OPTIMIZATION` under Compiler options > LLVM optimizations. Flags apply only to components or source files you select in CMake.
-
-    Apply to the whole component:
-
-    .. code-block:: cmake
-
-      idf_component_register(SRCS "foo.c" "bar.c"
-                             INCLUDE_DIRS "."
-                             ENABLE_LLVM_OPT)
-
-    Apply to one or more source files (call after ``idf_component_register``):
-
-    .. code-block:: cmake
-
-      idf_component_enable_llvm_opt(SRCS "foo.c" "bar.c")
-
-    Source paths must match the paths passed to ``idf_component_register``. As with ``set_source_files_properties``, source-level selection is not supported with sources discovered through ``SRC_DIRS``.
-
-    Third-party components such as LVGL do not call these helpers. After ``idf_component_register``, get the dependency's library target and apply the exported flags with standard CMake. ``IDF_LLVM_OPT_ALL`` holds the flags for every LLVM optimization enabled in menuconfig; ``IDF_LLVM_OPT_MEMCPY`` holds only the flags for :menuitem:`CONFIG_COMPILER_LLVM_MEMCPY_OPTIMIZATION`. Both are empty when those options are off or the compiler is not Clang:
-
-    Library target of the managed ``lvgl`` component (registry name :code:`lvgl__lvgl`), not its source list:
-
-    .. code-block:: cmake
-
-      idf_component_get_property(lvgl_lib "lvgl__lvgl" COMPONENT_LIB)
-      if(IDF_LLVM_OPT_ALL)
-          target_compile_options(${lvgl_lib} PRIVATE ${IDF_LLVM_OPT_ALL})
-      endif()
-
-    To apply only the memcpy optimization:
-
-    .. code-block:: cmake
-
-      idf_component_get_property(lvgl_lib "lvgl__lvgl" COMPONENT_LIB)
-      if(IDF_LLVM_OPT_MEMCPY)
-          target_compile_options(${lvgl_lib} PRIVATE ${IDF_LLVM_OPT_MEMCPY})
-      endif()
-
-    This does not patch the third-party CMakeLists. Do not apply it to every source in a large component; see the limitations below.
-
-    Advanced users can append extra Clang or LLVM flags. These are applied together with any LLVM optimizations enabled in menuconfig. Omit ``SRCS`` to apply them to the whole component:
-
-    .. code-block:: cmake
-
-      idf_component_enable_llvm_opt(
-          SRCS "foo.c"
-          OPTIONS "-mllvm=-my-custom-llvm-option")
-
-    The current menuconfig option speeds up ``memcpy`` using the RISC-V PIE extension. Install and select the Espressif Clang toolchain with ``IDF_TOOLCHAIN=clang``; IDF does not substitute flags when the active compiler is GCC. Further menuconfig options can be added later without changing the CMake enable API. See :example:`system/llvm_opt` and :example:`system/llvm_memcpy_opt`.
-
-    Limitations:
-
-    - Requires the Espressif Clang toolchain. ``ENABLE_LLVM_OPT``, ``idf_component_enable_llvm_opt``, ``IDF_LLVM_OPT_ALL``, and ``IDF_LLVM_OPT_MEMCPY`` have no effect when the selected compiler is not Clang.
-    - Currently validated on ESP32-P4 only.
-    - Apply only to hot paths. Prefer a measured file list. Results depend on alignment, size, chip revision, and flash/cache layout.
-    - Do **not** enable this for the whole project or for every source in a large component. The generated code uses the PIE coprocessor. The first PIE instruction in a task that does not currently own PIE traps into the kernel, which lazy-saves the previous owner's registers and restores this task's; that switch repeats for every such task and can make the application slower overall. Extra code size (I-cache) can also hurt, but is secondary. See :doc:`../api-reference/system/freertos_idf`.
-    - Do not use this memcpy option from an ISR: PIE coprocessor use in interrupt context is not allowed and aborts.
-    - Do not treat the CMake markers as a global ``-O`` replacement.
 
 
 .. _component-configuration:
@@ -1052,7 +930,7 @@ Source Code Generation
 Some components will have a situation where a source file isn't supplied with the component itself but has to be generated from another file. Say our component has a header file that consists of the converted binary data of a BMP file, converted using a hypothetical tool called bmp2h. The header file is then included in as C source file called graphics_lib.c::
 
     add_custom_command(OUTPUT logo.h
-         COMMAND bmp2h -i ${COMPONENT_DIR}/logo.bmp -o logo.h
+         COMMAND bmp2h -i ${COMPONENT_DIR}/logo.bmp -o log.h
          DEPENDS ${COMPONENT_DIR}/logo.bmp
          VERBATIM)
 
@@ -1106,10 +984,6 @@ To embed a file into a project, rather than a component, you can call the functi
   target_add_binary_data(myproject.elf "main/data.bin" TEXT)
 
 Place this line after the ``project()`` line in your project CMakeLists.txt file. Replace ``myproject.elf`` with your project name. The final argument can be ``TEXT`` to embed a null-terminated string, or ``BINARY`` to embed the content as-is.
-
-Use the optional ``ALIGN`` argument to align the embedded data's start symbol to a positive power of two. For example, to align binary data to 16 bytes::
-
-  target_add_binary_data(myproject.elf "main/data.bin" BINARY ALIGN 16)
 
 For an example of using this technique, see the "main" component of the file_serving example :example_file:`protocols/http_server/file_serving/main/CMakeLists.txt` - two files are loaded at build time and linked into the firmware.
 
@@ -1223,33 +1097,7 @@ If and only if an ``sdkconfig.defaults`` file exists, the build system will also
 
 If ``SDKCONFIG_DEFAULTS`` is used to override the name of defaults file/files, the name of target-specific defaults file will be derived from ``SDKCONFIG_DEFAULTS`` value/values using the rule above. When there are multiple files in ``SDKCONFIG_DEFAULTS``, target-specific file will be applied right after the file bringing it in, before all latter files in ``SDKCONFIG_DEFAULTS``
 
-For the following example, suppose the build target is ``esp32`` and these files exist in the project directory:
-
-.. code-block:: none
-
-    sdkconfig.defaults
-    sdkconfig.defaults.esp32
-    sdkconfig_devkit1
-
-**Example 1**: ``SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig_devkit1"``
-
-The build system will apply the files in this order:
-
-1. ``sdkconfig.defaults``.
-2. ``sdkconfig.defaults.esp32`` - build system will always try to load target specific variation of every file listed in ``SDKCONFIG_DEFAULTS``.
-3. ``sdkconfig_devkit1``.
-4. The build system will also attempt to load a file named ``sdkconfig_devkit1.esp32``, but because there is no file with this name, no additional file will be loaded.
-
-**Example 2**: ``SDKCONFIG_DEFAULTS="sdkconfig_devkit1"``
-
-The build system will apply the files in this order:
-
-1. ``sdkconfig_devkit1``.
-2. The build system will also attempt to load a file named ``sdkconfig_devkit1.esp32``, but because there is no file with this name, no additional file will be loaded.
-
-.. warning::
-
-    In the second example, the standard ``sdkconfig.defaults`` (or its target specific variation) is not applied, because it was not explicitly included in ``SDKCONFIG_DEFAULTS``.
+For example, if ``SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig_devkit1"``, and there is a file ``sdkconfig.defaults.esp32`` in the same folder, then the files will be applied in the following order: (1) sdkconfig.defaults (2) sdkconfig.defaults.esp32 (3) sdkconfig_devkit1.
 
 You can find more detailed information on how the project configuration works in the :ref:`Project Configuration Guide <project-configuration-guide>`. In the :ref:`Configuration Files Structure and Relationships <configuration-structure>`, you can find lower-level information about the configuration files.
 
@@ -1408,7 +1256,7 @@ The example in :example:`build_system/cmake/idf_as_lib` demonstrates the creatio
 
 .. only:: esp32
 
-   .. note:: The IDF build system can only set compiler flags for source files that it builds. When an external CMakeLists.txt file is used and PSRAM is enabled, remember to add ``-mfix-esp32-psram-cache-issue`` to the C compiler arguments. See :menuitem:`CONFIG_SPIRAM_CACHE_WORKAROUND` for details of this flag.
+   .. note:: The IDF build system can only set compiler flags for source files that it builds. When an external CMakeLists.txt file is used and PSRAM is enabled, remember to add ``-mfix-esp32-psram-cache-issue`` to the C compiler arguments. See :ref:`CONFIG_SPIRAM_CACHE_WORKAROUND` for details of this flag.
 
 
 .. _cmake_buildsystem_api:
@@ -1632,10 +1480,6 @@ The arguments for ``idf_component_register`` include:
   - KCONFIG - override the default Kconfig file
   - KCONFIG_PROJBUILD - override the default Kconfig.projbuild file
   - WHOLE_ARCHIVE - if specified, the component library is surrounded by ``-Wl,--whole-archive``, ``-Wl,--no-whole-archive`` when linked. This has the same effect as setting ``WHOLE_ARCHIVE`` component property.
-
-.. only:: esp32p4
-
-  On ESP32-P4, ``idf_component_register`` also accepts ``ENABLE_LLVM_OPT`` to apply LLVM optimizations enabled in menuconfig to all source files in the component. Ignored when the selected compiler is not Clang. See :ref:`cmake-llvm-optimizations`.
 
 The following are used for :ref:`embedding data into the component <cmake_embed_data>`, and is considered as source files when determining if a component is config-only. This means that even if the component does not specify source files, a static library is still created internally for the component if it specifies either:
 

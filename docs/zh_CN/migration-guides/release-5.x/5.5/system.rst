@@ -11,12 +11,12 @@
 日志
 ----
 
-**Log V2** 是 ESP-IDF v5.5 版本提供的增强型可选日志功能。它与 **Log V1** 完全兼容，项目无需修改即可继续使用 **Log V1**。开发者可以通过 Kconfig 选项 :menuitem:`CONFIG_LOG_VERSION` 启用 **Log V2**。未来的 ESP-IDF 版本可能默认使用 **Log V2**。
+**Log V2** 是 ESP-IDF v5.5 版本提供的增强型可选日志功能。它与 **Log V1** 完全兼容，项目无需修改即可继续使用 **Log V1**。开发者可以通过 Kconfig 选项 :ref:`CONFIG_LOG_VERSION` 启用 **Log V2**。未来的 ESP-IDF 版本可能默认使用 **Log V2**。
 
 **特性**
 
 - 集中化日志处理、可动态设置的格式参数和更高的灵活性。
-- 消耗更多的栈和内存，但二进制文件体积更小（具体数据详见文档 `日志库 </api-reference/system/log.rst>`_）。
+- 消耗更多的栈和内存，但二进制文件体积更小（具体数据详见文档 `日志库 <../../../system/log.rst>`_）。
 - **Log V2** 的特定功能（如动态设置格式、执行上下文检测）不能向后兼容 **Log V1**。
 
 如需使用 ``esp_log_write`` （或 ``esp_log_writev``）函数，请替换为 ``esp_log`` （或 ``esp_log_va``），以减少一层嵌套调用。

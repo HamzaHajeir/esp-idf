@@ -44,7 +44,6 @@
 - :ref:`ppa-client-registration` - 涵盖如何注册 PPA 客户端来执行一切 PPA 操作。
 - :ref:`ppa-register-callback` - 涵盖如何将用户特定代码挂接到 PPA 驱动程序事件回调函数。
 - :ref:`ppa-perform-operation` - 涵盖如何执行 PPA 操作。
-- :ref:`ppa-buffer-alignment` - 涵盖 PPA 输入和输出缓冲区的内存对齐要求。
 - :ref:`ppa-thread-safety`- 涵盖在线程安全方面使用 PPA 操作 API 的情况。
 - :ref:`ppa-performance-overview` - 涵盖 PPA 操作的性能。
 
@@ -130,28 +129,6 @@ PPA 操作包括：
 
 :cpp:type:`ppa_trans_mode_t` 为可配置字段，适用于所有 PPA 操作 API。可以配置该字段，在调用 PPA 操作 API 时等待操作完成后再返回，或者在事务推送到内部队列后立即返回。
 
-.. _ppa-buffer-alignment:
-
-缓存区对齐要求
-^^^^^^^^^^^^^^
-
-PPA 缓存区需要满足以下对齐要求，以确保存储器访问的正确性：
-
-- 缓冲行对齐（仅针对输出缓存区）：
-
-    - 如果输出缓冲区位于一个可缓存的内存区域，则 ``out.buffer`` 地址和 ``out.buffer_size`` 大小必须与缓冲行大小对齐。
-
-- 存储加密对齐（当存储加密启用且缓冲区位于外部存储空间时）：
-
-    - 块的字节宽度必须与 {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} 字节对齐。
-    - 块每行的起始地址必须与 {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} 字节对齐。
-
-    此外，当访问加密外部存储空间时，PPA 的 DMA 数据突发长度必须大于或等于 {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} 字节。如果配置的突发长度小于该值，驱动程序将自动增加到满足该要求。
-
-    .. warning::
-
-        SRM 引擎以宏块为单位处理图片，而宏块的对齐无法受到控制，因此如果缓冲区位于外部存储空间，则 SRM 操作在存储加密的情况下无法正常工作。
-
 .. _ppa-thread-safety:
 
 线程安全
@@ -175,9 +152,7 @@ PPA 操作作用于输入图片的目标块。因此，完成一次 PPA 事务�
 应用示例
 ^^^^^^^^^
 
-* :example:`peripherals/ppa/ppa_transform` - PPA transform 图像处理示例。嵌入的 RGB565 图像会经过 SRM 变换和 fill 边框处理，然后以 base64 输出，供主机端重建为 PPM 并与 golden 图像比对。
-* :example:`peripherals/ppa/ppa_color_key` - PPA blend color key 示例。示例先在软件中生成居中的 RGB888 glow 前景，然后在嵌入式 RGB565 图片上演示两种 blend 效果：一种是通过 blend color key 将命中的红色 `ESP32` 文本像素替换为 glow，另一种是在保留命中文本的同时，将 glow 混合到非 key 区域。两种结果都会以 base64 输出，供主机端重建为 PPM 并与 golden 图像比对。
-* :example:`peripherals/ppa/ppa_freetype` - PPA FreeType 图标合成示例。示例使用 `espressif/freetype` 组件将 Font Awesome 图标的 Unicode 码点（两行，每行三个）栅格化为小的逐字形 A8 透明度掩码，然后通过 PPA blend 引擎以固定图标颜色将每个字形合成到软件生成的渐变背景上。最终合成后的 RGB565 帧会以 base64 输出，供主机端重建为 PPM 并与 golden 图像比对。
+* :example:`peripherals/ppa/ppa_dsi` - 使用 DSI 显示屏的 PPA 示例。首先，该示例所使用的图像会被放大、逆时针旋转后复原、镜像后复原、缩小。其次，该图像将与一个透明度较低的全红图像叠加，`ESP32` 字样将被色键移除。最后，会在 `ESP32` 周围填充一个框。
 
 API 参考
 --------

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,7 +10,6 @@
 #include "esp_private/sar_periph_ctrl.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_sleep.h"
 
 #if SOC_TEMP_SENSOR_SUPPORTED
 #include "hal/temperature_sensor_ll.h"
@@ -30,6 +29,12 @@ ESP_LOG_ATTR_TAG(TAG_TSENS, "temperature_sensor");
 
 #define INT_NOT_USED 999999
 
+#if !SOC_RCC_IS_INDEPENDENT
+#define TSENS_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define TSENS_RCC_ATOMIC()
+#endif
+
 #define TSENS_LINE_REGRESSION_US (200)
 
 static int s_temperature_sensor_power_cnt;
@@ -46,7 +51,7 @@ void temperature_sensor_power_acquire(void)
 #if !SOC_TSENS_IS_INDEPENDENT_FROM_ADC
         adc_apb_periph_claim();
 #endif
-        PERIPH_RCC_ATOMIC() {
+        TSENS_RCC_ATOMIC() {
             temperature_sensor_ll_bus_clk_enable(true);
             temperature_sensor_ll_reset_module();
         }
@@ -54,9 +59,6 @@ void temperature_sensor_power_acquire(void)
         // Initialize HAL layer with the same tsens_idx
         temperature_sensor_hal_init();
         timer1 = esp_timer_get_time();
-#if SOC_TEMPERATURE_SENSOR_SUPPORT_SLEEP_RETENTION && !SOC_TEMPERATURE_SENSOR_UNDER_PD_TOP_DOMAIN
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
-#endif
     }
     esp_os_exit_critical(&rtc_spinlock);
 }
@@ -72,16 +74,13 @@ void temperature_sensor_power_release(void)
         abort();
     } else if (s_temperature_sensor_power_cnt == 0) {
         temperature_sensor_ll_enable(false);
-        PERIPH_RCC_ATOMIC() {
+        TSENS_RCC_ATOMIC() {
             temperature_sensor_ll_bus_clk_enable(false);
         }
 #if !SOC_TSENS_IS_INDEPENDENT_FROM_ADC
         adc_apb_periph_free();
 #endif
         regi2c_saradc_disable();
-#if SOC_TEMPERATURE_SENSOR_SUPPORT_SLEEP_RETENTION && !SOC_TEMPERATURE_SENSOR_UNDER_PD_TOP_DOMAIN
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-#endif
     }
     esp_os_exit_critical(&rtc_spinlock);
 }

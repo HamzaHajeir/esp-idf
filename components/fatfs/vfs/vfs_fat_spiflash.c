@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,6 @@
 #include <string.h>
 #include "esp_check.h"
 #include "esp_log.h"
-#include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "vfs_fat_internal.h"
 #include "diskio_impl.h"
@@ -23,6 +22,8 @@
 static const char* TAG = "vfs_fat_spiflash";
 
 static vfs_fat_spiflash_ctx_t *s_ctx[FF_VOLUMES] = {};
+
+extern esp_err_t esp_vfs_set_readonly_flag(const char* base_path); // from vfs/vfs.c to set readonly flag externally
 
 static bool s_get_context_id_by_label(const char *label, uint32_t *out_id)
 {
@@ -148,9 +149,6 @@ esp_err_t esp_vfs_fat_spiflash_mount_rw_wl(const char* base_path,
     const esp_vfs_fat_mount_config_t* mount_config,
     wl_handle_t* wl_handle)
 {
-    ESP_RETURN_ON_FALSE(!(mount_config->read_only && mount_config->format_if_mount_failed),
-                         ESP_ERR_INVALID_ARG, TAG, "read_only and format_if_mount_failed are mutually exclusive");
-
     esp_err_t ret = ESP_OK;
     vfs_fat_spiflash_ctx_t *ctx = NULL;
     uint32_t ctx_id = FF_VOLUMES;
@@ -173,17 +171,17 @@ esp_err_t esp_vfs_fat_spiflash_mount_rw_wl(const char* base_path,
     char drv[3] = {(char)('0' + pdrv), ':', 0};
     ESP_GOTO_ON_ERROR(ff_diskio_register_wl_partition(pdrv, *wl_handle), fail, TAG, "ff_diskio_register_wl_partition failed pdrv=%i, error - 0x(%x)", pdrv, ret);
 
-    FATFS *fs = NULL;
+    FATFS *fs;
     esp_vfs_fat_conf_t conf = {
         .base_path = base_path,
         .fat_drive = drv,
         .max_files = mount_config->max_files,
     };
-    ret = esp_vfs_fat_register(&conf, &fs);
+    ret = esp_vfs_fat_register_cfg(&conf, &fs);
     if (ret == ESP_ERR_INVALID_STATE) {
         // it's okay, already registered with VFS
     } else if (ret != ESP_OK) {
-        ESP_LOGD(TAG, "esp_vfs_fat_register failed 0x(%x)", ret);
+        ESP_LOGD(TAG, "esp_vfs_fat_register_cfg failed 0x(%x)", ret);
         goto fail;
     }
 
@@ -210,18 +208,13 @@ esp_err_t esp_vfs_fat_spiflash_mount_rw_wl(const char* base_path,
     assert(ctx_id != FF_VOLUMES);
     s_ctx[ctx_id] = ctx;
 
-    if (data_partition->readonly || mount_config->read_only) {
+    if (data_partition->readonly) {
         esp_vfs_set_readonly_flag(base_path);
     }
 
     return ESP_OK;
 
 fail:
-    /* Unmount FatFs volume if we had registered and attempted mount (e.g. s_f_mount_rw
-     * failed). Otherwise FatFs[vol] can be left set with a dangling pointer after
-     * esp_vfs_fat_unregister_path frees the context, and the volume mutex stays
-     * created; a later f_getfree then crashes in lock_volume / ff_mutex_take. */
-    f_mount(0, drv, 0);
     esp_vfs_fat_unregister_path(base_path);
     ff_diskio_unregister(pdrv);
     free(ctx);
@@ -352,9 +345,6 @@ esp_err_t esp_vfs_fat_spiflash_mount_ro(const char* base_path,
     const char* partition_label,
     const esp_vfs_fat_mount_config_t* mount_config)
 {
-    ESP_RETURN_ON_FALSE(!(mount_config->read_only && mount_config->format_if_mount_failed),
-                         ESP_ERR_INVALID_ARG, TAG, "read_only and format_if_mount_failed are mutually exclusive");
-
     esp_err_t ret = ESP_OK;
 
     const esp_partition_t *data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
@@ -371,17 +361,17 @@ esp_err_t esp_vfs_fat_spiflash_mount_ro(const char* base_path,
     char drv[3] = {(char)('0' + pdrv), ':', 0};
     ESP_GOTO_ON_ERROR(ff_diskio_register_raw_partition(pdrv, data_partition), fail, TAG, "ff_diskio_register_raw_partition failed pdrv=%i, error - 0x(%x)", pdrv, ret);
 
-    FATFS *fs = NULL;
+    FATFS *fs;
     esp_vfs_fat_conf_t conf = {
         .base_path = base_path,
         .fat_drive = drv,
         .max_files = mount_config->max_files,
     };
-    ret = esp_vfs_fat_register(&conf, &fs);
+    ret = esp_vfs_fat_register_cfg(&conf, &fs);
     if (ret == ESP_ERR_INVALID_STATE) {
         // it's okay, already registered with VFS
     } else if (ret != ESP_OK) {
-        ESP_LOGD(TAG, "esp_vfs_fat_register failed 0x(%x)", ret);
+        ESP_LOGD(TAG, "esp_vfs_fat_register_cfg failed 0x(%x)", ret);
         goto fail;
     }
 
@@ -393,14 +383,13 @@ esp_err_t esp_vfs_fat_spiflash_mount_ro(const char* base_path,
         goto fail;
     }
 
-    if (data_partition->readonly || mount_config->read_only) {
+    if (data_partition->readonly) {
         esp_vfs_set_readonly_flag(base_path);
     }
 
     return ESP_OK;
 
 fail:
-    f_mount(0, drv, 0);   /* Unmount on failed mount so FatFs[vol] and mutex are cleaned up */
     esp_vfs_fat_unregister_path(base_path);
     ff_diskio_unregister(pdrv);
     return ret;

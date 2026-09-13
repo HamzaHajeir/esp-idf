@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 #include "common/bt_defs.h"
 #include "device/bdaddr.h"
 #include "btc/btc_dm.h"
@@ -78,12 +79,7 @@ void bta_hf_client_bqb_esco_s4_ctrl(BOOLEAN enable)
 /************************************************************************************
 **  Static variables
 ************************************************************************************/
-const int btc_hf_client_version =
-#if UC_BT_HFP_LC3_ENABLE
-    HFP_HF_VERSION_1_9;
-#else
-    HFP_HF_VERSION_1_7;
-#endif
+const int btc_hf_client_version = HFP_HF_VERSION_1_7;
 
 #if HFP_DYNAMIC_MEMORY == FALSE
 static hf_client_local_param_t hf_client_local_param;
@@ -206,7 +202,7 @@ bt_status_t btc_hf_client_init(void)
 
     clear_state();
 
-#if (BR_EDR_SET_CTRL_SCO_DATAPATH == TRUE)
+#if (BT_CONTROLLER_INCLUDED == TRUE)
 #if BTM_SCO_HCI_INCLUDED
     uint8_t data_path = ESP_SCO_DATA_PATH_HCI;
 #else
@@ -541,8 +537,6 @@ static bt_status_t btc_hf_client_send_chld_cmd(esp_hf_chld_type_t type, int idx)
         }
         return BT_STATUS_UNSUPPORTED;
 
-    default:
-        return BT_STATUS_FAIL;
     }
     return BT_STATUS_SUCCESS;
 }
@@ -801,9 +795,6 @@ bt_status_t btc_hf_client_execute_service(BOOLEAN b_enable)
         /* Enable and register with BTA-HFClient */
         BTA_HfClientEnable(bte_hf_client_evt);
         hf_client_local_param.btc_hf_client_features = BTC_HF_CLIENT_FEATURES;
-#if UC_BT_HFP_LC3_ENABLE
-        hf_client_local_param.btc_hf_client_features |= BTA_HF_CLIENT_FEAT_SWB;
-#endif
         if (btc_hf_client_version >= HFP_HF_VERSION_1_7)
         {
             hf_client_local_param.btc_hf_client_features |= BTA_HF_CLIENT_FEAT_ESCO_S4;
@@ -1078,6 +1069,7 @@ void btc_hf_client_cb_handler(btc_msg_t *msg)
                     param.cnum.type = ESP_HF_SUBSCRIBER_SERVICE_TYPE_UNKNOWN;
                 }
                 btc_hf_client_cb_to_app(ESP_HF_CLIENT_CNUM_EVT, &param);
+                break;
             } while (0);
             break;
         case BTA_HF_CLIENT_BTRH_EVT:
@@ -1114,17 +1106,6 @@ void btc_hf_client_cb_handler(btc_msg_t *msg)
         case BTA_HF_CLIENT_AUDIO_MSBC_OPEN_EVT:
             do {
                 param.audio_stat.state = ESP_HF_CLIENT_AUDIO_STATE_CONNECTED_MSBC;
-                memcpy(param.audio_stat.remote_bda, &hf_client_local_param.btc_hf_client_cb.connected_bda,
-                       sizeof(esp_bd_addr_t));
-                hf_client_local_param.btc_hf_client_cb.sync_conn_hdl = p_data->hdr.sync_conn_handle;
-                param.audio_stat.sync_conn_handle = p_data->hdr.sync_conn_handle;
-                param.audio_stat.preferred_frame_size = p_data->audio_stat.preferred_frame_size;
-                btc_hf_client_cb_to_app(ESP_HF_CLIENT_AUDIO_STATE_EVT, &param);
-            } while (0);
-            break;
-        case BTA_HF_CLIENT_AUDIO_LC3_OPEN_EVT:
-            do {
-                param.audio_stat.state = ESP_HF_CLIENT_AUDIO_STATE_CONNECTED_LC3;
                 memcpy(param.audio_stat.remote_bda, &hf_client_local_param.btc_hf_client_cb.connected_bda,
                        sizeof(esp_bd_addr_t));
                 hf_client_local_param.btc_hf_client_cb.sync_conn_hdl = p_data->hdr.sync_conn_handle;

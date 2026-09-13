@@ -36,12 +36,6 @@ I2C 是一种串行同步半双工通信协议，总线上可以同时挂载多�
 
     请注意，SCL 的频率越高，上拉电阻应该越小（但不能小于 1 kΩ）。较大的电阻会降低电流，增加时钟切换时间并降低频率。通常推荐 2 kΩ 到 5 kΩ 左右的电阻，也可根据电流需求进行一定调整。
 
-.. only:: esp32
-
-    .. note::
-
-        ESP32 的 I2C 控制器作为从机时不支持时钟拉伸（clock stretching）。因此除驱动配置外，应用层还需关注主从设备之间的速度匹配与同步：若主机处理速度过快、从机处理较慢，可能导致通信异常或数据丢失。建议使用应用层数据校验、gpio 信号同步等方式实现主从之间数据同步。使用前请根据使用场景确认 ESP32 的从机模式是否满足您的项目需求。
-
 I2C 时钟配置
 ------------
 
@@ -53,20 +47,42 @@ I2C 时钟配置
     :SOC_I2C_SUPPORT_APB: - :cpp:enumerator:`i2c_clock_source_t::I2C_CLK_SRC_APB`：以 APB 时钟作为 I2C 时钟源。
     :SOC_I2C_SUPPORT_REF_TICK: - :cpp:enumerator:`i2c_clock_source_t::I2C_CLK_SRC_REF_TICK`：1 MHZ 时钟。
 
+I2C 文件结构
+------------
+
+.. figure:: ../../../_static/diagrams/i2c/i2c_code_structure.png
+    :align: center
+    :alt: I2C 文件结构
+
+    I2C 文件结构
+
+**需要包含在 I2C 应用程序中的公共头文件**
+
+- ``i2c.h``：遗留 I2C API 的头文件（用于使用旧驱动程序的应用）。
+- ``i2c_master.h``：提供标准通信模式下特定 API 的头文件（用于使用主机模式的新驱动程序的应用）。
+- ``i2c_slave.h``：提供标准通信模式下特定 API 的头文件（用于使从机模式的新驱动程序的应用）。
+
+.. note::
+
+    旧驱动程序与新驱动程序无法共存。包含 ``i2c.h`` 头文件可使用旧驱动程序，或包含 ``i2c_master.h`` 和 ``i2c_slave.h`` 来使用新驱动程序。请注意，现已弃用旧驱动程序，之后将移除。
+
+**上述头文件中包含的公共头文件**
+
+- ``i2c_types_legacy.h``：仅在旧驱动程序中使用的旧公共类型。
+- ``i2c_types.h``：提供公共类型的头文件。
+
 功能概述
 --------
 
 I2C 驱动程序提供以下服务：
 
-- :ref:`i2c-resource-allocation` - 包括如何使用正确的配置来分配 I2C 总线，以及如何在完成工作后回收资源。
-- :ref:`i2c-master-controller` - 包括 I2C 主机控制器的行为，介绍了数据发送、数据接收和数据的双向传输。
-- :ref:`i2c-slave-controller` - 包括 I2C 从机控制器的行为，涉及数据发送和数据接收。
-- :ref:`i2c-power-management` - 描述了不同时钟源对功耗的影响。
-- :ref:`i2c-iram-safe` - 描述了如何在 cache 被禁用时正常运行 I2C 中断。
-- :ref:`i2c-thread-safety` - 列出了驱动程序中线程安全的 API。
-- :ref:`i2c-kconfig-options` - 列出了支持的 Kconfig 选项，这些选项可以对驱动程序产生不同影响。
-
-.. _i2c-resource-allocation:
+- `资源分配 <#resource-allocation>`__ - 包括如何使用正确的配置来分配 I2C 总线，以及如何在完成工作后回收资源。
+- `I2C 主机控制器 <#i2c_master_controller>`__ - 包括 I2C 主机控制器的行为，介绍了数据发送、数据接收和数据的双向传输。
+- `I2C 从机控制器 <#i2c_slave_controller>`__ - 包括 I2C 从机控制器的行为，涉及数据发送和数据接收。
+- `电源管理 <#power-management>`__ - 描述了不同时钟源对功耗的影响。
+- `IRAM 安全 <#iram-safe>`__ - 描述了如何在 cache 被禁用时正常运行 I2C 中断。
+- `线程安全 <#thread-safety>`__ - 列出了驱动程序中线程安全的 API。
+- `Kconfig 选项 <#kconfig-options>`__ - 列出了支持的 Kconfig 选项，这些选项可以对驱动程序产生不同影响。
 
 资源分配
 ^^^^^^^^
@@ -89,7 +105,7 @@ I2C 主机总线需要 :cpp:type:`i2c_master_bus_config_t` 指定的配置：
 - :cpp:member:`i2c_master_bus_config_t::i2c_port` 设置控制器使用的 I2C 端口。
 - :cpp:member:`i2c_master_bus_config_t::sda_io_num` 设置串行数据总线 (SDA) 的 GPIO 编号。
 - :cpp:member:`i2c_master_bus_config_t::scl_io_num` 设置串行时钟总线 (SCL) 的 GPIO 编号。
-- :cpp:member:`i2c_master_bus_config_t::clk_source` 选择 I2C 总线的时钟源。可用时钟列表见 :cpp:type:`i2c_clock_source_t`。有关不同时钟源对功耗的影响，请参阅 :ref:`i2c-power-management` 部分。
+- :cpp:member:`i2c_master_bus_config_t::clk_source` 选择 I2C 总线的时钟源。可用时钟列表见 :cpp:type:`i2c_clock_source_t`。有关不同时钟源对功耗的影响，请参阅 `电源管理 <#power-management>`__ 部分。
 - :cpp:member:`i2c_master_bus_config_t::glitch_ignore_cnt` 设置主机总线的毛刺周期。如果线上的毛刺周期小于设置的值（通常设为 7），则可以被滤除。
 - :cpp:member:`i2c_master_bus_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则驱动程序将使用低或中优先级的中断（优先级可设为 1、2 或 3 中的一个），若未设置，则将使用 :cpp:member:`i2c_master_bus_config_t::intr_priority` 指示的优先级。请使用数字形式（1、2、3），不要用位掩码形式（(1<<1)、(1<<2)、(1<<3)）。
 - :cpp:member:`i2c_master_bus_config_t::trans_queue_depth` 设置内部传输队列的深度，但仅在异步传输中有效。
@@ -101,7 +117,7 @@ I2C 主机总线需要 :cpp:type:`i2c_master_bus_config_t` 指定的配置：
 I2C 主机设备需要 :cpp:type:`i2c_device_config_t` 指定的配置：
 
 - :cpp:member:`i2c_device_config_t::dev_addr_length` 配置从机设备的地址位长度，可从枚举 :cpp:enumerator:`I2C_ADDR_BIT_LEN_7` 或 :cpp:enumerator:`I2C_ADDR_BIT_LEN_10` （如果支持）中进行选择。
-- :cpp:member:`i2c_device_config_t::device_address` 设置 I2C 设备原始地址，请直接将设备地址解析到此成员。对于使用 7 位地址的设备，请使用 **7 位** 地址，不要使用带读/写位的 8 位地址。
+- :cpp:member:`i2c_device_config_t::device_address` 设置 I2C 设备原始地址，请直接将设备地址解析到此成员。例如，若设备地址为 0x28，则将 0x28 解析到 :cpp:member:`i2c_device_config_t::device_address`，不要带写入或读取位。
 - :cpp:member:`i2c_device_config_t::scl_speed_hz` 设置此设备的 SCL 线频率。
 - :cpp:member:`i2c_device_config_t::scl_wait_us` 设置 SCL 等待时间（以微秒为单位）。通常此值较大，因为从机延伸时间会很长（甚至可能延伸到 12 ms）。设置为 ``0`` 表示使用默认的寄存器值。
 
@@ -202,7 +218,7 @@ I2C 从机设备需要 :cpp:type:`i2c_slave_config_t` 指定的配置：
     - :cpp:member:`i2c_slave_config_t::i2c_port` 设置控制器使用的 I2C 端口。
     - :cpp:member:`i2c_slave_config_t::sda_io_num` 设置串行数据总线 (SDA) 的 GPIO 编号。
     - :cpp:member:`i2c_slave_config_t::scl_io_num` 设置串行时钟总线 (SCL) 的 GPIO 编号。
-    - :cpp:member:`i2c_slave_config_t::clk_source` 选择 I2C 总线的时钟源。可用时钟列表见 :cpp:type:`i2c_clock_source_t`。有关不同时钟源对功耗的影响，请参阅 :ref:`i2c-power-management`。
+    - :cpp:member:`i2c_slave_config_t::clk_source` 选择 I2C 总线的时钟源。可用时钟列表见 :cpp:type:`i2c_clock_source_t`。有关不同时钟源对功耗的影响，请参阅 `电源管理 <#power-management>`__。
     - :cpp:member:`i2c_slave_config_t::send_buf_depth` 设置发送软件 buffer 的长度。
     - :cpp:member:`i2c_slave_config_t::slave_addr` 设置从机地址。
     - :cpp:member:`i2c_slave_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0`` ，则驱动程序将使用低或中优先级的中断（优先级可设为 1、2 或 3 中的一个），若未设置，则将使用 :cpp:member:`i2c_slave_config_t::intr_priority` 指示的优先级。请使用数字形式（1、2、3），不要用位掩码形式（(1<<1)、(1<<2)、(1<<3)）。请注意，中断优先级一旦设置完成，在调用 :cpp:func:`i2c_del_slave_device` 之前都无法更改。
@@ -233,7 +249,6 @@ I2C 从机设备需要 :cpp:type:`i2c_slave_config_t` 指定的配置：
 
 如果不再需要之前安装的 I2C 总线，建议调用 :cpp:func:`i2c_del_slave_device` 来回收资源，以释放底层硬件。
 
-.. _i2c-master-controller:
 
 I2C 主机控制器
 ^^^^^^^^^^^^^^
@@ -487,8 +502,6 @@ I2C 主机执行自定义事务
 
     i2c_master_execute_defined_operations(dev_handle, i2c_ops, sizeof(i2c_ops) / sizeof(i2c_operation_job_t), -1);
 
-.. _i2c-slave-controller:
-
 I2C 从机控制器
 ^^^^^^^^^^^^^^
 
@@ -618,14 +631,12 @@ I2C 从机事件回调函数列表见 :cpp:type:`i2c_slave_event_callbacks_t`。
     - :cpp:member:`i2c_slave_event_callbacks_t::on_request` 为请求事件设置回调函数。
     - :cpp:member:`i2c_slave_event_callbacks_t::on_receive` 为 receive 事件设置回调函数。函数原型在 :cpp:type:`i2c_slave_received_callback_t` 中声明。
 
-.. _i2c-power-management:
-
 电源管理
 ^^^^^^^^
 
 .. only:: SOC_I2C_SUPPORT_APB
 
-    启用电源管理（即打开 :menuitem:`CONFIG_PM_ENABLE`），系统会在进入 Light-sleep 模式前调整或暂停 I2C FIFO 的时钟源，这可能会导致 I2C 信号改变，传输或接收到无效数据。
+    启用电源管理（即打开 :ref:`CONFIG_PM_ENABLE`），系统会在进入 Light-sleep 模式前调整或暂停 I2C FIFO 的时钟源，这可能会导致 I2C 信号改变，传输或接收到无效数据。
 
     但驱动程序可以通过获取 :cpp:enumerator:`ESP_PM_APB_FREQ_MAX` 类型的电源管理锁来防止系统改变 APB 频率。每当用户创建一个以 :cpp:enumerator:`I2C_CLK_SRC_APB` 为时钟源的 I2C 总线，驱动程序将在开始 I2C 操作时获取电源管理锁，并在结束 I2C 操作时自动释放锁。
 
@@ -637,22 +648,18 @@ I2C 从机事件回调函数列表见 :cpp:type:`i2c_slave_event_callbacks_t`。
 
     如果控制器以 :cpp:enumerator:`I2C_CLK_SRC_XTAL` 为时钟源，则驱动程序不会为其安装电源管理锁，因为对于低功耗应用，只要时钟源能够提供足够的分辨率即可。
 
-.. _i2c-iram-safe:
-
 IRAM 安全
 ^^^^^^^^^
 
 默认情况下，若 cache 因写入或擦除 flash 等原因而被禁用时，将推迟 I2C 中断。此时事件回调函数将无法按时执行，会影响实时应用的系统响应。
 
-Kconfig 选项 :menuitem:`CONFIG_I2C_ISR_IRAM_SAFE` 能够做到以下几点：
+Kconfig 选项 :ref:`CONFIG_I2C_ISR_IRAM_SAFE` 能够做到以下几点：
 
 1. 即使 cache 被禁用，I2C 中断依旧正常运行。
 2. 将 ISR 使用的所有函数放入 IRAM 中。
 3. 将驱动程序对象放入 DRAM 中（以防它被意外映射到 PSRAM 中）。
 
 启用以上选项，即使 cache 被禁用，I2C 中断依旧正常运行，但会增加 IRAM 的消耗。
-
-.. _i2c-thread-safety:
 
 线程安全
 ^^^^^^^^
@@ -673,13 +680,11 @@ I2C 从机操作函数也通过总线操作信号保证线程安全。
 
 其他函数不保证线程安全。因此，应避免在没有互斥保护的不同任务中调用这些函数。
 
-.. _i2c-kconfig-options:
-
 Kconfig 选项
 ^^^^^^^^^^^^
 
-- :menuitem:`CONFIG_I2C_ISR_IRAM_SAFE` 将在 cache 被禁用时控制默认的 ISR 处理程序正常工作，详情请参阅 :ref:`i2c-iram-safe`。
-- :menuitem:`CONFIG_I2C_ENABLE_DEBUG_LOG` 可启用调试日志，但会增加固件二进制文件大小。
+- :ref:`CONFIG_I2C_ISR_IRAM_SAFE` 将在 cache 被禁用时控制默认的 ISR 处理程序正常工作，详情请参阅 `IRAM 安全 <#iram-safe>`__。
+- :ref:`CONFIG_I2C_ENABLE_DEBUG_LOG` 可启用调试日志，但会增加固件二进制文件大小。
 
 应用示例
 --------

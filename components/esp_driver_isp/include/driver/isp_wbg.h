@@ -21,9 +21,7 @@ extern "C" {
  * @brief ISP BLC configurations
  */
 typedef struct {
-    struct {
-        uint32_t update_once_configured : 1;    ///< If set, apply configuration to hardware immediately; otherwise defer to frame boundary
-    } flags;                                    ///< Driver behaviour flags
+    //for future proof
 } esp_isp_wbg_config_t;
 
 /**

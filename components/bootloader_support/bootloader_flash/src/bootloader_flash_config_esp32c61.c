@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -128,7 +128,7 @@ static void update_flash_config(const esp_image_header_t *bootloader_hdr)
         size = 2;
     }
     // Set flash chip size
-    esp_rom_spiflash_config_param(rom_spiflash_legacy_data->chip.device_id, size * 0x100000, 0x10000, 0x1000, 0x100, 0xffff);    // TODO: IDF-15747 set mode
+    esp_rom_spiflash_config_param(rom_spiflash_legacy_data->chip.device_id, size * 0x100000, 0x10000, 0x1000, 0x100, 0xffff);    // TODO: set mode
 }
 
 static void print_flash_info(const esp_image_header_t *bootloader_hdr)
@@ -230,12 +230,6 @@ esp_err_t bootloader_init_spi_flash(void)
 {
     bootloader_init_mspi_clock();
     bootloader_init_flash_configure();
-
-#if CONFIG_BOOTLOADER_FLASH_DC_AWARE
-    // Reset flash, clear volatile bits DC[0:1]. Make it work under default mode to boot.
-    bootloader_spi_flash_reset();
-#endif
-
     bootloader_spi_flash_resume();
     if ((void*)bootloader_flash_unlock != (void*)bootloader_flash_unlock_default) {
         ESP_EARLY_LOGD(TAG, "Using overridden bootloader_flash_unlock");

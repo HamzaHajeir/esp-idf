@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +28,7 @@ extern "C" {
 #define ISP_LL_PERIPH_NUMS                    1U
 
 #define ISP_LL_HSIZE_MAX                      1920
-#define ISP_LL_VSIZE_MAX                      1280
+#define ISP_LL_VSIZE_MAX                      1080
 
 /*---------------------------------------------------------------
                       Clock
@@ -71,18 +71,6 @@ extern "C" {
 #define ISP_LL_EVENT_WBG_FRAME                (1<<30)
 #define ISP_LL_EVENT_CROP_ERR                 (1<<31)
 
-/*---------------------------------------------------------------
-                    Error Events
----------------------------------------------------------------*/
-#define ISP_LL_EVENT_DATA_TYPE_ERR            (1<<0)
-#define ISP_LL_EVENT_ASYNC_FIFO_OVF           (1<<1)
-#define ISP_LL_EVENT_BUF_FULL                 (1<<2)
-#define ISP_LL_EVENT_HVNUM_SETTING_ERR        (1<<3)
-#define ISP_LL_EVENT_DATA_TYPE_SETTING_ERR    (1<<4)
-#define ISP_LL_EVENT_MIPI_HNUM_UNMATCH        (1<<5)
-#define ISP_LL_EVENT_GAMMA_XCOORD_ERR         (1<<7)
-#define ISP_LL_EVENT_CROP_ERR                 (1<<31)
-
 #if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
 #define ISP_LL_EVENT_ALL_MASK                 (0xFFFFFFFF)
 #else
@@ -94,7 +82,6 @@ extern "C" {
 #define ISP_LL_EVENT_SHARP_MASK               (ISP_LL_EVENT_SHARP_FRAME)
 #define ISP_LL_EVENT_HIST_MASK                (ISP_LL_EVENT_HIST_FDONE)
 #define ISP_LL_EVENT_COLOR_MASK               (ISP_LL_EVENT_COLOR_FRAME)
-#define ISP_LL_EVENT_ERROR_MASK               (ISP_LL_EVENT_DATA_TYPE_ERR | ISP_LL_EVENT_ASYNC_FIFO_OVF | ISP_LL_EVENT_BUF_FULL | ISP_LL_EVENT_HVNUM_SETTING_ERR | ISP_LL_EVENT_DATA_TYPE_SETTING_ERR | ISP_LL_EVENT_MIPI_HNUM_UNMATCH | ISP_LL_EVENT_CROP_ERR) // Due to a hardware issue (DIG-820), ISP_LL_EVENT_GAMMA_XCOORD_ERR will always get triggered when a gamma update is set on P4, so we will not use it
 
 /*---------------------------------------------------------------
                       AF
@@ -122,6 +109,15 @@ extern "C" {
 #define ISP_LL_BF_DEFAULT_TEMPLATE_VAL        15
 
 /*---------------------------------------------------------------
+                      DVP
+---------------------------------------------------------------*/
+#define ISP_LL_DVP_CTLR_NUMS          1U
+#define ISP_LL_DVP_DATA_WIDTH_MAX     16
+#define ISP_LL_DVP_DATA_TYPE_RAW8     0x2A
+#define ISP_LL_DVP_DATA_TYPE_RAW10    0x2B
+#define ISP_LL_DVP_DATA_TYPE_RAW12    0x2C
+
+/*---------------------------------------------------------------
                       Color
 ---------------------------------------------------------------*/
 #define ISP_LL_COLOR_CONTRAST_MAX       0xff
@@ -129,6 +125,12 @@ extern "C" {
 #define ISP_LL_COLOR_HUE_MAX            359
 #define ISP_LL_COLOR_BRIGNTNESS_MIN     -128
 #define ISP_LL_COLOR_BRIGNTNESS_MAX     127
+
+/*---------------------------------------------------------------
+                      LSC
+---------------------------------------------------------------*/
+#define ISP_LL_LSC_GRID_HEIGHT        32
+#define ISP_LL_LSC_GRID_WIDTH         32
 
 /*---------------------------------------------------------------
                       CCM
@@ -146,28 +148,6 @@ extern "C" {
                       CCM
 ---------------------------------------------------------------*/
 #define ISP_LL_HIST_CTLR_NUMS           1U
-
-/*---------------------------------------------------------------
-                      DVP
----------------------------------------------------------------*/
-#define ISP_LL_DVP_CTLR_NUMS          1U
-#define ISP_LL_DVP_DATA_WIDTH_MAX     16
-#define ISP_LL_DVP_DATA_TYPE_RAW8     0x2A
-#define ISP_LL_DVP_DATA_TYPE_RAW10    0x2B
-#define ISP_LL_DVP_DATA_TYPE_RAW12    0x2C
-
-/*---------------------------------------------------------------
-                      LSC
----------------------------------------------------------------*/
-#define ISP_LL_LSC_GRID_HEIGHT        32
-#define ISP_LL_LSC_GRID_WIDTH         32
-
-/*---------------------------------------------------------------
-                      LUT
----------------------------------------------------------------*/
-#define ISP_LL_LUT_LSC_SIZE_MAX       560
-#define ISP_LL_LUT_DPC_SIZE_MAX       512
-#define ISP_LL_LUT_AWB_SIZE_MAX       104
 
 typedef union {
     struct {
@@ -201,22 +181,6 @@ typedef union {
     };
     uint32_t val;
 } isp_ll_awb_rgb_ratio_t;
-
-/**
- * @brief DPC input color
- */
-typedef enum {
-    ISP_LL_DPC_INPUT_COLOR_WHITE,    ///< White input color
-    ISP_LL_DPC_INPUT_COLOR_BLACK,    ///< Black input color
-} isp_ll_dpc_input_color_t;
-
-/**
- * @brief DPC dynamic correction method
- */
-typedef enum {
-    ISP_LL_DPC_DYNAMIC_CORRECTION_METHOD_SIMPLE,   ///< Hardware method 1
-    ISP_LL_DPC_DYNAMIC_CORRECTION_METHOD_HARD,     ///< Hardware method 2
-} isp_ll_dpc_dynamic_correction_method_t;
 
 /**
  * @brief ISP LUT
@@ -276,9 +240,10 @@ typedef enum {
 /**
  * @brief Enable the bus clock for ISP module
  *
+ * @param hw    Hardware instance address
  * @param en    enable / disable
  */
-static inline void isp_ll_enable_module_clock(bool en)
+static inline void isp_ll_enable_module_clock(isp_dev_t *hw, bool en)
 {
     HP_SYS_CLKRST.peri_clk_ctrl25.reg_isp_clk_en = en;
 }
@@ -292,8 +257,10 @@ static inline void isp_ll_enable_module_clock(bool en)
 
 /**
  * @brief Reset the ISP module
+ *
+ * @param hw    Hardware instance address
  */
-static inline void isp_ll_reset_module_clock(void)
+static inline void isp_ll_reset_module_clock(isp_dev_t *hw)
 {
     HP_SYS_CLKRST.hp_rst_en0.reg_rst_en_isp = 1;
     HP_SYS_CLKRST.hp_rst_en0.reg_rst_en_isp = 0;
@@ -309,19 +276,20 @@ static inline void isp_ll_reset_module_clock(void)
 /**
  * @brief Select ISP clock source
  *
+ * @param hw       Hardware instance address
  * @param clk_src  clock source, see valid sources in type `soc_periph_isp_clk_src_t`
  */
-static inline void isp_ll_select_clk_source(soc_periph_isp_clk_src_t clk_src)
+static inline void isp_ll_select_clk_source(isp_dev_t *hw, soc_periph_isp_clk_src_t clk_src)
 {
     uint32_t clk_val = 0;
     switch (clk_src) {
     case ISP_CLK_SRC_XTAL:
         clk_val = 0;
         break;
-    case ISP_CLK_SRC_PLL240:
+    case ISP_CLK_SRC_PLL160:
         clk_val = 1;
         break;
-    case ISP_CLK_SRC_PLL160:
+    case ISP_CLK_SRC_PLL240:
         clk_val = 2;
         break;
     default:
@@ -342,9 +310,10 @@ static inline void isp_ll_select_clk_source(soc_periph_isp_clk_src_t clk_src)
 /**
  * @brief Set ISP clock div
  *
+ * @param hw     Hardware instance address
  * @param div    Clock division with integral and decimal part
  */
-static inline void isp_ll_set_clock_div(const hal_utils_clk_div_t *clk_div)
+static inline void isp_ll_set_clock_div(isp_dev_t *hw, const hal_utils_clk_div_t *clk_div)
 {
     HAL_ASSERT(clk_div->integer > 0 && clk_div->integer <= ISP_LL_TX_MAX_CLK_INT_DIV);
     HAL_FORCE_MODIFY_U32_REG_FIELD(HP_SYS_CLKRST.peri_clk_ctrl26, reg_isp_clk_div_num, clk_div->integer - 1);
@@ -549,82 +518,6 @@ static inline void isp_ll_enable_line_start_packet_exist(isp_dev_t *hw, bool en)
 static inline void isp_ll_enable_line_end_packet_exist(isp_dev_t *hw, bool en)
 {
     hw->frame_cfg.hsync_end_exist = en;
-}
-
-/**
- * @brief Set DMA input data type
- *
- * @param[in] hw         Hardware instance address
- * @param[in] format     color format, see `isp_color_t`
- *
- * @return true for valid format, false for invalid format
- */
-static inline bool isp_ll_dma_set_data_type(isp_dev_t *hw, isp_color_t format)
-{
-    bool valid = false;
-
-    switch (format) {
-    case ISP_COLOR_RAW8:
-        hw->dma_cntl.dma_data_type = 0x2A;
-        valid = true;
-        break;
-    case ISP_COLOR_RAW10:
-        hw->dma_cntl.dma_data_type = 0x2B;
-        valid = true;
-        break;
-    case ISP_COLOR_RAW12:
-        hw->dma_cntl.dma_data_type = 0x2C;
-        valid = true;
-        break;
-    default:
-        break;
-    }
-
-    return valid;
-}
-
-/**
- * @brief Set DMA input burst length in units of 64-bit
- *
- * @param[in] hw         Hardware instance address
- * @param[in] burst_len  Number of 64-bit beats in one DMA burst
- */
-static inline void isp_ll_dma_set_burst_len(isp_dev_t *hw, uint32_t burst_len)
-{
-    hw->dma_cntl.dma_burst_len = burst_len;
-}
-
-/**
- * @brief Set DMA input total frame size in units of 64-bit
- *
- * @param[in] hw      Hardware instance address
- * @param[in] num64b  Number of 64-bit words in one frame
- */
-static inline void isp_ll_dma_set_frame_size(isp_dev_t *hw, uint32_t num64b)
-{
-    hw->dma_raw_data.dma_raw_num_total = num64b;
-    hw->dma_raw_data.dma_raw_num_total_set = 1;
-}
-
-/**
- * @brief Apply DMA input registers
- *
- * @param[in] hw  Hardware instance address
- */
-static inline void isp_ll_dma_apply_config(isp_dev_t *hw)
-{
-    hw->dma_cntl.dma_update_reg = 1;
-    while (hw->dma_cntl.dma_update_reg);
-}
-
-/**
- * @brief Trigger one DMA input frame transfer
- *
- * @param[in] hw  Hardware instance address
- */
-static inline void isp_ll_dma_trigger_frame(isp_dev_t *hw)
-{
-    hw->dma_cntl.dma_en = 1;
 }
 
 /**
@@ -1469,198 +1362,6 @@ static inline void isp_ll_ae_env_detector_set_period(isp_dev_t *hw, uint32_t per
 }
 
 /*---------------------------------------------------------------
-                      DPC
----------------------------------------------------------------*/
-/**
- * @brief Set DPC clock control mode
- *
- * @param[in] hw      Hardware instance address
- * @param[in] mode    'isp_ll_pipeline_clk_ctrl_t`
- */
-static inline void isp_ll_dpc_set_clk_ctrl_mode(isp_dev_t *hw, isp_ll_pipeline_clk_ctrl_t mode)
-{
-    hw->clk_en.clk_dpc_force_on = mode;
-}
-
-/**
- * @brief Enable / Disable DPC
- *
- * @param[in] hw      Hardware instance address
- * @param[in] enable  Enable / Disable
- */
-static inline void isp_ll_dpc_enable(isp_dev_t *hw, bool enable)
-{
-    hw->cntl.dpc_en = enable;
-}
-
-/**
- * @brief Enable / Disable DPC check mode
- *
- * @param[in] hw      Hardware instance address
- * @param[in] enable  Enable / Disable
- */
-static inline void isp_ll_dpc_enable_check_mode(isp_dev_t *hw, bool enable)
-{
-    hw->dpc_ctrl.dpc_check_en = enable;
-}
-
-/**
- * @brief Enable / Disable DPC check mode data
- *
- * @param[in] hw      Hardware instance address
- * @param[in] enable  Enable / Disable
- */
-static inline void isp_ll_dpc_enable_check_mode_data(isp_dev_t *hw, bool enable)
-{
-    hw->dpc_ctrl.dpc_check_od_en = enable;
-}
-
-/**
- * @brief Enable / Disable DPC static correction
- *
- * @param[in] hw      Hardware instance address
- * @param[in] enable  Enable / Disable
- */
-static inline void isp_ll_dpc_enable_static_correction(isp_dev_t *hw, bool enable)
-{
-    hw->dpc_ctrl.sta_en = enable;
-}
-
-/**
- * @brief Set DPC input color
- *
- * @param[in] hw      Hardware instance address
- * @param[in] color   DPC input color
- */
-static inline void isp_ll_dpc_set_input_color(isp_dev_t *hw, isp_ll_dpc_input_color_t color)
-{
-    hw->dpc_ctrl.dpc_black_en = color;
-}
-
-/**
- * @brief Enable / Disable DPC dynamic correction
- *
- * @param[in] hw      Hardware instance address
- * @param[in] enable  Enable / Disable
- */
-static inline void isp_ll_dpc_enable_dynamic_correction(isp_dev_t *hw, bool enable)
-{
-    hw->dpc_ctrl.dyn_en = enable;
-}
-
-/**
- * @brief Check whether DPC dynamic correction is enabled
- *
- * @param[in] hw Hardware instance address
- *
- * @return True if dynamic correction is enabled
- */
-static inline bool isp_ll_dpc_is_dynamic_correction_enabled(isp_dev_t *hw)
-{
-    return hw->dpc_ctrl.dyn_en;
-}
-
-/**
- * @brief Set DPC dynamic correction method
- *
- * @param[in] hw      Hardware instance address
- * @param[in] method  DPC dynamic correction method
- */
-static inline void isp_ll_dpc_set_dynamic_correction_method(isp_dev_t *hw, isp_ll_dpc_dynamic_correction_method_t method)
-{
-    hw->dpc_ctrl.dpc_method_sel = method;
-}
-
-static inline void isp_ll_dpc_set_low_thresh(isp_dev_t *hw, uint32_t thresh)
-{
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->dpc_conf, dpc_threshold_l, thresh);
-}
-
-/**
- * @brief Set DPC high threshold
- *
- * @param[in] hw      Hardware instance address
- * @param[in] thresh  High threshold
- */
-static inline void isp_ll_dpc_set_high_thresh(isp_dev_t *hw, uint32_t thresh)
-{
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->dpc_conf, dpc_threshold_h, thresh);
-}
-
-/**
- * @brief Set DPC dynamic correction method 1 dark factor
- *
- * @param[in] hw      Hardware instance address
- * @param[in] factor  Dynamic correction method 1 dark factor
- */
-static inline void isp_ll_dpc_set_dynamic_correction_method_1_dark_factor(isp_dev_t *hw, uint32_t factor)
-{
-    hw->dpc_conf.dpc_factor_dark = factor;
-}
-
-/**
- * @brief Set DPC dynamic correction method 1 bright factor
- *
- * @param[in] hw      Hardware instance address
- * @param[in] factor  Dynamic correction method 1 bright factor
- */
-static inline void isp_ll_dpc_set_dynamic_correction_method_1_bright_factor(isp_dev_t *hw, uint32_t factor)
-{
-    hw->dpc_conf.dpc_factor_brig = factor;
-}
-
-/**
- * @brief Get DPC dead pixel count
- *
- * @param[in] hw      Hardware instance address
- *
- * @return Dead pixel count
- */
-static inline uint32_t isp_ll_dpc_get_deadpix_cnt(isp_dev_t *hw)
-{
-    return hw->dpc_deadpix_cnt.dpc_deadpix_cnt;
-}
-
-/**
- * @brief Set DPC LUT command for read/write
- *
- * @param[in] hw        Hardware instance address
- * @param[in] is_write  Is write or not (true for write, false for read)
- * @param[in] addr      LUT address
- */
-static inline void isp_ll_lut_dpc_set_cmd(isp_dev_t *hw, bool is_write, uint32_t addr)
-{
-    uint32_t val = 0;
-    val |= is_write ? (1 << 16) : 0;
-    val |= addr & ((1 << 12) - 1);
-    val |= ISP_LL_LUT_DPC << 12;
-    hw->lut_cmd.val = val;
-}
-
-/**
- * @brief Set DPC LUT write data
- *
- * @param[in] hw        Hardware instance address
- * @param[in] data      Data to write
- */
-static inline void isp_ll_lut_dpc_set_wdata(isp_dev_t *hw, uint32_t data)
-{
-    hw->lut_wdata.lut_wdata = data;
-}
-
-/**
- * @brief Get DPC LUT read data
- *
- * @param[in] hw        Hardware instance address
- *
- * @return Read data
- */
-static inline uint32_t isp_ll_lut_dpc_get_rdata(isp_dev_t *hw)
-{
-    return hw->lut_rdata.lut_rdata;
-}
-
-/*---------------------------------------------------------------
                       LSC
 ---------------------------------------------------------------*/
 /**
@@ -1675,7 +1376,7 @@ static inline void isp_ll_lsc_set_clk_ctrl_mode(isp_dev_t *hw, isp_ll_pipeline_c
 }
 
 /**
- * @brief Enable / Disable LSC
+ * @brief Enable / Disable Color
  *
  * @param[in] hw      Hardware instance address
  * @param[in] enable  Enable / Disable
@@ -2189,27 +1890,21 @@ static inline void isp_ll_shadow_set_mode(isp_dev_t *hw, isp_ll_shadow_mode_t mo
 /**
  * @brief Update BLC shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_blc(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_blc(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.blc_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.blc_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.blc_update = 1;
+    if (hw->shadow_reg_ctrl.blc_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.blc_update = 1;
 
     return true;
 }
@@ -2217,27 +1912,21 @@ static inline bool isp_ll_shadow_update_blc(isp_dev_t *hw, bool force_update)
 /**
  * @brief Update DPC shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_dpc(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_dpc(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.dpc_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.dpc_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.dpc_update = 1;
+    if (hw->shadow_reg_ctrl.dpc_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.dpc_update = 1;
 
     return true;
 }
@@ -2245,27 +1934,21 @@ static inline bool isp_ll_shadow_update_dpc(isp_dev_t *hw, bool force_update)
 /**
  * @brief Update BF shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_bf(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_bf(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.bf_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.bf_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.bf_update = 1;
+    if (hw->shadow_reg_ctrl.bf_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.bf_update = 1;
 
     return true;
 }
@@ -2273,27 +1956,21 @@ static inline bool isp_ll_shadow_update_bf(isp_dev_t *hw, bool force_update)
 /**
  * @brief Update WBG shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_wbg(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_wbg(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.wbg_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.wbg_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.wbg_update = 1;
+    if (hw->shadow_reg_ctrl.wbg_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.wbg_update = 1;
 
     return true;
 }
@@ -2329,27 +2006,21 @@ static inline bool isp_ll_shadow_update_ccm(isp_dev_t *hw, bool force_update)
 /**
  * @brief Update Sharpen shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_sharpen(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_sharpen(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.sharp_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.sharp_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.sharp_update = 1;
+    if (hw->shadow_reg_ctrl.sharp_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.sharp_update = 1;
 
     return true;
 }
@@ -2357,27 +2028,21 @@ static inline bool isp_ll_shadow_update_sharpen(isp_dev_t *hw, bool force_update
 /**
  * @brief Update Color shadow register
  *
- * @param[in] hw            Hardware instance address
- * @param[in] force_update  Force update
+ * @param[in] hw      Hardware instance address
  * @return
  *      - True if update is successful, False otherwise
  */
-static inline bool isp_ll_shadow_update_color(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_color(isp_dev_t *hw)
 {
     //only valid when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
     HAL_ASSERT(hw->shadow_reg_ctrl.shadow_update_sel == ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC);
 
-    if (force_update) {
-        //don't care shadow register
-        hw->shadow_reg_ctrl.color_update = 1;
-    } else {
-        if (hw->shadow_reg_ctrl.color_update == 1) {
-            return false;
-        }
-
-        //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
-        hw->shadow_reg_ctrl.color_update = 1;
+    if (hw->shadow_reg_ctrl.color_update == 1) {
+        return false;
     }
+
+    //self clear when ISP_SHADOW_MODE_UPDATE_ONLY_NEXT_VSYNC
+    hw->shadow_reg_ctrl.color_update = 1;
 
     return true;
 }
@@ -2388,25 +2053,25 @@ static inline void isp_ll_shadow_set_mode(isp_dev_t *hw, isp_ll_shadow_mode_t mo
     //for compatibility
 }
 
-static inline bool isp_ll_shadow_update_blc(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_blc(isp_dev_t *hw)
 {
     //for compatibility
     return true;
 }
 
-static inline bool isp_ll_shadow_update_dpc(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_dpc(isp_dev_t *hw)
 {
     //for compatibility
     return true;
 }
 
-static inline bool isp_ll_shadow_update_bf(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_bf(isp_dev_t *hw)
 {
     //for compatibility
     return true;
 }
 
-static inline bool isp_ll_shadow_update_wbg(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_wbg(isp_dev_t *hw)
 {
     //for compatibility
     return true;
@@ -2418,13 +2083,13 @@ static inline bool isp_ll_shadow_update_ccm(isp_dev_t *hw, bool force_update)
     return true;
 }
 
-static inline bool isp_ll_shadow_update_sharpen(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_sharpen(isp_dev_t *hw)
 {
     //for compatibility
     return true;
 }
 
-static inline bool isp_ll_shadow_update_color(isp_dev_t *hw, bool force_update)
+static inline bool isp_ll_shadow_update_color(isp_dev_t *hw)
 {
     //for compatibility
     return true;

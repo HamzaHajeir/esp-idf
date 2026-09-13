@@ -191,9 +191,6 @@ gatt_svr_chr_access_sc_control_point(uint16_t conn_handle,
 
     /* Allocate response buffer */
     om_indication = ble_hs_mbuf_att_pkt();
-    if (om_indication == NULL) {
-        return BLE_HS_ENOMEM;
-    }
 
     switch(op_code){
 #if (CSC_FEATURES & CSC_FEATURE_WHEEL_REV_DATA)
@@ -203,7 +200,6 @@ gatt_svr_chr_access_sc_control_point(uint16_t conn_handle,
                               sizeof(new_cumulative_wheel_rev_arr),
                               new_cumulative_wheel_rev_arr);
         if (rc != 0){
-            os_mbuf_free_chain(om_indication);
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
 
@@ -220,8 +216,7 @@ gatt_svr_chr_access_sc_control_point(uint16_t conn_handle,
         /* Read new sensor location value*/
         rc = os_mbuf_copydata(ctxt->om, 1, 1, &new_sensor_location);
         if (rc != 0){
-            os_mbuf_free_chain(om_indication);
-            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+          return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
 
 
@@ -245,25 +240,11 @@ gatt_svr_chr_access_sc_control_point(uint16_t conn_handle,
         break;
     }
 
-    /* Append Response Op Code, Request Op Code, and Response Value */
-    uint8_t rsp_op = SC_CP_OP_RESPONSE;
-    rc = os_mbuf_append(om_indication, &rsp_op, sizeof(rsp_op));
-    if (rc != 0) {
-        os_mbuf_free_chain(om_indication);
-        return BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
-    rc = os_mbuf_append(om_indication, &op_code, sizeof(op_code));
-    if (rc != 0) {
-        os_mbuf_free_chain(om_indication);
-        return BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
+    /* Append response value */
     rc = os_mbuf_append(om_indication, &response, sizeof(response));
 
     if (rc != 0){
-        os_mbuf_free_chain(om_indication);
-        return BLE_ATT_ERR_INSUFFICIENT_RES;
+      return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
 #if (CSC_FEATURES & CSC_FEATURE_MULTIPLE_SENSOR_LOC)
@@ -271,16 +252,16 @@ gatt_svr_chr_access_sc_control_point(uint16_t conn_handle,
     if (op_code == SC_CP_OP_REQ_SUPPORTED_SENSOR_LOCATIONS){
       rc = os_mbuf_append(om_indication, &csc_supported_sensor_locations,
                           sizeof(csc_supported_sensor_locations));
-      if (rc != 0){
-          os_mbuf_free_chain(om_indication);
-          return BLE_ATT_ERR_INSUFFICIENT_RES;
-      }
+    }
+
+    if (rc != 0){
+      return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 #endif
 
     rc = ble_gatts_indicate_custom(conn_handle, csc_control_point_handle,
                                    om_indication);
-    /* om_indication is consumed (freed) by ble_gatts_indicate_custom regardless of result */
+
     return rc;
 }
 
@@ -334,9 +315,6 @@ gatt_svr_chr_notify_csc_measurement(uint16_t conn_handle)
 #endif
 
     om = ble_hs_mbuf_from_flat(data_buf, data_offset);
-    if (om == NULL) {
-        return BLE_HS_ENOMEM;
-    }
 
     rc = ble_gatts_notify_custom(conn_handle, csc_measurement_handle, om);
     return rc;

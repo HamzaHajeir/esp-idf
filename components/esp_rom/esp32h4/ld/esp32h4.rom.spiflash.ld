@@ -18,8 +18,8 @@
  ***************************************/
 
 /* Functions */
-rom_spi_flash_disable_cache = 0x400001f8;
-rom_spi_flash_restore_cache = 0x400001fc;
+spi_flash_disable_cache = 0x400001f8;
+spi_flash_restore_cache = 0x400001fc;
 spi_flash_cache_enabled = 0x40000200;
 spi_flash_enable_cache = 0x40000204;
 esp_enable_cache_flash_wrap = 0x40000208;
@@ -40,11 +40,11 @@ esp_flash_set_chip_write_protect = 0x40000224;
 esp_flash_get_protectable_regions = 0x40000228;
 esp_flash_get_protected_region = 0x4000022c;
 esp_flash_set_protected_region = 0x40000230;
-PROVIDE( esp_flash_read = 0x40000234 );
+esp_flash_read = 0x40000234;
 esp_flash_write = 0x40000238;
 esp_flash_write_encrypted = 0x4000023c;
 esp_flash_read_encrypted = 0x40000240;
-PROVIDE( esp_flash_get_io_mode = 0x40000244 );
+esp_flash_get_io_mode = 0x40000244;
 esp_flash_set_io_mode = 0x40000248;
 spi_flash_boot_attach = 0x4000024c;
 esp_flash_read_chip_id = 0x40000250;

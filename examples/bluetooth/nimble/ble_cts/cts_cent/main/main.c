@@ -1,11 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -17,30 +15,12 @@
 #include "services/gap/ble_svc_gap.h"
 #include "ble_cts_cent.h"
 #include "services/cts/ble_svc_cts.h"
-#if MYNEWT_VAL(BLE_GATT_CACHING)
-#include "host/ble_esp_gattc_cache.h"
-#endif
 
 static const char *tag = "NimBLE_CTS_CENT";
-static char remote_device_name[32];
 static int ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg);
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_ble_cts_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
-
-static char *day_of_week[8] = {
-    "Unknown",
+static char *day_of_week[7] = {
+    "Unknown"
     "Monday",
     "Tuesday",
     "Wednesday",
@@ -53,14 +33,10 @@ void ble_store_config_init(void);
 static void ble_cts_cent_scan(void);
 
 void printtime(struct ble_svc_cts_curr_time ctime) {
-    uint8_t dow = ctime.et_256.d_d_t.day_of_week;
-    const char *dow_str = (dow >= 1 && dow <= 7) ? day_of_week[dow] : day_of_week[0];
-    if (dow >= 8) {
-        dow = 0;
-    }
     ESP_LOGI(tag, "Date : %d/%d/%d %s", ctime.et_256.d_d_t.d_t.day,
                                      ctime.et_256.d_d_t.d_t.month,
-                                     ctime.et_256.d_d_t.d_t.year, dow_str);
+                                     ctime.et_256.d_d_t.d_t.year,
+                                     day_of_week[ctime.et_256.d_d_t.day_of_week]);
     ESP_LOGI(tag, "hours : %d minutes : %d ",
                              ctime.et_256.d_d_t.d_t.hours,
                              ctime.et_256.d_d_t.d_t.minutes);
@@ -79,7 +55,6 @@ ble_cts_cent_on_read(uint16_t conn_handle,
                      struct ble_gatt_attr *attr,
                      void *arg)
 {
-    int rc = 0;
     struct ble_svc_cts_curr_time ctime; /* store the read time */
     MODLOG_DFLT(INFO, "Read Current time complete; status=%d conn_handle=%d\n",
                 error->status, conn_handle);
@@ -91,12 +66,8 @@ ble_cts_cent_on_read(uint16_t conn_handle,
         goto err;
     }
     MODLOG_DFLT(INFO, "\n");
-    rc = ble_hs_mbuf_to_flat(attr->om, &ctime, sizeof(ctime), NULL);
-    if (rc == 0 && ctime.et_256.d_d_t.day_of_week <= 7) {
-        printtime(ctime);
-    } else {
-        MODLOG_DFLT(WARN, "Invalid CTS time data; rc=%d day_of_week=%d\n", rc, ctime.et_256.d_d_t.day_of_week);
-    }
+    ble_hs_mbuf_to_flat(attr->om, &ctime, sizeof(ctime), NULL);
+    printtime(ctime);
     return 0;
 err:
     /* Terminate the connection. */
@@ -203,12 +174,6 @@ ble_cts_cent_scan(void)
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    /* Full scan improves discovery reliability in multi-board CI environments. */
-    disc_params.itvl = BLE_GAP_SCAN_ITVL_MS(50);
-    disc_params.window = BLE_GAP_SCAN_ITVL_MS(50);
-#endif
-
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
                       ble_cts_cent_gap_event, NULL);
     if (rc != 0) {
@@ -229,61 +194,47 @@ ext_ble_cts_cent_should_connect(const struct ble_gap_ext_disc_desc *disc)
 {
     int offset = 0;
     int ad_struct_len = 0;
-    uint8_t test_addr[6] = {0};
-    if (!(disc->props & BLE_HCI_ADV_CONN_MASK)) {
+    uint8_t test_addr[6];
+    uint32_t peer_addr[6];
+
+    memset(peer_addr, 0x0, sizeof peer_addr);
+
+    if (disc->legacy_event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
+            disc->legacy_event_type != BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
         return 0;
     }
     if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
         ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
 
-        /* Convert string to address */
-        if (peer_addr_parse(CONFIG_EXAMPLE_PEER_ADDR, test_addr) != 6) {
-            return 0;
+	/* Convert string to address */
+        sscanf(CONFIG_EXAMPLE_PEER_ADDR, "%lx:%lx:%lx:%lx:%lx:%lx",
+               &peer_addr[5], &peer_addr[4], &peer_addr[3],
+               &peer_addr[2], &peer_addr[1], &peer_addr[0]);
+
+        /* Conversion */
+        for(int i=0; i<6; i++) {
+            test_addr[i] = (uint8_t )peer_addr[i];
         }
+
         if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
             return 0;
         }
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    while (offset < disc->length_data) {
-        ad_struct_len = disc->data[offset];
-        if (ad_struct_len == 0 || offset + ad_struct_len + 1 > disc->length_data) {
-            break;
-        }
-        if (disc->data[offset + 1] == BLE_HS_ADV_TYPE_COMP_NAME ||
-                disc->data[offset + 1] == BLE_HS_ADV_TYPE_INCOMP_NAME) {
-            int name_len = ad_struct_len - 1;
-            if (name_len == (int)strlen(remote_device_name) &&
-                    memcmp(&disc->data[offset + 2], remote_device_name, name_len) == 0) {
-                return 1;
-            }
-        }
-        offset += ad_struct_len + 1;
-    }
-    return 0;
-#else
     /* The device has to advertise support for the CTS
     * service (0x1805).
     */
-    while (offset < disc->length_data) {
-        if (offset + 1 >= disc->length_data) {
-            break;
-        }
+    do {
         ad_struct_len = disc->data[offset];
 
         if (!ad_struct_len) {
             break;
         }
 
-        if (offset + ad_struct_len >= disc->length_data) {
-            break;
-        }
-
         /* Search if cts UUID is advertised */
         if (disc->data[offset + 1] == 0x03) {
             int temp = 2;
-            while (temp < ad_struct_len && (offset + temp + 1) < disc->length_data) {
+            while(temp < disc->data[offset + 1]) {
                 if(disc->data[offset + temp] == 0x05 &&
                    disc->data[offset + temp + 1] == 0x18) {
                     return 1;
@@ -292,10 +243,9 @@ ext_ble_cts_cent_should_connect(const struct ble_gap_ext_disc_desc *disc)
             }
         }
         offset += ad_struct_len + 1;
-    }
+    } while ( offset < disc->length_data );
 
     return 0;
-#endif
 }
 #else
 
@@ -304,7 +254,12 @@ ble_cts_cent_should_connect(const struct ble_gap_disc_desc *disc)
 {
     struct ble_hs_adv_fields fields;
     int rc;
-    uint8_t test_addr[6] = {0};
+    int i;
+    uint8_t test_addr[6];
+    uint32_t peer_addr[6];
+
+    memset(peer_addr, 0x0, sizeof peer_addr);
+
     /* The device has to be advertising connectability. */
     if (disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
             disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
@@ -320,33 +275,30 @@ ble_cts_cent_should_connect(const struct ble_gap_disc_desc *disc)
     if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
         ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
         /* Convert string to address */
-        if (peer_addr_parse(CONFIG_EXAMPLE_PEER_ADDR, test_addr) != 6) {
-            return 0;
-        }
+        sscanf(CONFIG_EXAMPLE_PEER_ADDR, "%lx:%lx:%lx:%lx:%lx:%lx",
+               &peer_addr[5], &peer_addr[4], &peer_addr[3],
+               &peer_addr[2], &peer_addr[1], &peer_addr[0]);
+
+        /* Conversion */
+        for (int i=0; i<6; i++) {
+            test_addr[i] = (uint8_t )peer_addr[i];
+	}
+
         if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
             return 0;
         }
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    if (fields.name != NULL &&
-            fields.name_len == strlen(remote_device_name) &&
-            memcmp(fields.name, remote_device_name, fields.name_len) == 0) {
-        return 1;
-    }
-    return 0;
-#else
     /* The device has to advertise support for the Current Time
      * service (0x1805).
      */
-    for (int i = 0; i < fields.num_uuids16; i++) {
+    for (i = 0; i < fields.num_uuids16; i++) {
         if (ble_uuid_u16(&fields.uuids16[i].u) == BLE_SVC_CTS_UUID16) {
             return 1;
         }
     }
 
     return 0;
-#endif
 }
 #endif
 
@@ -373,16 +325,6 @@ ble_cts_cent_connect_if_interesting(void *disc)
     }
 #endif
 
-#if CONFIG_EXAMPLE_EXTENDED_ADV
-    addr = &((struct ble_gap_ext_disc_desc *)disc)->addr;
-#else
-    addr = &((struct ble_gap_disc_desc *)disc)->addr;
-#endif
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    ESP_LOGI(tag, "Found device: %s, name: %s", addr_str(addr->val), remote_device_name);
-#endif
-
 #if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
     /* Scanning must be stopped before a connection can be initiated. */
     rc = ble_gap_disc_cancel();
@@ -396,24 +338,23 @@ ble_cts_cent_connect_if_interesting(void *disc)
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_cts_cent_scan();
-#endif
         return;
     }
 
     /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
      * timeout.
      */
+#if CONFIG_EXAMPLE_EXTENDED_ADV
+    addr = &((struct ble_gap_ext_disc_desc *)disc)->addr;
+#else
+    addr = &((struct ble_gap_disc_desc *)disc)->addr;
+#endif
     rc = ble_gap_connect(own_addr_type, addr, 30000, NULL,
                          ble_cts_cent_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
                     "addr=%s; rc=%d\n",
                     addr->type, addr_str(addr->val), rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_cts_cent_scan();
-#endif
         return;
     }
 }
@@ -436,13 +377,11 @@ static int
 ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg)
 {
     struct ble_gap_conn_desc desc;
+    struct ble_hs_adv_fields fields;
     int rc;
 
     switch (event->type) {
     case BLE_GAP_EVENT_DISC:
-#if !CONFIG_EXAMPLE_EXTENDED_ADV
-        {
-        struct ble_hs_adv_fields fields;
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
                                      event->disc.length_data);
         if (rc != 0) {
@@ -454,8 +393,6 @@ ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg)
 
         /* Try to connect to the advertiser if it looks interesting. */
         ble_cts_cent_connect_if_interesting(&event->disc);
-        }
-#endif
         return 0;
 
     case BLE_GAP_EVENT_CONNECT:
@@ -468,8 +405,6 @@ ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg)
             assert(rc == 0);
             print_conn_desc(&desc);
             MODLOG_DFLT(INFO, "\n");
-            ESP_LOGI(tag, "Connected, conn_handle %d, remote %s",
-                     event->connect.conn_handle, addr_str(desc.peer_ota_addr.val));
 
             /* Remember peer. */
             rc = peer_add(event->connect.conn_handle);
@@ -556,7 +491,7 @@ ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg)
 #else
 #if MYNEWT_VAL(BLE_GATTC)
         /*** Go for service discovery after encryption has been successfully enabled ***/
-        rc = peer_disc_all(event->enc_change.conn_handle,
+        rc = peer_disc_all(event->connect.conn_handle,
                            ble_cts_cent_on_disc_complete, NULL);
         if (rc != 0) {
             MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
@@ -575,8 +510,8 @@ ble_cts_cent_gap_event(struct ble_gap_event *event, void *arg)
                       event->cache_assoc.status,
                       (event->cache_assoc.cache_state == 0) ? "INVALID" : "LOADED");
           /* Perform service discovery */
-          rc = peer_disc_all(event->cache_assoc.conn_handle,
-                             ble_cts_cent_on_disc_complete, NULL);
+          rc = peer_disc_all(event->connect.conn_handle,
+                             blecent_on_disc_complete, NULL);
           if(rc != 0) {
                 MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
                 return 0;
@@ -666,13 +601,6 @@ app_main(void)
         return;
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(remote_device_name, esp_ble_cts_get_example_name(), sizeof(remote_device_name) - 1);
-    remote_device_name[sizeof(remote_device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             remote_device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
-
     /* Configure the host. */
     ble_hs_cfg.reset_cb = ble_cts_cent_on_reset;
     ble_hs_cfg.sync_cb = ble_cts_cent_on_sync;
@@ -681,14 +609,11 @@ app_main(void)
     /* Initialize data structures to track connected peers. */
 #if MYNEWT_VAL(BLE_INCL_SVC_DISCOVERY) || MYNEWT_VAL(BLE_GATT_CACHING_INCLUDE_SERVICES)
     rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64, 64);
+    assert(rc == 0);
 #else
     rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64);
+    assert(rc == 0);
 #endif
-    if (rc != 0) {
-        ESP_LOGE(tag, "Failed to init peer tracking; rc=%d", rc);
-        nimble_port_deinit();
-        return;
-    }
 
 #if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */

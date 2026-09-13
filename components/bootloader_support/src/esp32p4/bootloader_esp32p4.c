@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,8 +18,6 @@
 #include "soc/assist_debug_reg.h"
 #include "esp_cpu.h"
 #include "soc/rtc.h"
-#include "soc/soc_caps.h"
-
 #include "soc/cache_reg.h"
 #include "esp32p4/rom/ets_sys.h"
 #include "esp32p4/rom/spi_flash.h"
@@ -54,29 +52,36 @@
 
 ESP_LOG_ATTR_TAG(TAG, "boot.esp32p4");
 
-#if SOC_RTC_WDT_SUPPORTED
-void bootloader_enable_cpu_reset_info(void)
+static void wdt_reset_cpu0_info_enable(void)
 {
     _assist_debug_ll_enable_bus_clock(0, true);
     assist_debug_ll_enable_pc_recording(0, true);
 }
 
-void bootloader_dump_wdt_reset_info(int cpu)
+static void wdt_reset_info_dump(int cpu)
 {
     (void) cpu;
     // saved PC was already printed by the ROM bootloader.
     // nothing to do here.
 }
 
-bool bootloader_check_if_wdt_reset(int cpu, soc_reset_reason_t rst_reason)
+static void bootloader_check_wdt_reset(void)
 {
-    if (cpu == 0 && (rst_reason == RESET_REASON_CPU_MWDT || rst_reason == RESET_REASON_CPU_RWDT ||
-                     rst_reason == RESET_REASON_CORE_MWDT || rst_reason == RESET_REASON_CORE_RWDT ||
-                     rst_reason == RESET_REASON_SYS_RWDT)) {
+    int wdt_rst = 0;
+    soc_reset_reason_t rst_reason = esp_rom_get_reset_reason(0);
+    if (rst_reason == RESET_REASON_CPU_MWDT || rst_reason == RESET_REASON_CPU_RWDT || rst_reason == RESET_REASON_CORE_MWDT ||
+        rst_reason == RESET_REASON_CORE_RWDT || rst_reason == RESET_REASON_SYS_RWDT) {
         ESP_LOGW(TAG, "CPU has been reset by WDT.");
-        return true;
+        wdt_rst = 1;
     }
-    return false;
+    if (wdt_rst) {
+        // if reset by WDT dump info from trace port
+        wdt_reset_info_dump(0);
+#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+        wdt_reset_info_dump(1);
+#endif
+    }
+    wdt_reset_cpu0_info_enable();
 }
 
 static void bootloader_super_wdt_auto_feed(void)
@@ -85,7 +90,6 @@ static void bootloader_super_wdt_auto_feed(void)
     REG_SET_BIT(LP_WDT_SWD_CONFIG_REG, LP_WDT_SWD_AUTO_FEED_EN);
     REG_WRITE(LP_WDT_SWD_WPROTECT_REG, 0);
 }
-#endif // SOC_RTC_WDT_SUPPORTED
 
 static inline void bootloader_hardware_init(void)
 {
@@ -125,9 +129,7 @@ esp_err_t bootloader_init(void)
 
     bootloader_hardware_init();
     bootloader_ana_reset_config();
-#if SOC_RTC_WDT_SUPPORTED
     bootloader_super_wdt_auto_feed();
-#endif
 
 // In RAM_APP, memory will be initialized in `call_start_cpu0`
 #if !CONFIG_APP_BUILD_TYPE_RAM
@@ -179,12 +181,10 @@ esp_err_t bootloader_init(void)
     }
 #endif // !CONFIG_APP_BUILD_TYPE_RAM
 
-    // check reset reason and dump diagnostic info
-    bootloader_check_reset();
-#if SOC_RTC_WDT_SUPPORTED || SOC_WDT_SUPPORTED
+    // check whether a WDT reset happened
+    bootloader_check_wdt_reset();
     // config WDT
     bootloader_config_wdt();
-#endif
     // enable RNG early entropy source
     bootloader_enable_random();
 

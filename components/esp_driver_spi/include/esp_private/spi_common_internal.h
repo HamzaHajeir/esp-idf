@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2010-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2010-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,20 +8,16 @@
 
 #pragma once
 
-#include "esp_pm.h"
-#include "esp_intr_alloc.h"
-#include "esp_macros.h"
-#include "soc/soc.h"   //for SOC_NON_CACHEABLE_OFFSET_SRAM
+#include <esp_intr_alloc.h>
 #include "driver/spi_common.h"
 #include "hal/spi_types.h"
 #include "hal/dma_types.h"
+#include "soc/ext_mem_defs.h"   //for SOC_NON_CACHEABLE_OFFSET
 #include "esp_private/spi_dma.h"
-#include "esp_private/gdma.h"
-#include "esp_private/gdma_link.h"
+#include "esp_pm.h"
 #include "esp_private/spi_share_hw_ctrl.h"
-#if SOC_PAU_SUPPORTED
-#include "soc/regdma.h"
-#include "soc/retention_periph_defs.h"
+#if SOC_GDMA_SUPPORTED
+#include "esp_private/gdma.h"
 #endif
 
 #ifdef __cplusplus
@@ -38,6 +34,14 @@ typedef dma_descriptor_align8_t spi_dma_desc_t;
 typedef dma_descriptor_align4_t spi_dma_desc_t;
 #endif
 
+#if SOC_NON_CACHEABLE_OFFSET
+#include "hal/cache_ll.h"
+#define ADDR_DMA_2_CPU(addr)   ((typeof(addr))CACHE_LL_L2MEM_NON_CACHE_ADDR(addr))
+#define ADDR_CPU_2_DMA(addr)   ((typeof(addr))CACHE_LL_L2MEM_CACHE_ADDR(addr))
+#else
+#define ADDR_DMA_2_CPU(addr)   (addr)
+#define ADDR_CPU_2_DMA(addr)   (addr)
+#endif
 
 // Status of a spi bus
 typedef enum {
@@ -48,7 +52,7 @@ typedef enum {
 /// Attributes of an SPI bus
 typedef struct {
     spi_bus_config_t bus_cfg;           ///< Config used to initialize the bus
-    uint64_t gpio_reserve;              ///< reserved gpio matrix output pins and all iomux pins bit mask
+    uint64_t gpio_reserve;              ///< reserved output gpio bit mask
     uint32_t flags;                     ///< Flags (SPICOMMON_BUSFLAG_* flag combination of bus abilities) of the bus
     int max_transfer_sz;                ///< Maximum length of bytes available to send
     bool dma_enabled;                   ///< To enable DMA or not
@@ -75,19 +79,7 @@ typedef struct {
     int dma_desc_num;                   ///< DMA descriptor number of dmadesc_tx or dmadesc_rx.
     spi_dma_desc_t *dmadesc_tx;         ///< DMA descriptor array for TX
     spi_dma_desc_t *dmadesc_rx;         ///< DMA descriptor array for RX
-    gdma_link_list_handle_t tx_link_handle; ///< DMA tx link list for GDMA and SPIDMA
-    gdma_link_list_handle_t rx_link_handle; ///< DMA rx link list for GDMA and SPIDMA
 } spi_dma_ctx_t;
-
-#if SOC_PAU_SUPPORTED
-typedef struct {
-    const periph_retention_module_t module_id;
-    const regdma_entries_config_t *entry_array;
-    uint32_t array_size;
-} spi_reg_retention_info_t;
-
-extern const spi_reg_retention_info_t spi_reg_retention_info[SOC_SPI_PERIPH_NUM - 1];   // -1 to except mspi
-#endif
 
 /// Destructor called when a bus is deinitialized.
 typedef esp_err_t (*spi_destroy_func_t)(void*);
@@ -114,20 +106,19 @@ esp_err_t spicommon_bus_free(spi_host_device_t host_id);
  *
  * @param host_id                  SPI host ID
  * @param dma_chan                 DMA channel to be used
- * @param dma_burst_size           DMA data burst size in bytes. Set to 0 to use driver default (32). Only applied when chip supports configurable burst size.
+ * @param out_dma_ctx              Actual DMA channel context (if you choose to assign a specific DMA channel, this will be the channel you assigned before)
  *
  * @return
  *        - ESP_OK:                On success
- *        - ESP_ERR_INVALID_ARG:   Invalid dma_burst_size (not in chip-supported list)
  *        - ESP_ERR_NO_MEM:        No enough memory
  *        - ESP_ERR_NOT_FOUND:     There is no available DMA channel
  */
-esp_err_t spicommon_dma_chan_alloc(spi_host_device_t host_id, spi_dma_chan_t dma_chan, uint32_t dma_burst_size);
+esp_err_t spicommon_dma_chan_alloc(spi_host_device_t host_id, spi_dma_chan_t dma_chan, spi_dma_ctx_t **out_dma_ctx);
 
 /**
  * @brief Alloc DMA descriptors for SPI
  *
- * @param[in]  host_id             SPI host ID
+ * @param dma_ctx                  DMA context returned by `spicommon_dma_chan_alloc`
  * @param[in]  cfg_max_sz          Expected maximum transfer size, in bytes.
  * @param[out] actual_max_sz       Actual max transfer size one transaction can be, in bytes.
  *
@@ -135,53 +126,27 @@ esp_err_t spicommon_dma_chan_alloc(spi_host_device_t host_id, spi_dma_chan_t dma
  *        - ESP_OK:                On success
  *        - ESP_ERR_NO_MEM:        No enough memory
  */
-esp_err_t spicommon_dma_desc_alloc(spi_host_device_t host_id, int cfg_max_sz, int *actual_max_sz);
+esp_err_t spicommon_dma_desc_alloc(spi_dma_ctx_t *dma_ctx, int cfg_max_sz, int *actual_max_sz);
 
 /**
  * Setupt/Configure dma descriptor link list
  *
- * @param dma_ctx DMA context pointer
- * @param offset  offset of the item in the link list
+ * @param dmadesc start of dma descriptor memory
  * @param data    start of data buffer to be configured in
  * @param len     length of data buffer, in byte
  * @param is_rx   if descriptor is for rx/receive direction
  */
-void spicommon_dma_desc_setup_link(const spi_dma_ctx_t *dma_ctx, int offset, const void *data, int len, bool is_rx);
-
-/**
- * @brief Setup private buffer for DMA transfer
- *
- * @param host_id   SPI host ID to access the DMA context
- * @param buffer    buffer to be setup
- * @param len       length of buffer, in byte
- * @param is_tx     if buffer is for tx/transmit direction
- * @param psram_prefer if psram is preferred
- * @param auto_malloc if auto malloc is enabled
- * @param ret_buffer  return buffer, which is the buffer that is actually used for DMA transfer
- *
- * @return
- *        - ESP_OK: On success
- *        - ESP_ERR_NO_MEM: No enough memory
- */
-esp_err_t spicommon_dma_setup_priv_buffer(spi_host_device_t host_id, uint32_t *buffer, uint32_t len, bool is_tx, bool psram_prefer, bool auto_malloc, uint32_t **ret_buffer);
-
-/**
- * @brief Memory barrier for DMA RX buffer
- *
- * @param host_id   SPI host ID
- * @param rx_buffer RX buffer
- */
-void spicommon_dma_rx_mb(spi_host_device_t host_id, void *rx_buffer);
+void spicommon_dma_desc_setup_link(spi_dma_desc_t *dmadesc, const void *data, int len, bool is_rx);
 
 /**
  * @brief Free DMA for SPI
  *
- * @param host_id   SPI host ID
+ * @param dma_ctx  spi_dma_ctx_t struct pointer
  *
  * @return
  *        - ESP_OK: On success
  */
-esp_err_t spicommon_dma_chan_free(spi_host_device_t host_id);
+esp_err_t spicommon_dma_chan_free(spi_dma_ctx_t *dma_ctx);
 
 /**
  * @brief Connect a SPI peripheral to GPIO pins
@@ -217,18 +182,19 @@ esp_err_t spicommon_dma_chan_free(spi_host_device_t host_id);
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
  *         - ESP_OK                on success
  */
-esp_err_t spicommon_bus_initialize_io(spi_host_device_t host, const spi_bus_config_t *bus_config, uint32_t flags, uint32_t *flags_o);
+esp_err_t spicommon_bus_initialize_io(spi_host_device_t host, const spi_bus_config_t *bus_config, uint32_t flags, uint32_t *flags_o, uint64_t *io_reserved);
 
 /**
  * @brief Free the IO used by a SPI peripheral
  *
- * @param host SPI peripheral
+ * @param bus_cfg Bus config struct which defines which pins to be used.
+ * @param io_reserved Bitmap indicate which pin is reserved
  *
  * @return
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
  *         - ESP_OK                on success
  */
-esp_err_t spicommon_bus_free_io_cfg(spi_host_device_t host);
+esp_err_t spicommon_bus_free_io_cfg(const spi_bus_config_t *bus_cfg, uint64_t *io_reserved);
 
 /**
  * @brief Initialize a Chip Select pin for a specific SPI peripheral
@@ -329,7 +295,7 @@ void spicommon_dmaworkaround_transfer_active(int dmachan);
  * @param host_id The specified host to get attribute
  * @return (Const) Pointer to the attributes
  */
-spi_bus_attr_t* spi_bus_get_attr(spi_host_device_t host_id);
+const spi_bus_attr_t* spi_bus_get_attr(spi_host_device_t host_id);
 
 /**
  * @brief Get the dma context of a specified SPI bus.
@@ -337,7 +303,7 @@ spi_bus_attr_t* spi_bus_get_attr(spi_host_device_t host_id);
  * @param host_id The specified host to get attribute
  * @return (Const) Pointer to the dma context
  */
-spi_dma_ctx_t* spi_bus_get_dma_ctx(spi_host_device_t host_id);
+const spi_dma_ctx_t* spi_bus_get_dma_ctx(spi_host_device_t host_id);
 
 /**
  * @brief Register a function to a initialized bus to make it called when deinitializing the bus.

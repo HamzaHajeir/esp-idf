@@ -5,6 +5,7 @@
  */
 
 #include <strings.h>
+#include "esp_flash_encrypt.h"
 #include "esp_secure_boot.h"
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
@@ -39,6 +40,8 @@ esp_err_t esp_secure_boot_enable_secure_features(void)
     ESP_LOGI(TAG, "Disable hardware & software JTAG...");
     esp_efuse_write_field_bit(ESP_EFUSE_DIS_PAD_JTAG);
     esp_efuse_write_field_bit(ESP_EFUSE_DIS_USB_JTAG);
+    // TODO in IDF-10694
+    // esp_efuse_write_field_cnt(ESP_EFUSE_SOFT_DIS_JTAG, ESP_EFUSE_SOFT_DIS_JTAG[0]->bit_count);
 #else
     ESP_LOGW(TAG, "Not disabling JTAG - SECURITY COMPROMISED");
 #endif
@@ -54,7 +57,7 @@ esp_err_t esp_secure_boot_enable_secure_features(void)
 #ifdef CONFIG_SECURE_FLASH_ENC_ENABLED
     /* If flash encryption is not enabled yet then don't read-disable efuses yet, do it later in the boot
        when Flash Encryption is being enabled */
-    rd_dis_now = esp_efuse_is_flash_encryption_enabled();
+    rd_dis_now = esp_flash_encryption_enabled();
 #endif
     if (rd_dis_now) {
         ESP_LOGI(TAG, "Prevent read disabling of additional efuses...");

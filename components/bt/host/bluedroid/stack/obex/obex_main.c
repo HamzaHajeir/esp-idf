@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,8 +15,6 @@
 #include "obex_tl.h"
 
 #if (OBEX_INCLUDED == TRUE)
-
-_Static_assert(OBEX_MAX_SERVER <= 254, "OBEX_MAX_SERVER must not exceed 254 to prevent overflow.");
 
 #if OBEX_DYNAMIC_MEMORY == FALSE
 tOBEX_CB obex_cb;
@@ -90,14 +88,12 @@ void obex_free_scb(tOBEX_SCB *p_scb)
 static bool check_conn_mtu_valid(tOBEX_CCB *p_ccb, BOOLEAN call_cb)
 {
     if (p_ccb->tl_our_mtu < 255 || p_ccb->tl_peer_mtu < 255) {
-        tOBEX_MSG_CBACK *cb = p_ccb->callback;
-        UINT8 alloc = p_ccb->allocated;
-        obex_cb.tl_ops[p_ccb->tl]->disconnect(p_ccb->tl_hdl);
-        obex_free_ccb(p_ccb);
-        if (call_cb && cb) {
-            cb(alloc, OBEX_DISCONNECT_EVT, NULL);
+        if (call_cb && p_ccb->callback) {
+            p_ccb->callback(p_ccb->allocated, OBEX_DISCONNECT_EVT, NULL);
         }
         OBEX_TRACE_ERROR("Check OBEX transport layer MTU failed, disconnect");
+        obex_cb.tl_ops[p_ccb->tl]->disconnect(p_ccb->tl_hdl);
+        obex_free_ccb(p_ccb);
         return false;
     }
     return true;
@@ -113,9 +109,7 @@ void obex_tl_evt_handler(UINT8 tl, tOBEX_TL_EVT evt, tOBEX_TL_MSG *msg)
     switch (evt)
     {
     case OBEX_TL_CONN_OPEN_EVT:
-        if (p_ccb == NULL) {
-            break;
-        }
+        assert(p_ccb != NULL);
         p_ccb->tl_peer_mtu = msg->conn_open.peer_mtu;
         p_ccb->tl_our_mtu = msg->conn_open.our_mtu;
         if (!check_conn_mtu_valid(p_ccb, TRUE)) {
@@ -137,25 +131,19 @@ void obex_tl_evt_handler(UINT8 tl, tOBEX_TL_EVT evt, tOBEX_TL_MSG *msg)
         }
         break;
     case OBEX_TL_CONGEST_EVT:
-        if (p_ccb == NULL) {
-            break;
-        }
+        assert(p_ccb != NULL);
         if (p_ccb->callback) {
             p_ccb->callback(p_ccb->allocated, OBEX_CONGEST_EVT, NULL);
         }
         break;
     case OBEX_TL_UNCONGEST_EVT:
-        if (p_ccb == NULL) {
-            break;
-        }
+        assert(p_ccb != NULL);
         if (p_ccb->callback) {
             p_ccb->callback(p_ccb->allocated, OBEX_UNCONGEST_EVT, NULL);
         }
         break;
     case OBEX_TL_MTU_CHANGE_EVT:
-        if (p_ccb == NULL) {
-            break;
-        }
+        assert(p_ccb != NULL);
         p_ccb->tl_peer_mtu = msg->mtu_chg.peer_mtu;
         p_ccb->tl_our_mtu = msg->mtu_chg.our_mtu;
         if (!check_conn_mtu_valid(p_ccb, TRUE)) {
@@ -168,11 +156,7 @@ void obex_tl_evt_handler(UINT8 tl, tOBEX_TL_EVT evt, tOBEX_TL_MSG *msg)
         }
         break;
     case OBEX_TL_DATA_EVT:
-        if (p_ccb == NULL) {
-            OBEX_TRACE_WARNING("Received OBEX_TL_DATA_EVT but CCB is NULL, dropping packet.");
-            osi_free(msg->data.p_buf);
-            break;
-        }
+        assert(p_ccb != NULL);
         if (p_ccb->callback) {
             cb_msg.data.pkt = msg->data.p_buf;
             p_ccb->callback(p_ccb->allocated, OBEX_DATA_EVT, &cb_msg);
@@ -184,9 +168,7 @@ void obex_tl_evt_handler(UINT8 tl, tOBEX_TL_EVT evt, tOBEX_TL_MSG *msg)
         break;
     case OBEX_TL_CONN_INCOME_EVT:
         /* New connection, p_ccb should be NULL */
-        if (p_ccb != NULL) {
-            break;
-        }
+        assert(p_ccb == NULL);
         p_scb = obex_find_scb_by_tl_hdl(tl, msg->conn_income.svr_hdl);
         if (p_scb == NULL) {
             obex_cb.tl_ops[tl]->disconnect(tl_hdl);

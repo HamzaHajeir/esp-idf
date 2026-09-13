@@ -9,9 +9,19 @@
 
   - "**/*.{c,C,cpp}"
   - "**/*.{h,H,hpp}"
-  - "Kconfig"
   - "components/**/Kconfig"
   - "components/**/CMakeLists.txt"
+
+.patterns-python-cache: &patterns-python-cache
+  - "tools/requirements.json"
+  - "tools/requirements/requirements.*.txt"
+
+.patterns-python-files: &patterns-python-files
+  - ".gitlab/ci/static-code-analysis.yml"
+  - "**/*.py"
+
+.patterns-sonarqube-files: &patterns-sonarqube-files
+  - "tools/ci/sonar_exclude_list.txt"
 
 .patterns-build_components: &patterns-build_components
   # components files except "test*/" "host*/" folders
@@ -37,29 +47,12 @@
   - "tools/kconfig_new/**/*"
   - "tools/idf.py"
   - "tools/idf_py_actions/**/*"
+  - "tools/requirements.json"
   - "tools/ci/ignore_build_warnings.txt"
-  - "tools/ci/esp_err_to_name_exceptions.txt"
   - "tools/ci/test_build_system*.sh"
   - "tools/ci/test_build_system*.py"
+  - "tools/ci/build_template_app.sh"
   - "tools/test_build_system/**/*"
-
-.patterns-host_test_ldgen: &patterns-host_test_ldgen
-  - ".gitlab/ci/host-test.yml"
-
-  - "tools/ldgen/**/*"
-
-.patterns-host_test_ulp_linker: &patterns-host_test_ulp_linker
-  - ".gitlab/ci/host-test.yml"
-
-  - "components/ulp/ld/**/*"
-  - "components/ulp/cmake/**/*"
-  - "components/ulp/CMakeLists*.txt"
-  - "components/ulp/component_ulp_common.cmake"
-  - "components/ulp/project_include.cmake"
-  - "components/ulp/lp_core/**/*"
-  - "components/ulp/test_apps/lp_core/host_tests/**/*"
-  # Shared linker-script preprocessing used by the buildv2 ULP path.
-  - "tools/cmakev2/utilities.cmake"
 
 .patterns-build_system_win: &patterns-build_system_win
   - "tools/test_build_system/**/*"
@@ -68,51 +61,29 @@
   - "tools/test_build_system/**/*"
   - "tools/ci/test_configure_ci_environment.sh"
   - "tools/gen_esp_err_to_name.py"
-  - "tools/err_codes_extract.py"
-  - "tools/err_codes_to_c.py"
-  - "tools/err_codes_to_rst.py"
   - "tools/ci/check_soc_headers_leak.py"
   - "tools/ci/check_esp_memory_utils_headers.sh"
   - "tools/ci/check_blobs.sh"
   - "tools/ci/check_public_headers.py"
-  - "tools/ci/check_public_headers_exceptions.txt"
   - "tools/ci/check_register_rw_half_word.cmake"
   - "tools/ci/check_register_rw_half_word.py"
-  - "components/esp_wifi/remote/scripts/generate_and_check.py"
   - "examples/build_system/**/*"
 
-.patterns-host_test_cli_installer: &patterns-host_test_cli_installer
+.patterns-host_test: &patterns-host_test
   - ".gitlab/ci/host-test.yml"
 
-  - "tools/activate.py"
-
-  - "tools/tools.json"
-  - "tools/tools_schema.json"
-  - "tools/idf_tools.py"
-  - "tools/test_idf_tools/**/*"
-  - "tools/install_util.py"
-  - "tools/idf_extra_components.yml"
-
-  - "tools/export_utils/utils.py"
-  - "tools/export_utils/shell_types.py"
-  - "tools/export_utils/console_output.py"
-  - "tools/export_utils/activate_venv.py"
-
-  - "tools/requirements/*"
-  - "tools/requirements.json"
-  - "tools/requirements_schema.json"
-
-  - "tools/detect_python.sh"
-  - "tools/detect_python.fish"
-
-  - "tools/check_python_dependencies.py"
-
-.patterns-host_test_tools: &patterns-host_test_tools
-  - ".gitlab/ci/host-test.yml"
+  - "components/**/*"
 
   - "tools/ci/test_autocomplete/*"
 
+  - "tools/mass_mfg/**/*"
+
+  - "tools/esp_app_trace/**/*"
+  - "tools/ldgen/**/*"
+
   - "tools/idf_monitor.py"
+
+  - "tools/activate.py"
 
   - "tools/idf.py"
   - "tools/idf_py_actions/**/*"
@@ -123,32 +94,42 @@
 
   - "tools/test_idf_diag/**/*"
 
+  - "tools/tools.json"
+  - "tools/tools_schema.json"
+  - "tools/idf_tools.py"
+  - "tools/test_idf_tools/**/*"
+  - "tools/install_util.py"
+
+  - "tools/export_utils/utils.py"
+  - "tools/export_utils/shell_types.py"
+  - "tools/export_utils/console_output.py"
+  - "tools/export_utils/activate_venv.py"
+
+  - "tools/requirements/*"
+  - "tools/requirements.json"
+  - "tools/requirements_schema.json"
+
   - "tools/mkdfu.py"
   - "tools/test_mkdfu/**/*"
 
-  - "tools/mkuf2.py"
+  - "tools/kconfig_new/**/*"
 
-  - "tools/bsasm.py"
-  - "tools/test_bsasm/**/*"
-
-.patterns-host_test: &patterns-host_test
-  - ".gitlab/ci/host-test.yml"
-
-  - "components/**/*"
-
-  - "tools/mass_mfg/**/*"
-
-  - "tools/esp_app_trace/**/*"
+  - "tools/detect_python.sh"
+  - "tools/detect_python.fish"
 
   - "tools/gen_soc_caps_kconfig/*"
   - "tools/gen_soc_caps_kconfig/test/test_gen_soc_caps_kconfig.py"
 
+  - "tools/mkuf2.py"
+
   - "tools/split_paths_by_spaces.py"
 
-  - "tools/ci/test_soc_headers_load_in_idf_build_apps.py"
+  - "tools/check_python_dependencies.py"
 
-  - "tools/ci/dynamic_pipelines/scripts/patch_buildv2_child_pipeline.py"
-  - "tools/ci/dynamic_pipelines/tests/**/*"
+  - "tools/bsasm.py"
+  - "tools/test_bsasm/**/*"
+
+  - "tools/ci/test_soc_headers_load_in_idf_build_apps.py"
 
 .patterns-docker: &patterns-docker
   - "tools/docker/**/*"
@@ -174,10 +155,7 @@
   - "components/heap/tlsf"
   - "components/bt/controller/lib_esp32c6/esp32c6-bt-lib"
   - "components/bt/controller/lib_esp32c5/esp32c5-bt-lib"
-  - "components/bt/controller/lib_esp32h4/esp32h4-bt-lib"
-  - "components/bt/controller/lib_esp32s31/esp32s31-bt-lib"
   - "components/bt/esp_ble_mesh/lib/lib"
-  - "components/bt/esp_ble_audio/lib/lib"
   - ".gitmodules"
 
 ##############
@@ -192,12 +170,21 @@
 .if-protected-check: &if-protected-check
   if: '($CI_COMMIT_REF_NAME == "master" || $CI_COMMIT_BRANCH =~ /^release\/v/ || $CI_COMMIT_TAG =~ /^v\d+\.\d+(\.\d+)?($|-)/) || $CI_COMMIT_TAG =~ /^qa-test/'
 
+.if-protected-deploy: &if-protected-deploy
+  if: '($CI_COMMIT_REF_NAME == "master" || $CI_COMMIT_BRANCH =~ /^release\/v/ || $CI_COMMIT_TAG =~ /^v\d+\.\d+(\.\d+)?($|-)/) && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "api")'
+
 .if-protected-branch-push: &if-protected-branch-push
   # rules:changes always evaluates to true for new branch pipelines or when there is no Git push event
   if: '($CI_COMMIT_REF_NAME == "master" || $CI_COMMIT_BRANCH =~ /^release\/v/) && $CI_PIPELINE_SOURCE == "push"'
 
+.if-qa-test-tag: &if-qa-test-tag
+  if: '$CI_COMMIT_TAG =~ /^qa-test/'
+
 .if-dev-push: &if-dev-push
   if: '$CI_COMMIT_REF_NAME != "master" && $CI_COMMIT_BRANCH !~ /^release\/v/ && $CI_COMMIT_TAG !~ /^v\d+\.\d+(\.\d+)?($|-)/ && $CI_COMMIT_TAG !~ /^qa-test/ && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "merge_request_event")'
+
+.if-schedule-nightly: &if-schedule-nightly
+  if: '$CI_PIPELINE_SOURCE == "schedule" && $INCLUDE_NIGHTLY_RUN == "1"'
 
 .if-schedule-test-build-system-windows: &if-schedule-test-build-system-windows
   if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_BUILD_SYSTEM_TEST_WIN == "true"'
@@ -219,6 +206,12 @@
   rules:
     - <<: *if-protected-check
 
+.rules:protected:deploy:
+  rules:
+    - <<: *if-qa-test-tag
+      when: never
+    - <<: *if-protected-deploy
+
 .rules:master:push:
   rules:
     - <<: *if-master-push
@@ -230,6 +223,15 @@
 .rules:dev-push:
   rules:
     - <<: *if-dev-push
+
+.rules:upload-python-cache:
+  rules:
+    - <<: *if-release-tag
+    - <<: *if-schedule-nightly
+    - <<: *if-protected-branch-push
+      changes: *patterns-python-cache
+    - <<: *if-label-upload_cache
+      when: manual
 
 .rules:upload-submodule-cache:
   rules:
@@ -377,50 +379,6 @@
     - <<: *if-label-host_test
     - <<: *if-dev-push
       changes: *patterns-host_test
-
-.rules:test:host_test_cli_installer:
-  rules:
-    - <<: *if-revert-branch
-      when: never
-    - <<: *if-protected-check
-    - <<: *if-label-build-only
-      when: never
-    - <<: *if-label-host_test
-    - <<: *if-dev-push
-      changes: *patterns-host_test_cli_installer
-
-.rules:test:host_test_ldgen:
-  rules:
-    - <<: *if-revert-branch
-      when: never
-    - <<: *if-protected-check
-    - <<: *if-label-build-only
-      when: never
-    - <<: *if-label-host_test
-    - <<: *if-dev-push
-      changes: *patterns-host_test_ldgen
-
-.rules:test:host_test_tools:
-  rules:
-    - <<: *if-revert-branch
-      when: never
-    - <<: *if-protected-check
-    - <<: *if-label-build-only
-      when: never
-    - <<: *if-label-host_test
-    - <<: *if-dev-push
-      changes: *patterns-host_test_tools
-
-.rules:test:host_test_ulp_linker:
-  rules:
-    - <<: *if-revert-branch
-      when: never
-    - <<: *if-protected-check
-    - <<: *if-label-build-only
-      when: never
-    - <<: *if-label-host_test
-    - <<: *if-dev-push
-      changes: *patterns-host_test_ulp_linker
 
 .rules:test:submodule:
   rules:

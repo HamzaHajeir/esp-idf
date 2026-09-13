@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,13 +17,7 @@
 #include "esp_hw_log.h"
 #include "soc/clk_tree_defs.h"
 
-#define PMU_CLK_SRC_VAL(src) \
-        (((uint32_t)src == (uint32_t)SOC_MOD_CLK_XTAL)       ? 0 :  \
-        ((uint32_t)src == (uint32_t)SOC_MOD_CLK_RC_FAST)     ? 1 :  \
-        ((uint32_t)src == (uint32_t)SOC_MOD_CLK_XTAL_X2_F64M)   ? 2 :  \
-        ((uint32_t)src == (uint32_t)SOC_MOD_CLK_PLL_F96M)   ? 3 : 0)
-
-ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
+static __attribute__((unused)) const char *TAG = "pmu_param";
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a)   (sizeof(a) / sizeof((a)[0]))
@@ -48,7 +42,7 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
         .xpd_bbpll      = 1  \
     }, \
     .xtal = {                \
-        .xpd_xtalx2     = 1, \
+        .xpd_xtalx2     = 0, \
         .xpd_xtal       = 1  \
     } \
 }
@@ -68,8 +62,8 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
         .i2c_iso_en     = 0, \
         .i2c_retention  = 0, \
         .xpd_bb_i2c     = 1, \
-        .xpd_bbpll_i2c  = 0, \
-        .xpd_bbpll      = 0  \
+        .xpd_bbpll_i2c  = 1, \
+        .xpd_bbpll      = 1  \
     }, \
     .xtal = {                \
         .xpd_xtalx2     = 0, \
@@ -77,14 +71,6 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
     } \
 }
 
-/*
-  flash_mode :
-    0: normal mode;
-    1: off mode
-    2: external mode;
-    3: standby mode
-    4: 4(through mode), only used when vdd low than 3v
-*/
 #define PMU_HP_SLEEP_POWER_CONFIG_DEFAULT() { \
     .dig_power = {           \
         .vdd_flash_mode = 3, \
@@ -99,7 +85,7 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
     .clk_power = {           \
         .i2c_iso_en     = 1, \
         .i2c_retention  = 1, \
-        .xpd_bb_i2c     = 0, \
+        .xpd_bb_i2c     = 1, \
         .xpd_bbpll_i2c  = 0, \
         .xpd_bbpll      = 0, \
     }, \
@@ -136,7 +122,7 @@ const pmu_hp_system_power_param_t * pmu_hp_system_power_param_default(pmu_hp_mod
 }
 
 #define PMU_HP_MODEM_CLOCK_CONFIG_DEFAULT() {   \
-    .icg_func   = BIT(PMU_ICG_FUNC_ENA_HPBUS),   \
+    .icg_func   = 0,                            \
     .icg_apb    = 0,                            \
     .icg_modem  = {                             \
         .code = PMU_HP_ICG_MODEM_CODE_MODEM     \
@@ -225,7 +211,7 @@ const pmu_hp_system_digital_param_t * pmu_hp_system_digital_param_default(pmu_hp
         .dcdc_ccm_enb       = 0,    \
         .dcdc_clear_rdy     = 0,    \
         .dig_reg_dpcur_bias = 3,    \
-        .dig_reg_dsfmos     = 15,    \
+        .dig_reg_dsfmos     = 6,    \
         .dcm_mode           = 3,    \
         .dcm_vset           = 24,   \
         .xpd_trx            = 1,    \
@@ -245,10 +231,10 @@ const pmu_hp_system_digital_param_t * pmu_hp_system_digital_param_default(pmu_hp
         .xpd                = 1,    \
         .slp_mem_dbias      = 0,    \
         .slp_logic_dbias    = 0,    \
-        .dbias              = 0 \
+        .dbias              = HP_CALI_DBIAS_DEFAULT \
     }, \
     .regulator1 = {                 \
-        .drv_b              = HP_CALI_DRVB_DEFAULT     \
+        .drv_b              = 2     \
     } \
 }
 
@@ -256,31 +242,27 @@ const pmu_hp_system_digital_param_t * pmu_hp_system_digital_param_default(pmu_hp
     .bias = {                       \
         .dcdc_ccm_enb       = 0,    \
         .dcdc_clear_rdy     = 0,    \
-        .dig_reg_dpcur_bias = 3,    \
-        .dig_reg_dsfmos     = 15,    \
+        .dig_reg_dpcur_bias = 1,    \
+        .dig_reg_dsfmos     = 4,    \
         .dcm_mode           = 3,    \
         .dcm_vset           = 24,   \
         .xpd_trx            = 1,    \
-        .xpd_bias           = 1,    \
+        .xpd_bias           = 0,    \
         .discnnt_dig_rtc    = 0,    \
         .pd_cur             = 0,    \
         .bias_sleep         = 0     \
     }, \
     .regulator0 = {                 \
         .power_det_bypass   = 0,    \
-        .lp_dbias_vol       = 0xd,  \
-        .hp_dbias_vol       = 0x1c, \
-        .dbias_sel          = 1,    \
-        .dbias_init         = 1,    \
         .slp_mem_xpd        = 0,    \
         .slp_logic_xpd      = 0,    \
         .xpd                = 1,    \
         .slp_mem_dbias      = 0,    \
         .slp_logic_dbias    = 0,    \
-        .dbias              = 0 \
+        .dbias              = HP_CALI_DBIAS_DEFAULT  \
     }, \
     .regulator1 = {                 \
-        .drv_b              = HP_CALI_DRVB_DEFAULT     \
+        .drv_b              = 2     \
     } \
 }
 
@@ -291,7 +273,7 @@ const pmu_hp_system_digital_param_t * pmu_hp_system_digital_param_default(pmu_hp
         .dig_reg_dpcur_bias = 1,    \
         .dig_reg_dsfmos     = 4,    \
         .dcm_mode           = 3,    \
-        .dcm_vset           = 20,   \
+        .dcm_vset           = 24,   \
         .xpd_trx            = 0,    \
         .xpd_bias           = 0,    \
         .discnnt_dig_rtc    = 0,    \
@@ -308,7 +290,7 @@ const pmu_hp_system_digital_param_t * pmu_hp_system_digital_param_default(pmu_hp
         .dbias              = 0     \
     }, \
     .regulator1 = {                 \
-        .drv_b              = 25    \
+        .drv_b              = 7     \
     } \
 }
 
@@ -329,8 +311,8 @@ const pmu_hp_system_analog_param_t * pmu_hp_system_analog_param_default(pmu_hp_m
     .retention = {                                  \
         .hp_sleep2active_backup_modem_clk_code = 2, \
         .hp_modem2active_backup_modem_clk_code = 2, \
-        .hp_sleep2active_backup_clk_sel = PMU_CLK_SRC_VAL(SOC_MOD_CLK_XTAL_X2_F64M), \
-        .hp_modem2active_backup_clk_sel = PMU_CLK_SRC_VAL(SOC_MOD_CLK_XTAL), \
+        .hp_sleep2active_backup_clk_sel = 0, \
+        .hp_modem2active_backup_clk_sel = 1, \
         .hp_sleep2active_backup_mode    = PMU_HP_RETENTION_REGDMA_CONFIG(0, 0), \
         .hp_modem2active_backup_mode    = PMU_HP_RETENTION_REGDMA_CONFIG(0, 2), \
         .hp_sleep2active_backup_en      = 0, \
@@ -342,7 +324,7 @@ const pmu_hp_system_analog_param_t * pmu_hp_system_analog_param_default(pmu_hp_m
 #define PMU_HP_MODEM_RETENTION_CONFIG_DEFAULT() {   \
     .retention = {                                  \
         .hp_sleep2modem_backup_modem_clk_code  = 1, \
-        .hp_sleep2modem_backup_clk_sel  = PMU_CLK_SRC_VAL(SOC_MOD_CLK_XTAL), \
+        .hp_sleep2modem_backup_clk_sel  = 0, \
         .hp_sleep2modem_backup_mode     = PMU_HP_RETENTION_REGDMA_CONFIG(0, 1), \
         .hp_sleep2modem_backup_en       = 0, \
     }, \
@@ -353,8 +335,8 @@ const pmu_hp_system_analog_param_t * pmu_hp_system_analog_param_default(pmu_hp_m
     .retention = {                                  \
         .hp_modem2sleep_backup_modem_clk_code  = 0, \
         .hp_active2sleep_backup_modem_clk_code = 2, \
-        .hp_modem2sleep_backup_clk_sel  = PMU_CLK_SRC_VAL(SOC_MOD_CLK_XTAL), \
-        .hp_active2sleep_backup_clk_sel = PMU_CLK_SRC_VAL(SOC_MOD_CLK_XTAL_X2_F64M), \
+        .hp_modem2sleep_backup_clk_sel  = 0, \
+        .hp_active2sleep_backup_clk_sel = 0, \
         .hp_modem2sleep_backup_mode     = PMU_HP_RETENTION_REGDMA_CONFIG(1, 1), \
         .hp_active2sleep_backup_mode    = PMU_HP_RETENTION_REGDMA_CONFIG(1, 0), \
         .hp_modem2sleep_backup_en       = 0, \
@@ -383,14 +365,6 @@ const pmu_hp_system_retention_param_t * pmu_hp_system_retention_param_default(pm
 # define PMU_SLOW_CLK_USE_EXT_XTAL  (0)
 #endif
 
-/*
-  vdd_io_mode :
-    0: normal mode;
-    1: off mode
-    2: external mode;
-    3: standby mode
-    4: 4(through mode), only used when vdd low than 3v
-*/
 #define PMU_LP_ACTIVE_POWER_CONFIG_DEFAULT() { \
     .dig_power = {              \
         .vdd_io_mode    = 0,    \
@@ -408,17 +382,9 @@ const pmu_hp_system_retention_param_t * pmu_hp_system_retention_param_default(pm
     } \
 }
 
-/*
-  vdd_io_mode :
-    0: normal mode;
-    1: off mode
-    2: external mode;
-    3: standby mode
-    4: 4(through mode), only used when vdd low than 3v
-*/
 #define PMU_LP_SLEEP_POWER_CONFIG_DEFAULT() { \
     .dig_power = {              \
-        .vdd_io_mode    = 0,    \
+        .vdd_io_mode    = 3,    \
         .bod_source_sel = 0,    \
         .vddbat_mode    = 0,    \
         .mem_dslp       = 0,    \
@@ -455,7 +421,7 @@ const pmu_lp_system_power_param_t * pmu_lp_system_power_param_default(pmu_lp_mod
         .dbias      = LP_CALI_DBIAS_DEFAULT  \
     }, \
     .regulator1 = {                 \
-        .drv_b      = 0             \
+        .drv_b      = 2             \
     } \
 }
 
@@ -466,7 +432,7 @@ const pmu_lp_system_power_param_t * pmu_lp_system_power_param_default(pmu_lp_mod
         .dig_reg_dpcur_bias = 1,    \
         .dig_reg_dsfmos     = 4,    \
         .dcm_mode           = 3,    \
-        .dcm_vset           = 20,    \
+        .dcm_vset           = 0,    \
         .xpd_bias           = 0,    \
         .discnnt_dig_rtc    = 1,    \
         .pd_cur             = 1,    \
@@ -476,10 +442,10 @@ const pmu_lp_system_power_param_t * pmu_lp_system_power_param_default(pmu_lp_mod
         .slp_xpd            = 0,    \
         .xpd                = 1,    \
         .slp_dbias          = 0,    \
-        .dbias              = 3     \
+        .dbias              = 0     \
     }, \
     .regulator1 = {                 \
-        .drv_b              = 0   \
+        .drv_b              = 7     \
     } \
 }
 
@@ -493,12 +459,14 @@ const pmu_lp_system_analog_param_t * pmu_lp_system_analog_param_default(pmu_lp_m
     return &lp_analog[mode];
 }
 
-uint32_t get_act_hp_drvb(void)
+uint32_t get_act_hp_dbias(void)
 {
-    return HP_CALI_DRVB_DEFAULT;
+    // TODO: IDF-12313
+    return HP_CALI_DBIAS_DEFAULT;
 }
 
 uint32_t get_act_lp_dbias(void)
 {
-    return LP_CALI_DBIAS_DEFAULT;
+    // TODO: IDF-12313
+     return LP_CALI_DBIAS_DEFAULT;
 }

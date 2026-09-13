@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,7 +9,6 @@
 
 /* INCLUDE */
 #include "ble_log_prph_dummy.h"
-#include "ble_log_lbm.h"
 
 /* INTERFACE */
 bool ble_log_prph_init(size_t trans_cnt)
@@ -81,12 +80,7 @@ void ble_log_prph_trans_deinit(ble_log_prph_trans_t **trans)
     *trans = NULL;
 }
 
-/* Dummy transport has no DMA/hardware -- recycle the buffer immediately
- * so that ble_log_lbm_get_trans() can reuse it and ble_log_flush() does
- * not hang waiting for prph_owned to clear.  Real peripherals (UART DMA,
- * SPI DMA) do the same work inside their asynchronous tx_done callbacks. */
 void ble_log_prph_send_trans(ble_log_prph_trans_t *trans)
 {
-    trans->pos = 0;
-    ble_log_lbm_recycle_trans(trans);
+    (void)trans;
 }

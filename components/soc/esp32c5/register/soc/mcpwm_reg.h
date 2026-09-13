@@ -5,12 +5,11 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define REG_MCPWM_BASE(i)       (DR_REG_MCPWM_BASE)
 
 /** MCPWM_CLK_CFG_REG register
  *  PWM clock prescaler register.

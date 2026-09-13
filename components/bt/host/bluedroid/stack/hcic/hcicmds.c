@@ -165,10 +165,7 @@ BOOLEAN btsnd_hcic_create_conn(BD_ADDR dest, UINT16 packet_types,
 #endif
 #if (SMP_INCLUDED == TRUE && CLASSIC_BT_INCLUDED == TRUE)
     btm_acl_paging (p, dest);
-#else
-    HCI_FREE_CMD_BUF (p);
-    return (FALSE);
-#endif
+#endif  ///SMP_INCLUDED == TRUE && CLASSIC_BT_INCLUDED == TRUE
     return (TRUE);
 }
 
@@ -496,10 +493,7 @@ BOOLEAN btsnd_hcic_rmt_name_req (BD_ADDR bd_addr, UINT8 page_scan_rep_mode,
     UINT16_TO_STREAM (pp, clock_offset);
 #if (SMP_INCLUDED == TRUE && CLASSIC_BT_INCLUDED == TRUE)
     btm_acl_paging (p, bd_addr);
-#else
-    HCI_FREE_CMD_BUF (p);
-    return (FALSE);
-#endif
+#endif  ///SMP_INCLUDED == TRUE && CLASSIC_BT_INCLUDED == TRUE
     return (TRUE);
 }
 
@@ -1376,7 +1370,7 @@ BOOLEAN btsnd_hcic_write_link_super_tout (UINT8 local_controller_id, UINT16 hand
     return (TRUE);
 }
 
-BOOLEAN btsnd_hcic_write_cur_iac_lap (UINT8 num_cur_iac, const LAP *iac_lap)
+BOOLEAN btsnd_hcic_write_cur_iac_lap (UINT8 num_cur_iac, LAP *const iac_lap)
 {
     BT_HDR *p;
     UINT8 *pp;
@@ -1438,11 +1432,11 @@ BOOLEAN btsnd_hcic_sniff_sub_rate(UINT16 handle, UINT16 max_lat,
 #endif /* BTM_SSR_INCLUDED */
 
 /**** Extended Inquiry Response Commands ****/
-BOOLEAN btsnd_hcic_write_ext_inquiry_response (BT_HDR *buffer, UINT8 fec_req)
+void btsnd_hcic_write_ext_inquiry_response (BT_HDR *buffer, UINT8 fec_req)
 {
     BT_HDR *p;
     if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_EXT_INQ_RESP)) == NULL) {
-        return (FALSE);
+        return;
     }
 
     UINT8 *pp = (UINT8 *)(p + 1);
@@ -1457,7 +1451,6 @@ BOOLEAN btsnd_hcic_write_ext_inquiry_response (BT_HDR *buffer, UINT8 fec_req)
     memcpy(pp, buffer->data + 4, p->len - 4);
 
     btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
-    return (TRUE);
 }
 
 BOOLEAN btsnd_hcic_io_cap_req_reply (BD_ADDR bd_addr, UINT8 capability,
@@ -1674,28 +1667,6 @@ BOOLEAN btsnd_hcic_read_inq_tx_power (void)
 
     UINT16_TO_STREAM (pp, HCI_READ_INQ_TX_POWER_LEVEL);
     UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_R_TX_POWER);
-
-    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
-    return (TRUE);
-}
-
-BOOLEAN btsnd_hcic_write_inq_tx_power (INT8 tx_power)
-{
-    BT_HDR *p;
-    UINT8 *pp;
-
-    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_W_INQ_TX_POWER)) == NULL) {
-        return (FALSE);
-    }
-
-    pp = (UINT8 *)(p + 1);
-
-    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_W_INQ_TX_POWER;
-    p->offset = 0;
-
-    UINT16_TO_STREAM (pp, HCI_WRITE_INQ_TX_POWER_LEVEL);
-    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_W_INQ_TX_POWER);
-    INT8_TO_STREAM   (pp, tx_power);
 
     btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
     return (TRUE);

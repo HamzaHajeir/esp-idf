@@ -6,7 +6,7 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * SPDX-FileContributor: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -49,13 +49,10 @@
 #define CORE_ID_SIZE        4
 #endif
 
-/* Align the value up to the nearest multiple of 4 */
-#define PORT_ALIGN_UP_TO_4(value) (((value) + 3) & ~3)
-
 #define PORT_OFFSET_PX_END_OF_STACK ( \
     PORT_OFFSET_PX_STACK \
     + 4                                 /* void * pxDummy6 */ \
-    + PORT_ALIGN_UP_TO_4(configMAX_TASK_NAME_LEN) /* uint8_t ucDummy7[ configMAX_TASK_NAME_LEN ] */ \
+    + CONFIG_FREERTOS_MAX_TASK_NAME_LEN /* uint8_t ucDummy7[ configMAX_TASK_NAME_LEN ] */ \
     + CORE_ID_SIZE                      /* BaseType_t xDummyCoreID */ \
 )
 
@@ -229,24 +226,6 @@ void vPortEnterCritical(void);
  * - Can be nested
  */
 void vPortExitCritical(void);
-
-#if CONFIG_FREERTOS_PORT_THREAD_SAFE_CLAIM
-/**
- * @brief Claim thread-safe region start
- *        If claimed, vPortEnterCritical/vPortExitCritical on the current core are no-ops.
- *        Only can be used in single-core running context with interrupts disabled.
- * @note !!! Caller must guarantee thread safety between Claim and Disclaim !!!
- */
-void xPortThreadSafeClaim(void);
-
-/**
- * @brief Claim thread-safe region end
- *        Restores normal port critical behavior
- *        Only can be used in single-core running context with interrupts disabled.
- * @note !!! Caller must guarantee thread safety between Claim and Disclaim !!!
- */
-void xPortThreadSafeDisclaim(void);
-#endif /* CONFIG_FREERTOS_PORT_THREAD_SAFE_CLAIM */
 
 #if (configNUM_CORES > 1)
 /**
@@ -766,21 +745,6 @@ extern volatile UBaseType_t xPortSwitchFlag[portNUM_PROCESSORS];
 #define os_task_switch_is_pended(_cpu_) (xPortSwitchFlag[_cpu_])
 #else
 #define os_task_switch_is_pended(_cpu_) (false)
-#endif
-
-// -------------- FPU softerware retention ------------------
-#if (SOC_CPU_COPROC_NUM > 0) && SOC_CPU_HAS_FPU && SOC_PM_FPU_RETENTION_BY_SW
-/**
- * @brief Whether the FPU context is dirty on the given core.
- *
- * Returns non-zero if any task has used the FPU, such context should be
- *                  saved during sleep retention.
- *
- * @param core_id Core id
- * @return pdTRUE  FPU context is dirty
- * @return pdFALSE FPU was not used
- */
-BaseType_t xPortFPUContextIsDirty(BaseType_t core_id);
 #endif
 
 #ifdef __cplusplus

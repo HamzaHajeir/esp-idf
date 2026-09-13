@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,12 +12,11 @@
 
 static void mcpwm_timer_default_isr(void *args);
 
-static esp_err_t mcpwm_timer_register_to_group(mcpwm_timer_t *timer, int group_id, soc_module_clk_t clk_src)
+static esp_err_t mcpwm_timer_register_to_group(mcpwm_timer_t *timer, int group_id)
 {
-    mcpwm_group_t *group = NULL;
-    esp_err_t ret = ESP_OK;
+    mcpwm_group_t *group = mcpwm_acquire_group_handle(group_id);
+    ESP_RETURN_ON_FALSE(group, ESP_ERR_NO_MEM, TAG, "no mem for group (%d)", group_id);
 
-    ESP_GOTO_ON_ERROR(mcpwm_acquire_group_handle(group_id, clk_src, &group), err, TAG, "acquire group failed");
     int timer_id = -1;
     portENTER_CRITICAL(&group->spinlock);
     for (int i = 0; i < MCPWM_LL_GET(TIMERS_PER_GROUP); i++) {
@@ -28,17 +27,15 @@ static esp_err_t mcpwm_timer_register_to_group(mcpwm_timer_t *timer, int group_i
         }
     }
     portEXIT_CRITICAL(&group->spinlock);
-    ESP_GOTO_ON_FALSE(timer_id >= 0, ESP_ERR_NOT_FOUND, err, TAG, "no free timer in group (%d)", group_id);
-
-    timer->group = group;
-    timer->timer_id = timer_id;
-    return ESP_OK;
-
-err:
-    if (group) {
+    if (timer_id < 0) {
         mcpwm_release_group_handle(group);
+        group = NULL;
+    } else {
+        timer->group = group;
+        timer->timer_id = timer_id;
     }
-    return ret;
+    ESP_RETURN_ON_FALSE(timer_id >= 0, ESP_ERR_NOT_FOUND, TAG, "no free timer in group (%d)", group_id);
+    return ESP_OK;
 }
 
 static void mcpwm_timer_unregister_from_group(mcpwm_timer_t *timer)
@@ -88,19 +85,22 @@ esp_err_t mcpwm_new_timer(const mcpwm_timer_config_t *config, mcpwm_timer_handle
     ESP_RETURN_ON_FALSE(config->flags.allow_pd == 0, ESP_ERR_NOT_SUPPORTED, TAG, "register back up is not supported");
 #endif // SOC_MCPWM_SUPPORT_SLEEP_RETENTION
 
-    // select the clock source before group HAL initialization if this timer creates the group
-    mcpwm_timer_clock_source_t clk_src = config->clk_src ? config->clk_src : MCPWM_TIMER_CLK_SRC_DEFAULT;
-
     timer = heap_caps_calloc(1, sizeof(mcpwm_timer_t), MCPWM_MEM_ALLOC_CAPS);
     ESP_GOTO_ON_FALSE(timer, ESP_ERR_NO_MEM, err, TAG, "no mem for timer");
 
-    ESP_GOTO_ON_ERROR(mcpwm_timer_register_to_group(timer, config->group_id, (soc_module_clk_t)clk_src), err, TAG, "register timer failed");
+    ESP_GOTO_ON_ERROR(mcpwm_timer_register_to_group(timer, config->group_id), err, TAG, "register timer failed");
     mcpwm_group_t *group = timer->group;
     int group_id = group->group_id;
     mcpwm_hal_context_t *hal = &group->hal;
     int timer_id = timer->timer_id;
 
-    // group clock source has already been committed in mcpwm_acquire_group_handle()
+    // if interrupt priority specified before, it cannot be changed until the group is released
+    // check if the new priority specified consistents with the old one
+    ESP_GOTO_ON_ERROR(mcpwm_check_intr_priority(group, config->intr_priority), err, TAG, "set group interrupt priority failed");
+
+    // select the clock source
+    mcpwm_timer_clock_source_t clk_src = config->clk_src ? config->clk_src : MCPWM_TIMER_CLK_SRC_DEFAULT;
+    ESP_GOTO_ON_ERROR(mcpwm_select_periph_clock(group, (soc_module_clk_t)clk_src), err, TAG, "set group clock failed");
     // reset the timer to a determined state
     mcpwm_hal_timer_reset(hal, timer_id);
     // set timer resolution
@@ -125,7 +125,6 @@ esp_err_t mcpwm_new_timer(const mcpwm_timer_config_t *config, mcpwm_timer_handle
     // fill in other timer specific members
     timer->spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
     timer->fsm = MCPWM_TIMER_FSM_INIT;
-    timer->intr_priority = config->intr_priority;
     *ret_timer = timer;
 
 #if MCPWM_USE_RETENTION_LINK
@@ -209,18 +208,11 @@ esp_err_t mcpwm_timer_register_event_callbacks(mcpwm_timer_handle_t timer, const
     // lazy install interrupt service
     if (!timer->intr) {
         ESP_RETURN_ON_FALSE(timer->fsm == MCPWM_TIMER_FSM_INIT, ESP_ERR_INVALID_STATE, TAG, "timer not in init state");
-        int isr_flags = MCPWM_INTR_ALLOC_FLAG |
-                        (timer->intr_priority ? (1 << timer->intr_priority) : MCPWM_ALLOW_INTR_PRIORITY_MASK);
-        esp_intr_alloc_info_t intr_info = {
-            .source = soc_mcpwm_signals[group_id].irq_id,
-            .flags = isr_flags,
-            .intrstatusreg = (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev),
-            .intrstatusmask = MCPWM_LL_EVENT_TIMER_MASK(timer_id),
-            .handler = mcpwm_timer_default_isr,
-            .arg = timer,
-            .bind_by.name = soc_mcpwm_signals[group_id].module_name,
-        };
-        ESP_RETURN_ON_ERROR(esp_intr_alloc_info(&intr_info, &timer->intr), TAG, "install interrupt service for timer failed");
+        int isr_flags = MCPWM_INTR_ALLOC_FLAG;
+        isr_flags |= mcpwm_get_intr_priority_flag(group);
+        ESP_RETURN_ON_ERROR(esp_intr_alloc_intrstatus(soc_mcpwm_signals[group_id].irq_id, isr_flags,
+                                                      (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev), MCPWM_LL_EVENT_TIMER_MASK(timer_id),
+                                                      mcpwm_timer_default_isr, timer, &timer->intr), TAG, "install interrupt service for timer failed");
     }
 
     // enable/disable interrupt events
@@ -340,10 +332,10 @@ esp_err_t mcpwm_timer_set_phase_on_sync(mcpwm_timer_handle_t timer, const mcpwm_
         }
         case MCPWM_SYNC_TYPE_SOFT: {
             mcpwm_soft_sync_src_t *soft_sync = __containerof(sync_source, mcpwm_soft_sync_src_t, base);
-            if (soft_sync->soft_sync_bound_to == MCPWM_SOFT_SYNC_BOUND_TO_TIMER && soft_sync->timer != timer) {
+            if (soft_sync->soft_sync_from == MCPWM_SOFT_SYNC_FROM_TIMER && soft_sync->timer != timer) {
                 ESP_RETURN_ON_FALSE(false, ESP_ERR_INVALID_STATE, TAG, "soft sync already used by another timer");
             }
-            soft_sync->soft_sync_bound_to = MCPWM_SOFT_SYNC_BOUND_TO_TIMER;
+            soft_sync->soft_sync_from = MCPWM_SOFT_SYNC_FROM_TIMER;
             soft_sync->timer = timer;
             soft_sync->base.group = group;
             break;

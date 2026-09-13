@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import pytest
 from pytest_embedded import Dut
@@ -86,25 +86,18 @@ def test_psram_esp32s3_octal(dut: Dut) -> None:
 def test_psram_esp32p4(dut: Dut) -> None:
     dut.run_all_single_board_cases()
 
-@pytest.mark.flash_120m
-@pytest.mark.parametrize(
-    'config',
-    ['esp32p4_250m_release', 'esp32p4_250m_xip'],
-    indirect=True,
-)
-@idf_parametrize('target', ['esp32p4'], indirect=['target'])
-def test_psram_esp32p4_250m(dut: Dut) -> None:
-    dut.run_all_single_board_cases()
-
 
 @pytest.mark.generic
 @pytest.mark.parametrize(
     'config',
-    ['esp32s31_250m_release', 'esp32s31_xip'],
+    [
+        'esp32c5_release',
+        'esp32c5_advanced',
+    ],
     indirect=True,
 )
-@idf_parametrize('target', ['esp32s31'], indirect=['target'])
-def test_psram_esp32s31(dut: Dut) -> None:
+@idf_parametrize('target', ['esp32c5'], indirect=['target'])
+def test_psram_esp32c5(dut: Dut) -> None:
     dut.run_all_single_board_cases()
 
 
@@ -112,27 +105,13 @@ def test_psram_esp32s31(dut: Dut) -> None:
 @pytest.mark.parametrize(
     'config',
     [
-        'esp32h4_release',
-        'esp32h4_advanced',
+        'esp32c61_release',
+        'esp32c61_advanced',
     ],
     indirect=True,
 )
-@idf_parametrize('target', ['esp32h4'], indirect=['target'])
-def test_psram_esp32h4(dut: Dut) -> None:
-    dut.run_all_single_board_cases()
-
-
-@pytest.mark.generic
-@pytest.mark.parametrize(
-    'config',
-    [
-        'release',
-        'advanced',
-    ],
-    indirect=True,
-)
-@idf_parametrize('target', ['esp32c5', 'esp32c61'], indirect=['target'])
-def test_psram_general(dut: Dut) -> None:
+@idf_parametrize('target', ['esp32c61'], indirect=['target'])
+def test_psram_esp32c61(dut: Dut) -> None:
     dut.run_all_single_board_cases()
 
 

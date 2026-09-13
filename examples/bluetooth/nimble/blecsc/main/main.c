@@ -24,7 +24,6 @@
 #include "console/console.h"
 #include "nimble/ble.h"
 #include "host/ble_hs.h"
-#include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "blecsc_sens.h"
 #include "nimble/nimble_port.h"
@@ -32,10 +31,10 @@
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x18, 0x11,
-    0x10, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'c', 's', 'c','-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x18, 0x11,
+    0x10, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'c', 's', 'c','-', 'e',
 };
 #endif
 
@@ -199,16 +198,14 @@ blecsc_measurement(struct ble_npl_event *ev)
 {
     int rc;
 
-    rc = ble_npl_callout_reset(&blecsc_measure_timer, ble_npl_time_ms_to_ticks32(1000));
+    rc = ble_npl_callout_reset(&blecsc_measure_timer, portTICK_PERIOD_MS * 10);
     assert(rc == 0);
 
     blecsc_simulate_speed_and_cadence();
 
     if (notify_state) {
         rc = gatt_svr_chr_notify_csc_measurement(conn_handle);
-        if (rc != 0) {
-            MODLOG_DFLT(WARN, "gatt_svr_chr_notify_csc_measurement failed; rc=%d\n", rc);
-        }
+        assert(rc == 0);
     }
 }
 
@@ -235,8 +232,6 @@ blecsc_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         MODLOG_DFLT(INFO, "disconnect; reason=%d\n", event->disconnect.reason);
         conn_handle = 0;
-        notify_state = false;
-        gatt_svr_set_cp_indicate(0);
         /* Connection terminated; resume advertising */
         blecsc_advertise();
         break;
@@ -276,9 +271,6 @@ static void
 blecsc_on_sync(void)
 {
     int rc;
-
-    rc = ble_hs_util_ensure_addr(0);
-    assert(rc == 0);
 
     /* Figure out address to use while advertising (no privacy) */
     rc = ble_hs_id_infer_auto(0, &blecsc_addr_type);
@@ -329,7 +321,7 @@ app_main(void)
     /* Initialize measurement and notification timer */
     ble_npl_callout_init(&blecsc_measure_timer, nimble_port_get_dflt_eventq(),
                     blecsc_measurement, NULL);
-    rc = ble_npl_callout_reset(&blecsc_measure_timer, ble_npl_time_ms_to_ticks32(1000));
+    rc = ble_npl_callout_reset(&blecsc_measure_timer, portTICK_PERIOD_MS * 100);
     assert(rc == 0);
 
 #if MYNEWT_VAL(BLE_GATTS)

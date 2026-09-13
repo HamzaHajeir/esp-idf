@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,19 +11,16 @@
 /* INCLUDE */
 #include "ble_log_util.h"
 
-#include "freertos/task.h"
-
-/* MACRO */
-#define BLE_LOG_REF_COUNT_WAIT_TIMEOUT_MS (1000)
-
 /* VARIABLE */
-BLE_LOG_DRAM_ATTR portMUX_TYPE ble_log_spin_lock = portMUX_INITIALIZER_UNLOCKED;
+#ifndef UNIT_TEST
+portMUX_TYPE ble_log_spin_lock = portMUX_INITIALIZER_UNLOCKED;
+#endif /* !UNIT_TEST */
 
 /* INTERNAL INTERFACE */
+#if CONFIG_BLE_LOG_XOR_CHECKSUM_ENABLED
 #include "esp_compiler.h"
 
-BLE_LOG_IRAM_ATTR BLE_LOG_STATIC BLE_LOG_INLINE
-uint32_t ror32(uint32_t word, uint32_t shift)
+static inline uint32_t ror32(uint32_t word, uint32_t shift)
 {
     if (unlikely(shift == 0)) {
         return word;
@@ -71,30 +68,35 @@ uint32_t ble_log_fast_checksum(const uint8_t *data, size_t len)
     /* Step 6: Rotate the final result */
     return ror32(checksum, start_offset_shift);
 }
-
+#else /* !CONFIG_BLE_LOG_XOR_CHECKSUM_ENABLED */
 BLE_LOG_IRAM_ATTR
-bool ble_log_ref_count_try_acquire(volatile uint32_t *ref_count,
-                                   const uint32_t *inited)
+uint32_t ble_log_fast_checksum(const uint8_t *data, size_t len)
 {
-    /* The seq_cst increment/check pairs with deinit's seq_cst gate close
-     * before it waits for the reference count. */
-    BLE_LOG_REF_COUNT_ACQUIRE_SEQ_CST(ref_count);
-    if (BLE_LOG_ATOMIC_LOAD_SEQ_CST(*inited)) {
-        return true;
-    }
-    BLE_LOG_REF_COUNT_RELEASE(ref_count);
-    return false;
-}
+    uint32_t sum = 0;
+    size_t i = 0;
 
-bool ble_log_ref_count_wait(volatile uint32_t *ref_count, uint32_t max_ref_count)
-{
-    TickType_t start_tick = xTaskGetTickCount();
-    while (BLE_LOG_ATOMIC_LOAD_SEQ_CST(*ref_count) > max_ref_count) {
-        if ((xTaskGetTickCount() - start_tick) >=
-                pdMS_TO_TICKS(BLE_LOG_REF_COUNT_WAIT_TIMEOUT_MS)) {
-            return false;
-        }
-        vTaskDelay(1);
+    /* Step 1: Sum up until 4-byte aligned */
+    while (((uintptr_t)(data + i) & 0x3) && (i < len)) {
+        sum += data[i++];
     }
-    return true;
+
+    /* Step 2: Sum up 4-byte aligned blocks */
+    const uint32_t *p32 = (const uint32_t *)(data + i);
+    size_t blocks = (len - i) / 4;
+    for (size_t b = 0; b < blocks; b++) {
+        uint32_t v = p32[b];
+        sum += (v & 0xFF)
+             + ((v >> 8)  & 0xFF)
+             + ((v >> 16) & 0xFF)
+             + ((v >> 24) & 0xFF);
+    }
+    i += blocks * 4;
+
+    /* Step 3: Sum up remaining bytes */
+    while (i < len) {
+        sum += data[i++];
+    }
+
+    return sum;
 }
+#endif /* CONFIG_BLE_LOG_XOR_CHECKSUM_ENABLED */

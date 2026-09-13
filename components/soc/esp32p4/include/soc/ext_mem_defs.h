@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -65,6 +65,8 @@ extern "C" {
 #define SOC_MMU_FLASH_SENSITIVE             BIT(13)
 #define SOC_MMU_PSRAM_SENSITIVE             BIT(12)
 
+#define SOC_NON_CACHEABLE_OFFSET            0x40000000
+
 /**
  * MMU entry valid bit mask for mapping value.
  * - For a Flash MMU entry:
@@ -97,12 +99,10 @@ extern "C" {
  * MMU Linear Address
  *----------------------------------------------------------------------------*/
 /**
- * - 64KB MMU page size: the lower 0xFFFF bits are the page offset
- * - Flash linear addresses start from 0x00000000, PSRAM linear addresses start from 0x08000000
- * - The mask keeps the bits needed to distinguish flash and PSRAM linear ranges while discarding
- *   the upper virtual-address tag bits
+ * - 64KB MMU page size: the last 0xFFFF, which is the offset
+ * - 1024 MMU entries for flash, 1024 MMU entries for psram, needs 0xFFF to hold it.
  *
- * Therefore, use 0x0FFFFFFF.
+ * Therefore, 0x3F,FFFF
  */
 #define SOC_MMU_LINEAR_ADDR_MASK            0xFFFFFFF
 

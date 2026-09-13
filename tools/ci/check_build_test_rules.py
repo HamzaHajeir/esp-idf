@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import os
@@ -8,6 +8,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import yaml
 from idf_build_apps import App
 from idf_build_apps import find_apps
 from idf_build_apps.constants import SUPPORTED_TARGETS
@@ -38,12 +39,6 @@ USUAL_TO_FORMAL = {
 }
 
 FORMAL_TO_USUAL = {v: k for k, v in USUAL_TO_FORMAL.items()}
-
-# Targets under bringup: suppress check-test-scripts warnings for these.
-# Reset to [] once bringup is complete.
-BYPASS_CHECK_TEST_TARGETS: list[str] = [
-    'esp32h21',
-]
 
 
 def print_diff_table(
@@ -304,9 +299,21 @@ if __name__ == '__main__':
 
     readme_parser = action.add_parser('check-readmes')
     readme_parser.add_argument('paths', nargs='+', help='check under paths')
+    readme_parser.add_argument(
+        '-c',
+        '--config',
+        default=os.path.join(IDF_PATH, '.gitlab', 'ci', 'default-build-test-rules.yml'),
+        help='config file',
+    )
 
     test_parser = action.add_parser('check-test-scripts')
     test_parser.add_argument('paths', nargs='+', help='check under paths')
+    test_parser.add_argument(
+        '-c',
+        '--config',
+        default=os.path.join(IDF_PATH, '.gitlab', 'ci', 'default-build-test-rules.yml'),
+        help='config file',
+    )
     arg = parser.parse_args()
 
     check_dirs = set()
@@ -329,13 +336,21 @@ if __name__ == '__main__':
 
     if check_all:
         check_dirs = {IDF_PATH}
+        _exclude_dirs = [
+            os.path.join(IDF_PATH, 'tools', 'test_build_system', 'build_test_app'),
+            os.path.join(IDF_PATH, 'tools', 'test_build_system', 'buildv2_test_app'),
+            os.path.join(IDF_PATH, 'tools', 'templates', 'sample_project'),
+        ]
+    else:
+        _exclude_dirs = [os.path.join(IDF_PATH, 'tools', 'templates', 'sample_project')]
 
-    _exclude_dirs = [
-        os.path.join(IDF_PATH, 'tools', 'test_build_system'),
-        os.path.join(IDF_PATH, 'tools', 'templates', 'sample_project'),
-        os.path.join(IDF_PATH, 'tools', 'templates', 'sample_project_cpp'),
-        os.path.join(IDF_PATH, 'tools', 'cmakev2', 'test'),
-    ]
+    _bypass_targets: list[str] = []
+    if arg.config:
+        with open(arg.config) as fr:
+            configs = yaml.safe_load(fr)
+
+        if configs:
+            _bypass_targets = configs.get('bypass_check_test_targets') or []
 
     os.environ.update(
         {
@@ -354,5 +369,5 @@ if __name__ == '__main__':
         check_test_scripts(
             list(check_dirs),
             _exclude_dirs,
-            bypass_targets=BYPASS_CHECK_TEST_TARGETS,
+            bypass_targets=_bypass_targets,
         )

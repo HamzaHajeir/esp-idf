@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,14 +16,35 @@
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "bleprph.h"
-#include "soc/rtc.h"
+
+#if CONFIG_EXAMPLE_USE_CI_ADDRESS
+#ifdef CONFIG_IDF_TARGET_ESP32
+#define TEST_CI_ADDRESS_CHIP_OFFSET (0)
+#elif CONFIG_IDF_TARGET_ESP32C2
+#define TEST_CI_ADDRESS_CHIP_OFFSET (1)
+#elif CONFIG_IDF_TARGET_ESP32C3
+#define TEST_CI_ADDRESS_CHIP_OFFSET (2)
+#elif CONFIG_IDF_TARGET_ESP32C6
+#define TEST_CI_ADDRESS_CHIP_OFFSET (3)
+#elif CONFIG_IDF_TARGET_ESP32C5
+#define TEST_CI_ADDRESS_CHIP_OFFSET (4)
+#elif CONFIG_IDF_TARGET_ESP32H2
+#define TEST_CI_ADDRESS_CHIP_OFFSET (5)
+#elif CONFIG_IDF_TARGET_ESP32P4
+#define TEST_CI_ADDRESS_CHIP_OFFSET (6)
+#elif CONFIG_IDF_TARGET_ESP32S3
+#define TEST_CI_ADDRESS_CHIP_OFFSET (7)
+#elif CONFIG_IDF_TARGET_ESP32C61
+#define TEST_CI_ADDRESS_CHIP_OFFSET (8)
+#endif
+#endif
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x18, 0x11,
-    0x11, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x18, 0x11,
+    0x11, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
 };
 #endif
 
@@ -95,9 +116,7 @@ ext_bleprph_advertise(void)
     memset (&params, 0, sizeof(params));
 
     /* enable connectable advertising */
-#if NIMBLE_BLE_CONNECT
     params.connectable = 1;
-#endif // NIMBLE_BLE_CONNECT
 
     /* advertise using random addr */
     params.own_addr_type = own_addr_type;
@@ -176,18 +195,15 @@ bleprph_advertise(void)
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     const char *name;
     name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
-#endif
 
-    static const ble_uuid16_t adv_uuids16[] = {
+    fields.uuids16 = (ble_uuid16_t[]) {
         BLE_UUID16_INIT(GATT_SVR_SVC_ALERT_UUID)
     };
-    fields.uuids16 = adv_uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
@@ -211,21 +227,15 @@ bleprph_advertise(void)
 #endif
 
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
-static int bleprph_power_control(uint16_t conn_handle)
+static void bleprph_power_control(uint16_t conn_handle)
 {
     int rc;
 
     rc = ble_gap_read_remote_transmit_power_level(conn_handle, 0x01 );  // Attempting on LE 1M phy
-    if (rc != 0) {
-        return rc;
-    }
+    assert (rc == 0);
 
     rc = ble_gap_set_transmit_power_reporting_enable(conn_handle, 0x1, 0x1);
-    if (rc != 0) {
-        return rc;
-    }
-
-    return 0;
+    assert (rc == 0);
 }
 #endif
 
@@ -307,13 +317,10 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         }
 
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
-        if (event->connect.status == 0) {
-            rc = bleprph_power_control(event->connect.conn_handle);
-            if (rc == 0) {
-                ble_gap_event_listener_register(&power_control_event_listener,
-                                                bleprph_gap_power_event, NULL);
-            }
-        }
+	bleprph_power_control(event->connect.conn_handle);
+
+	ble_gap_event_listener_register(&power_control_event_listener,
+                                        bleprph_gap_power_event, NULL);
 #endif
         return 0;
 
@@ -406,13 +413,11 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_PASSKEY_ACTION:
         ESP_LOGI(tag, "PASSKEY_ACTION_EVENT started ");
-#if NIMBLE_BLE_CONNECT && NIMBLE_BLE_SM
         struct ble_sm_io pkey = {0};
         int key = 0;
+
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
             pkey.action = event->passkey.params.action;
-            /* WARNING: Hardcoded passkey for demonstration only.
-             * In production, generate a random passkey per pairing. */
             pkey.passkey = 123456; // This is the passkey to be entered on peer
             ESP_LOGI(tag, "Enter passkey %" PRIu32 "on the peer side", pkey.passkey);
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
@@ -449,7 +454,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
             ESP_LOGI(tag, "ble_sm_inject_io result: %d", rc);
         }
-#endif // NIMBLE_BLE_CONNECT && NIMBLE_BLE_SM
         return 0;
 
 #if CONFIG_EXAMPLE_SLEEP_WAKEUP
@@ -481,21 +485,17 @@ bleprph_on_reset(int reason)
 static void
 ble_app_set_addr(void)
 {
-    ble_addr_t addr = {0};
+    ble_addr_t addr;
     int rc;
 
     /* generate new non-resolvable private address */
     rc = ble_hs_id_gen_rnd(0, &addr);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_gen_rnd failed; rc=%d\n", rc);
-        return;
-    }
+    assert(rc == 0);
 
     /* set generated address */
     rc = ble_hs_id_set_rnd(addr.val);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_set_rnd failed; rc=%d\n", rc);
-    }
+
+    assert(rc == 0);
 }
 #endif
 
@@ -512,10 +512,10 @@ bleprph_on_sync(void)
 #if CONFIG_EXAMPLE_USE_CI_ADDRESS
     if (strlen(CONFIG_EXAMPLE_CI_ADDRESS_OFFSET)) {
         uint8_t addr[6] = {0};
-        uint32_t offset_val = (uint32_t)atoi(CONFIG_EXAMPLE_CI_ADDRESS_OFFSET);
-        memcpy(&addr[1], &offset_val, sizeof(offset_val));
+        uint32_t *offset = (uint32_t *)&addr[1];
+        *offset = atoi(CONFIG_EXAMPLE_CI_ADDRESS_OFFSET);
         addr[5] = 0xC3;
-        addr[0] = CONFIG_IDF_FIRMWARE_CHIP_ID;
+        addr[0] = TEST_CI_ADDRESS_CHIP_OFFSET;
         rc = ble_hs_id_set_rnd(addr);
         assert(rc == 0);
     }
@@ -579,8 +579,8 @@ app_main(void)
     // maximum and minimum frequencies are set in sdkconfig,
     // automatic light sleep is enabled if tickless idle support is enabled.
     esp_pm_config_t pm_config = {
-            .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-            .min_freq_mhz = rtc_clk_xtal_freq_get(),
+            .max_freq_mhz = CONFIG_EXAMPLE_MAX_CPU_FREQ_MHZ,
+            .min_freq_mhz = CONFIG_EXAMPLE_MIN_CPU_FREQ_MHZ,
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
             .light_sleep_enable = true
 #endif

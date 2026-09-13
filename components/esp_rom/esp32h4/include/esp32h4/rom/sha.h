@@ -14,6 +14,8 @@
 extern "C" {
 #endif
 
+//TODO: [ESP32H4] IDF-12263 inherit from verification branch, need check
+
 typedef enum {
     SHA1 = 0,
     SHA2_224,

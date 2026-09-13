@@ -397,7 +397,7 @@ LCD
     Legacy MCPWM Driver is Deprecated
     ---------------------------------
 
-    MCPWM driver was redesigned (see :doc:`MCPWM </api-reference/peripherals/mcpwm/index>`), meanwhile, the legacy driver is deprecated.
+    MCPWM driver was redesigned (see :doc:`MCPWM <../../../api-reference/peripherals/mcpwm>`), meanwhile, the legacy driver is deprecated.
 
     The new driver's aim is to make each MCPWM submodule independent to each other, and give the freedom of resource connection back to users.
 
@@ -480,6 +480,12 @@ LCD
     The I2S driver has been redesigned (see :doc:`I2S Driver <../../../api-reference/peripherals/i2s>`), which aims to rectify the shortcomings of the driver that were exposed when supporting all the new features of ESP32-C3 & ESP32-S3. The new driver's APIs are available by including corresponding I2S mode's header files :component_file:`esp_driver_i2s/include/driver/i2s_std.h`, :component_file:`esp_driver_i2s/include/driver/i2s_pdm.h`, or :component_file:`esp_driver_i2s/include/driver/i2s_tdm.h`.
 
     Meanwhile, the old driver's APIs in ``driver/i2s.h`` are still supported for backward compatibility. But there will be warnings if users keep using the old APIs in their projects, these warnings can be suppressed by the Kconfig option ``CONFIG_I2S_SUPPRESS_DEPRECATE_WARN``.
+
+    Here is the general overview of the current I2S files:
+
+    .. figure:: ../../../../_static/diagrams/i2s/i2s_file_structure.png
+        :align: center
+        :alt: I2S File Structure
 
     Breaking changes in Concepts
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

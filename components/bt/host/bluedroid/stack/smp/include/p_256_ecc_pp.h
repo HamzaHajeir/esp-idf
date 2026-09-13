@@ -24,11 +24,8 @@
 
 #pragma once
 
-#include "common/bt_target.h"
-
-#if (SMP_CRYPTO_STACK_NATIVE == TRUE)
-
 #include "p_256_multprecision.h"
+#include "common/bt_target.h"
 
 typedef unsigned long  DWORD;
 
@@ -75,5 +72,3 @@ bool ECC_CheckPointIsInElliCur_P256(Point *p);
 #define ECC_PointMult(q, p, n, keyLength)  ECC_PointMult_Bin_NAF(q, p, n, keyLength)
 
 void p_256_init_curve(UINT32 keyLength);
-
-#endif /* SMP_CRYPTO_STACK_NATIVE == TRUE */

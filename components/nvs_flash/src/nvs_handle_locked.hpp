@@ -46,8 +46,6 @@ public:
 
     esp_err_t erase_all() override;
 
-    esp_err_t purge_all() override;
-
     esp_err_t commit() override;
 
     esp_err_t get_used_entry_count(size_t& usedEntries) override;

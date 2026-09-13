@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,12 +34,8 @@ esp_err_t esp_openthread_task_queue_init(const esp_openthread_platform_config_t 
     ESP_RETURN_ON_FALSE(s_task_queue_event_fd >= 0, ESP_FAIL, OT_PLAT_LOG_TAG,
                         "Failed to create OpenThread task queue event fd");
     s_task_queue = xQueueCreate(config->port_config.task_queue_size, sizeof(task_storage_t));
-    if (s_task_queue == NULL) {
-        close(s_task_queue_event_fd);
-        s_task_queue_event_fd = -1;
-        ESP_LOGE(OT_PLAT_LOG_TAG, "Failed to create OpenThread task queue");
-        return ESP_ERR_NO_MEM;
-    }
+    ESP_RETURN_ON_FALSE(s_task_queue != NULL, ESP_ERR_NO_MEM, OT_PLAT_LOG_TAG,
+                        "Failed to create OpenThread task queue");
     return esp_openthread_platform_workflow_register(&esp_openthread_task_queue_update,
                                                      &esp_openthread_task_queue_process, task_queue_workflow);
 }
@@ -63,13 +59,9 @@ esp_err_t IRAM_ATTR esp_openthread_task_queue_post(esp_openthread_task_t task, v
     BaseType_t task_woken = pdFALSE;
 
     if (!xPortCanYield()) {
-        ESP_RETURN_ON_FALSE_ISR(s_task_queue != NULL && s_task_queue_event_fd >= 0, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG,
-                                "OpenThread task queue not initialized");
         ESP_RETURN_ON_FALSE_ISR(xQueueSendFromISR(s_task_queue, &task_storage, &task_woken), ESP_FAIL, OT_PLAT_LOG_TAG,
                                 "Failed to post task to OpenThread task queue");
     } else {
-        ESP_RETURN_ON_FALSE(s_task_queue != NULL && s_task_queue_event_fd >= 0, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG,
-                            "OpenThread task queue not initialized");
         ESP_RETURN_ON_FALSE(xQueueSend(s_task_queue, &task_storage, OT_TASK_QUEUE_SENDING_WAIT_TIME), ESP_FAIL, OT_PLAT_LOG_TAG,
                             "Failed to post task to OpenThread task queue");
     }

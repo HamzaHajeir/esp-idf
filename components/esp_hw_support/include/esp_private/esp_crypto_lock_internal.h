@@ -15,7 +15,7 @@ extern "C" {
 
 // NOTE: [ESP-TEE] Since the clock configuration APIs are part
 // of the TEE, the XYZ_RCC_ATOMIC macros need to be defined as void.
-#if NON_OS_BUILD
+#if SOC_RCC_IS_INDEPENDENT || NON_OS_BUILD
 #define MPI_RCC_ATOMIC()
 #define ECC_RCC_ATOMIC()
 #define HMAC_RCC_ATOMIC()
@@ -24,7 +24,7 @@ extern "C" {
 #define AES_RCC_ATOMIC()
 #define SHA_RCC_ATOMIC()
 #define KEY_MANAGER_RCC_ATOMIC()
-#else
+#else /* !SOC_RCC_IS_INDEPENDENT */
 #define MPI_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #define ECC_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #define HMAC_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
@@ -33,7 +33,7 @@ extern "C" {
 #define AES_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #define SHA_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #define KEY_MANAGER_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
-#endif
+#endif /* SOC_RCC_IS_INDEPENDENT */
 
 #ifdef __cplusplus
 }

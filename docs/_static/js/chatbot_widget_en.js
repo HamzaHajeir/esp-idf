@@ -3,13 +3,7 @@ document.addEventListener("DOMContentLoaded", function () {
     script.src = "https://widget.kapa.ai/kapa-widget.bundle.js";
     script.setAttribute("data-bot-protection-mechanism", "hcaptcha");
     script.setAttribute("data-website-id", "e569d308-b8f4-43d1-a0d2-bebc1ece63de");
-    script.setAttribute("data-mcp-enabled", "true");
-    script.setAttribute("data-mcp-server-url", "https://mcp.espressif.com/docs");
-    script.setAttribute("data-mcp-dropdown-description", "Learn more about Espressif Documentation MCP server in [this article](https://developer.espressif.com/blog/2026/04/doc-mcp-server/).");
-    script.setAttribute("data-mcp-button-text", "MCP Server");
-    script.setAttribute("data-modal-title", "ESP Docs AI Assistant");
-    script.setAttribute("data-project-name", "esp-en");
-    script.setAttribute("data-modal-ask-ai-input-placeholder", "Ask ESP Docs AI Assistant...");
+    script.setAttribute("data-project-name", "ESP-IDF Programming Guide");
     script.setAttribute("data-project-color", "#C62817");
     script.setAttribute("data-project-logo", "https://dl.espressif.com/public/logo.png");
     script.setAttribute("data-button-image", "https://dl.espressif.com/chatbot/Chatbot.png");

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,6 @@
 #include "esp_check.h"
 #include "esp_pm.h"
 #include "esp_cache.h"
-#include "esp_private/sd_host_buffer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "driver/sd_host_sdmmc.h"
@@ -42,6 +41,20 @@ extern "C" {
 #define SD_HOST_SDMMC_DMA_ALLOC_CAPS         MALLOC_CAP_DEFAULT | MALLOC_CAP_DMA
 #else
 #define SD_HOST_SDMMC_DMA_ALLOC_CAPS         (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT | MALLOC_CAP_DMA)
+#endif
+
+#if !SOC_RCC_IS_INDEPENDENT
+// Reset and Clock Control registers are mixing with other peripherals, so we need to use a critical section
+#define SD_HOST_SDMMC_RCC_ATOMIC()           PERIPH_RCC_ATOMIC()
+#else
+#define SD_HOST_SDMMC_RCC_ATOMIC()
+#endif
+
+#if SOC_PERIPH_CLK_CTRL_SHARED
+// Clock source and related clock settings are mixing with other peripherals, so we need to use a critical section
+#define SD_HOST_SDMMC_CLK_SRC_ATOMIC()       PERIPH_RCC_ATOMIC()
+#else
+#define SD_HOST_SDMMC_CLK_SRC_ATOMIC()
 #endif
 
 #define SD_HOST_SDMMC_CLOCK_UPDATE_CMD_TIMEOUT_US           (1000 * 1000)
@@ -96,6 +109,7 @@ typedef struct {
     size_t desc_remaining;
 } sd_host_sdmmc_trans_state_t;
 
+typedef struct sd_host_sdmmc_slot_t sd_host_sdmmc_slot_t;
 typedef struct sd_host_sdmmc_ctlr_t sd_host_sdmmc_ctlr_t;
 
 /**
@@ -333,6 +347,19 @@ void sd_host_dma_prepare(sd_host_sdmmc_slot_t *slot, void* data_ptr, size_t data
 /*---------------------------------------------------------------
                         Info APIs
 ---------------------------------------------------------------*/
+/**
+ * @brief Check SD buffer alignment
+ *
+ * @param[in] slot        SD Host slot handle
+ * @param[in] buf         Buffer pointer
+ * @param[in] size        Buffer size
+ *
+ * @return
+ *        - True: alignment requirement is satisfied
+ *        - False: alignment requirement is not satisfied
+ */
+bool sd_host_check_buffer_alignment(sd_host_sdmmc_slot_t *slot, const void *buf, size_t size);
+
 /**
  * @brief Get SD Host slot real frequency
  *

@@ -55,7 +55,7 @@ static const hci_t *hci;
 **  Static functions
 *******************************************************************************/
 static void bte_main_disable(void);
-static bool bte_main_enable(void);
+static void bte_main_enable(void);
 
 /*******************************************************************************
 **  Externs
@@ -86,17 +86,10 @@ int bte_main_boot_entry(bluedroid_init_done_cb_t cb)
 
     bluedroid_init_done_cb = cb;
 
-    if (osi_init() != 0) {
-        APPL_TRACE_ERROR("%s failed to initialize OS layer.\n", __func__);
-        return -1;
-    }
+    osi_init();
 
     //Enable HCI
-    if (!bte_main_enable()) {
-        osi_deinit();
-        bluedroid_init_done_cb = NULL;
-        return -3;
-    }
+    bte_main_enable();
 
     return 0;
 }
@@ -112,11 +105,15 @@ int bte_main_boot_entry(bluedroid_init_done_cb_t cb)
 ******************************************************************************/
 void bte_main_shutdown(void)
 {
-    bte_main_disable();
+#if (BLE_INCLUDED == TRUE)
+    BTA_VendorCleanup();
+#endif
 
 #if (BT_BLE_DYNAMIC_ENV_MEMORY == TRUE)
     free_controller_param();
 #endif
+
+    bte_main_disable();
 
     osi_deinit();
 }
@@ -128,23 +125,19 @@ void bte_main_shutdown(void)
 ** Description      BTE MAIN API - Creates all the BTE tasks. Should be called
 **                  part of the Bluetooth stack enable sequence
 **
-** Returns          true for success, otherwise false
+** Returns          None
 **
 ******************************************************************************/
-static bool bte_main_enable(void)
+static void bte_main_enable(void)
 {
     APPL_TRACE_DEBUG("Enable HCI\n");
     if (hci_start_up()) {
         APPL_TRACE_ERROR("Start HCI Host Layer Failure\n");
-        return false;
+        return;
     }
 
     //Now Test Case Not Supported BTU
-    if (!BTU_StartUp()) {
-        hci_shut_down();
-        return false;
-    }
-    return true;
+    BTU_StartUp();
 }
 
 /******************************************************************************
@@ -245,11 +238,6 @@ void bte_main_lpm_wake_bt_device(void)
 ******************************************************************************/
 void bte_main_hci_send (BT_HDR *p_msg, UINT16 event)
 {
-    if (!p_msg) {
-        APPL_TRACE_ERROR("%s null message\n", __func__);
-        return;
-    }
-
     UINT16 sub_event = event & BT_SUB_EVT_MASK;  /* local controller ID */
 
     p_msg->event = event;

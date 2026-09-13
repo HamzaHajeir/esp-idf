@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -63,12 +63,9 @@
 #elif CONFIG_IDF_TARGET_ESP32H21
 #include "esp_memprot.h"
 #elif CONFIG_IDF_TARGET_ESP32H4
-#include "soc/lp_aon_reg.h"
 #include "esp_memprot.h"
-#elif CONFIG_IDF_TARGET_ESP32S31
 #endif
 
-#include "rom/ets_sys.h"
 #include "esp_private/cache_utils.h"
 #include "esp_private/rtc_clk.h"
 #include "esp_rtc_time.h"
@@ -95,9 +92,7 @@
 #include "esp_private/crosscore_int.h"
 
 #include "esp_private/sleep_gpio.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "soc/rtc.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
@@ -253,7 +248,7 @@ void ESP_SYSTEM_IRAM_ATTR call_start_cpu1(void)
     esp_cpu_intr_set_mtvt_addr(&_mtvt_table);
 #endif
 #if SOC_CPU_SUPPORT_WFE
-    esp_cpu_disable_wfe_mode();
+    rv_utils_disable_wfe_mode();
 #endif
     ets_set_appcpu_boot_addr(0);
 
@@ -265,9 +260,6 @@ void ESP_SYSTEM_IRAM_ATTR call_start_cpu1(void)
 #elif !CONFIG_ESP_CONSOLE_USB_CDC
     esp_rom_install_uart_printf();
     esp_rom_output_set_as_console(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM);
-#if CONFIG_ESP_CONSOLE_UART_CUSTOM
-    esp_rom_output_switch_buffer(CONFIG_ESP_CONSOLE_UART_NUM);
-#endif
 #endif
 
     cpu_utility_ll_enable_debug(1);
@@ -378,12 +370,6 @@ void IRAM_ATTR do_multicore_settings(void)
     restore_app_mmu_from_pro_mmu();
 #endif
 
-#if CONFIG_IDF_TARGET_ESP32H4
-    // Reassign Layer6 memory to ICache1 for multicore apps before enabling
-    // cache settings for the other cores.
-    REG_SET_BIT(LP_AON_SRAM_USAGE_CONF_REG, LP_AON_ICACHE1_USAGE);
-#endif
-
     cache_bus_mask_t cache_bus_mask_core0 = cache_ll_l1_get_enabled_bus(0);
 #ifndef CONFIG_IDF_TARGET_ESP32
     // 1. disable the cache before changing its settings.
@@ -404,18 +390,6 @@ void IRAM_ATTR do_multicore_settings(void)
 FORCE_INLINE_ATTR IRAM_ATTR void init_cpu(void)
 {
 #ifdef __riscv
-    // Configure the global pointer register.
-    // This must be the first thing the IDF app does on RISC-V, as any other
-    // piece of code could be relaxed by the linker to access something relative
-    // to __global_pointer$. With KASAN enabled, even calls like
-    // esp_cpu_dbgr_is_attached() are instrumented and may emit gp-relative
-    // loads, so gp must be set up before any C function call.
-    __asm__ __volatile__(
-        ".option push\n"
-        ".option norelax\n"
-        "la gp, __global_pointer$\n"
-        ".option pop"
-    );
     if (esp_cpu_dbgr_is_attached()) {
         /* Let debugger some time to detect that target started, halt it, enable ebreaks and resume.
            500ms should be enough. */
@@ -423,6 +397,15 @@ FORCE_INLINE_ATTR IRAM_ATTR void init_cpu(void)
             esp_rom_delay_us(100000);
         }
     }
+    // Configure the global pointer register
+    // (This should be the first thing IDF app does, as any other piece of code could be
+    // relaxed by the linker to access something relative to __global_pointer$)
+    __asm__ __volatile__(
+        ".option push\n"
+        ".option norelax\n"
+        "la gp, __global_pointer$\n"
+        ".option pop"
+    );
 #endif
 
     /* NOTE: When ESP-TEE is enabled, this sets up the callback function
@@ -502,12 +485,6 @@ FORCE_INLINE_ATTR IRAM_ATTR void ram_app_init(void)
 //Keep this static, the compiler will check output parameters are initialized.
 FORCE_INLINE_ATTR IRAM_ATTR void ext_mem_init(void)
 {
-#if CONFIG_IDF_TARGET_ESP32H4
-    // Initially assign Layer6 memory to CPU RAM. Multicore startup will
-    // reassign it to ICache1 if the app is not configured for single-core mode.
-    REG_CLR_BIT(LP_AON_SRAM_USAGE_CONF_REG, LP_AON_ICACHE1_USAGE);
-#endif
-
 #if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE && !SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
     // It helps to fix missed cache settings for other cores. It happens when bootloader is unicore.
     do_multicore_settings();
@@ -587,16 +564,11 @@ FORCE_INLINE_ATTR IRAM_ATTR void ext_mem_init(void)
 
 MSPI_INIT_ATTR void sys_rtc_init(const soc_reset_reason_t *rst_reas)
 {
-#if SOC_RTC_WDT_SUPPORTED
-#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
-#define RWDT_RESET           RESET_REASON_CORE_RWDT
-#else
-#define RWDT_RESET           RESET_REASON_CORE_RTC_WDT
-#endif
-
 #if CONFIG_IDF_TARGET_ESP32P4
+#define RWDT_RESET           RESET_REASON_CORE_RWDT
 #define MWDT_RESET           RESET_REASON_CORE_MWDT
 #else
+#define RWDT_RESET           RESET_REASON_CORE_RTC_WDT
 #define MWDT_RESET           RESET_REASON_CORE_MWDT0
 #endif
 
@@ -613,14 +585,12 @@ MSPI_INIT_ATTR void sys_rtc_init(const soc_reset_reason_t *rst_reas)
         wdt_hal_write_protect_enable(&rtc_wdt_ctx);
     }
 #endif
-#endif /* SOC_RTC_WDT_SUPPORTED */
 
     // Configure the power related stuff. After this the MSPI timing tuning can be done.
     esp_rtc_init();
 }
 
-#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
-static NOINLINE_ATTR IRAM_ATTR void flash_init_state(void)
+NOINLINE_ATTR IRAM_ATTR void flash_init_state(void)
 {
     /**
      * This function initialise the Flash chip to the user-defined settings.
@@ -630,11 +600,14 @@ static NOINLINE_ATTR IRAM_ATTR void flash_init_state(void)
      * In this stage, we re-configure the Flash (and MSPI) to required configuration
      */
     spi_flash_init_chip_state();
+#if SOC_MEMSPI_SRC_FREQ_120M_SUPPORTED
     // This function needs to be called when PLL is enabled. Needs to be called after spi_flash_init_chip_state in case
     // some state of flash is modified.
     mspi_timing_flash_tuning();
+#endif
 }
 
+#if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
 MSPI_INIT_ATTR void mspi_init(void)
 {
 #if CONFIG_ESPTOOLPY_OCT_FLASH && !CONFIG_ESPTOOLPY_FLASH_MODE_AUTO_DETECT
@@ -663,7 +636,7 @@ MSPI_INIT_ATTR void mspi_init(void)
 #if CONFIG_SPIRAM_BOOT_HW_INIT
     if (esp_psram_chip_init() != ESP_OK) {
 #if CONFIG_SPIRAM_IGNORE_NOTFOUND
-        ESP_DRAM_LOGW(TAG, "Failed to init external RAM; continuing without it.");
+        ESP_DRAM_LOGE(TAG, "Failed to init external RAM; continuing without it.");
 #else
         ESP_DRAM_LOGE(TAG, "Failed to init external RAM!");
         abort();
@@ -681,20 +654,6 @@ MSPI_INIT_ATTR void mspi_init(void)
 #endif
 }
 #endif // !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
-
-#if CONFIG_IDF_TARGET_ESP32 && !CONFIG_APP_BUILD_TYPE_RAM && !CONFIG_SPIRAM_BOOT_HW_INIT
-/*
- * Adjust flash configuration. This must be placed in IRAM because running from flash,
- * while it is being reconfigured, will result in corrupt data being read.
- */
-NOINLINE_ATTR IRAM_ATTR static void configure_flash(esp_image_header_t *fhdr)
-{
-    bootloader_flash_gpio_config(fhdr);
-    bootloader_flash_dummy_config(fhdr);
-    bootloader_flash_clock_config(fhdr);
-    bootloader_flash_cs_timing_config();
-}
-#endif // CONFIG_IDF_TARGET_ESP32 && !CONFIG_APP_BUILD_TYPE_RAM && !CONFIG_SPIRAM_BOOT_HW_INIT
 
 /*
  * Initialize other parts of the system, including other CPUs.
@@ -727,7 +686,7 @@ NOINLINE_ATTR static void system_early_init(const soc_reset_reason_t *rst_reas)
 
 #if SOC_CPU_CORES_NUM > 1 // there is no 'single-core mode' for natively single-core processors
 #if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-#if CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESP32P4_REV_MIN_FULL >= 300
     // Ensure autoclock gating mode for core1 is enabled, it gets disabled in single-core mode.
     REG_SET_BIT(HP_SYS_CLKRST_CPU_WAITI_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_WAITI_ICG_EN);
 #endif
@@ -745,7 +704,7 @@ NOINLINE_ATTR static void system_early_init(const soc_reset_reason_t *rst_reas)
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
 #endif
 #elif CONFIG_IDF_TARGET_ESP32P4
-#if !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 300
     // In single core mode, the CPU system should ignore the WFI state of core1 when entering WFI autoclock gating mode.
     REG_CLR_BIT(HP_SYS_CLKRST_CPU_WAITI_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_WAITI_ICG_EN);
 #endif
@@ -754,10 +713,6 @@ NOINLINE_ATTR static void system_early_init(const soc_reset_reason_t *rst_reas)
 #elif CONFIG_IDF_TARGET_ESP32H4
     REG_CLR_BIT(PCR_CORE1_CONF_REG, PCR_CORE1_CLK_EN);
     REG_SET_BIT(PCR_CORE1_CONF_REG, PCR_CORE1_RST_EN);
-#elif CONFIG_IDF_TARGET_ESP32S31
-    REG_CLR_BIT(HP_SYS_CLKRST_HPCORE1_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CPU_CLK_EN);
-    REG_CLR_BIT(HP_SYS_CLKRST_HPCORE1_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CLIC_CLK_EN);
-    REG_SET_BIT(HP_SYS_CLKRST_HPCORE1_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_GLOBAL_RST_EN);
 #endif // CONFIG_IDF_TARGET_ESP32
 #endif // !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #endif // SOC_CPU_CORES_NUM > 1
@@ -875,6 +830,13 @@ NOINLINE_ATTR static void system_early_init(const soc_reset_reason_t *rst_reas)
 #endif // CONFIG_ESP_CONSOLE_UART
 #endif // !CONFIG_IDF_ENV_FPGA
 
+#if SOC_DEEP_SLEEP_SUPPORTED
+    // Need to unhold the IOs that were hold right before entering deep sleep, which are used as wakeup pins
+    if (rst_reas[0] == RESET_REASON_CORE_DEEP_SLEEP) {
+        esp_deep_sleep_wakeup_io_reset();
+    }
+#endif  //#if SOC_DEEP_SLEEP_SUPPORTED
+
 #if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
     esp_cache_err_int_init();
 #endif
@@ -935,7 +897,10 @@ NOINLINE_ATTR static void system_early_init(const soc_reset_reason_t *rst_reas)
 #if CONFIG_IDF_TARGET_ESP32
 #if !CONFIG_SPIRAM_BOOT_HW_INIT
     // If psram is uninitialized, we need to improve some flash configuration.
-    configure_flash(&fhdr);
+    bootloader_flash_clock_config(&fhdr);
+    bootloader_flash_gpio_config(&fhdr);
+    bootloader_flash_dummy_config(&fhdr);
+    bootloader_flash_cs_timing_config();
 #endif //!CONFIG_SPIRAM_BOOT_HW_INIT
 #endif //CONFIG_IDF_TARGET_ESP32
 

@@ -84,9 +84,7 @@ void bta_hf_client_register(tBTA_HF_CLIENT_DATA *p_data)
 
     /* call app callback with register event */
     evt.status = BTA_HF_CLIENT_SUCCESS;
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_REGISTER_EVT, &evt);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_REGISTER_EVT, &evt);
 }
 
 /*******************************************************************************
@@ -179,7 +177,7 @@ void bta_hf_client_start_close(tBTA_HF_CLIENT_DATA *p_data)
 *******************************************************************************/
 void bta_hf_client_start_open(tBTA_HF_CLIENT_DATA *p_data)
 {
-    BD_ADDR pending_bd_addr = {0};
+    BD_ADDR pending_bd_addr;
 
     /* store parameters */
     if (p_data) {
@@ -231,9 +229,7 @@ static void bta_hf_client_cback_open(tBTA_HF_CLIENT_DATA *p_data, tBTA_HF_CLIENT
         bdcpy(evt.bd_addr, bta_hf_client_cb.scb.peer_addr);
     }
 
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_OPEN_EVT, &evt);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_OPEN_EVT, &evt);
 }
 
 /*******************************************************************************
@@ -356,18 +352,10 @@ void bta_hf_client_disc_fail(tBTA_HF_CLIENT_DATA *p_data)
 {
     UNUSED(p_data);
 
-    bta_hf_client_cb.scb.conn_handle = 0;
-    bta_hf_client_cb.scb.peer_features = 0;
-    bta_hf_client_cb.scb.chld_features = 0;
-    bta_hf_client_cb.scb.role = BTA_HF_CLIENT_ACP;
-    bta_hf_client_cb.scb.svc_conn = FALSE;
-    bta_hf_client_cb.scb.send_at_reply = FALSE;
-    bta_hf_client_cb.scb.negotiated_codec = BTM_SCO_CODEC_CVSD;
-
-    bta_hf_client_at_reset();
-
     /* reopen server */
     bta_hf_client_start_server();
+
+    /* reinitialize stuff */
 
     /* call open cback w. failure */
     bta_hf_client_cback_open(NULL, BTA_HF_CLIENT_FAIL_SDP);
@@ -416,13 +404,10 @@ void bta_hf_client_rfc_close(tBTA_HF_CLIENT_DATA *p_data)
     bta_sys_conn_close(BTA_ID_HS, 1, bta_hf_client_cb.scb.peer_addr);
 
     /* call close cback */
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLOSE_EVT, NULL);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLOSE_EVT, NULL);
 
     /* if not deregistering reopen server */
     if (bta_hf_client_cb.scb.deregister == FALSE) {
-        bta_sys_sco_unuse(BTA_ID_HS, 1, bta_hf_client_cb.scb.peer_addr);
         /* Clear peer bd_addr so instance can be reused */
         bdcpy(bta_hf_client_cb.scb.peer_addr, bd_addr_null);
 
@@ -433,6 +418,8 @@ void bta_hf_client_rfc_close(tBTA_HF_CLIENT_DATA *p_data)
 
         /* Make sure SCO is shutdown */
         bta_hf_client_sco_shutdown(NULL);
+
+        bta_sys_sco_unuse(BTA_ID_HS, 1, bta_hf_client_cb.scb.peer_addr);
     }
     /* else close port and deallocate scb */
     else {
@@ -561,9 +548,7 @@ void bta_hf_client_svc_conn_open(tBTA_HF_CLIENT_DATA *p_data)
         evt.peer_feat = bta_hf_client_cb.scb.peer_features;
         evt.chld_feat = bta_hf_client_cb.scb.chld_features;
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CONN_EVT, &evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CONN_EVT, &evt);
     }
 }
 
@@ -585,9 +570,7 @@ void bta_hf_client_ind(tBTA_HF_CLIENT_IND_TYPE type, UINT16 value)
     evt.type = type;
     evt.value = value;
 
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_IND_EVT, &evt);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_IND_EVT, &evt);
 }
 
 /*******************************************************************************
@@ -609,9 +592,7 @@ void bta_hf_client_evt_val(tBTA_HF_CLIENT_EVT type, UINT16 value)
 
     evt.value = value;
 
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(type, &evt);
-    }
+    (*bta_hf_client_cb.p_cback)(type, &evt);
 }
 
 /*******************************************************************************
@@ -629,11 +610,10 @@ void bta_hf_client_operator_name(char *name)
     tBTA_HF_CLIENT_OPERATOR_NAME *evt;
 
     if ((evt = osi_calloc(sizeof(tBTA_HF_CLIENT_OPERATOR_NAME))) != NULL) {
-        BCM_STRLCPY_S(evt->name, name, BTA_HF_CLIENT_OPERATOR_NAME_LEN + 1);
+        strlcpy(evt->name, name, BTA_HF_CLIENT_OPERATOR_NAME_LEN + 1);
+        evt->name[BTA_HF_CLIENT_OPERATOR_NAME_LEN] = '\0';
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_OPERATOR_NAME_EVT, evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_OPERATOR_NAME_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem: %s", __func__);
@@ -656,11 +636,10 @@ void bta_hf_client_clip(char *number)
     tBTA_HF_CLIENT_NUMBER *evt;
 
     if ((evt = osi_calloc(sizeof(tBTA_HF_CLIENT_NUMBER))) != NULL) {
-        BCM_STRLCPY_S(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        strlcpy(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        evt->number[BTA_HF_CLIENT_NUMBER_LEN] = '\0';
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLIP_EVT, evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLIP_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem: %s", __func__);
@@ -682,11 +661,11 @@ void bta_hf_client_ccwa(char *number)
     tBTA_HF_CLIENT_NUMBER *evt;
 
     if ((evt = osi_calloc(sizeof(tBTA_HF_CLIENT_NUMBER))) != NULL) {
-        BCM_STRLCPY_S(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        strlcpy(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        evt->number[BTA_HF_CLIENT_NUMBER_LEN] = '\0';
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CCWA_EVT, evt);
-        }
+
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CCWA_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem: %s", __func__);
@@ -712,9 +691,7 @@ void bta_hf_client_at_result(tBTA_HF_CLIENT_AT_RESULT_TYPE type, UINT16 cme)
     evt.type = type;
     evt.cme = cme;
 
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_AT_RESULT_EVT, &evt);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_AT_RESULT_EVT, &evt);
 }
 
 /*******************************************************************************
@@ -739,12 +716,11 @@ void bta_hf_client_clcc(UINT32 idx, BOOLEAN incoming, UINT8 status, BOOLEAN mpty
 
         if (number) {
             evt->number_present = TRUE;
-            BCM_STRLCPY_S(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+            strlcpy(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+            evt->number[BTA_HF_CLIENT_NUMBER_LEN] = '\0';
         }
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLCC_EVT, evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CLCC_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem, %s\n", __func__);
@@ -768,11 +744,10 @@ void bta_hf_client_cnum(char *number, UINT16 service)
     if ((evt = osi_calloc(sizeof(tBTA_HF_CLIENT_CNUM))) != NULL) {
 
         evt->service = service;
-        BCM_STRLCPY_S(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        strlcpy(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        evt->number[BTA_HF_CLIENT_NUMBER_LEN] = '\0';
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CNUM_EVT, evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_CNUM_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem, %s", __func__);
@@ -794,11 +769,10 @@ void bta_hf_client_binp(char *number)
     tBTA_HF_CLIENT_NUMBER *evt;
 
     if ((evt = osi_calloc(sizeof(tBTA_HF_CLIENT_NUMBER))) != NULL) {
-        BCM_STRLCPY_S(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        strlcpy(evt->number, number, BTA_HF_CLIENT_NUMBER_LEN + 1);
+        evt->number[BTA_HF_CLIENT_NUMBER_LEN] = '\0';
 
-        if (bta_hf_client_cb.p_cback) {
-            (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_BINP_EVT, evt);
-        }
+        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_BINP_EVT, evt);
         osi_free(evt);
     } else {
         APPL_TRACE_ERROR("No mem: %s", __func__);

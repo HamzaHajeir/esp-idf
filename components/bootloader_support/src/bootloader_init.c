@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,11 +16,8 @@
 #include "bootloader_common.h"
 #include "esp_cpu.h"
 #include "soc/soc_caps.h"
-
 #include "soc/rtc.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/efuse_hal.h"
 #include "hal/cache_hal.h"
 #include "hal/mmu_hal.h"
@@ -64,7 +61,7 @@ esp_err_t bootloader_check_bootloader_validity(void)
     unsigned int efuse_revision = efuse_hal_blk_version();
     unsigned int efuse_major_rev = efuse_revision / 100;
     unsigned int efuse_minor_rev = efuse_revision % 100;
-    ESP_EARLY_LOGD(TAG, "efuse block revision: v%d.%d", efuse_major_rev, efuse_minor_rev);
+    ESP_EARLY_LOGI(TAG, "efuse block revision: v%d.%d", efuse_major_rev, efuse_minor_rev);
 #endif  // !CONFIG_IDF_TARGET_ESP32
     /* compare with the one set in bootloader image header */
     if (bootloader_common_check_chip_validity(&bootloader_image_hdr, ESP_IMAGE_BOOTLOADER) != ESP_OK) {
@@ -75,7 +72,6 @@ esp_err_t bootloader_check_bootloader_validity(void)
 
 void bootloader_config_wdt(void)
 {
-#if SOC_RTC_WDT_SUPPORTED
     /*
      * At this point, the flashboot protection of RWDT and MWDT0 will have been
      * automatically enabled. We can disable flashboot protection as it's not
@@ -99,27 +95,21 @@ void bootloader_config_wdt(void)
     wdt_hal_write_protect_enable(&rwdt_ctx);
 #endif
 
-#endif /* SOC_RTC_WDT_SUPPORTED */
-
-#if SOC_WDT_SUPPORTED
-    //Disable MWDT0 flashboot protection. When RTC WDT is present, run this after RWDT
-    //setup above so there is no gap in WDT protection during bootloader.
+    //Disable MWDT0 flashboot protection. But only after we've enabled the RWDT first so that there's not gap in WDT protection.
     wdt_hal_context_t mwdt_ctx = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
     wdt_hal_write_protect_disable(&mwdt_ctx);
     wdt_hal_set_flashboot_en(&mwdt_ctx, false);
     wdt_hal_write_protect_enable(&mwdt_ctx);
-#endif /* SOC_WDT_SUPPORTED */
 }
 
 void bootloader_enable_random(void)
 {
-    ESP_EARLY_LOGD(TAG, "Enabling RNG early entropy source...");
+    ESP_EARLY_LOGI(TAG, "Enabling RNG early entropy source...");
     bootloader_random_enable();
 }
 
 void bootloader_print_banner(void)
 {
-#if BOOTLOADER_BUILD
     if (CONFIG_BOOTLOADER_LOG_LEVEL >= ESP_LOG_INFO) {
         const esp_bootloader_desc_t *desc = esp_bootloader_get_description();
         ESP_EARLY_LOGI(TAG, "ESP-IDF %s 2nd stage bootloader", desc->idf_ver);
@@ -127,14 +117,13 @@ void bootloader_print_banner(void)
         ESP_EARLY_LOGI(TAG, "compile time %s", desc->date_time);
 #endif
     }
-#endif // BOOTLOADER_BUILD
 
 #if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #if (SOC_CPU_CORES_NUM > 1)
     ESP_EARLY_LOGW(TAG, "Unicore bootloader");
 #endif
 #else
-    ESP_EARLY_LOGD(TAG, "Multicore bootloader");
+    ESP_EARLY_LOGI(TAG, "Multicore bootloader");
 #endif
 }
 

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 from pathlib import Path
 
@@ -11,23 +11,23 @@ from pytest_embedded_idf.utils import idf_parametrize
 CUR_DIR = Path(__file__).parent.resolve()
 
 
-# Case 1: gatt client and gatt server test (config: name, smp_off, min_bin, log_off)
+# Case 1: gatt client and gatt server test
 # EXAMPLE_CI_ID=3
-GATT_APP_PATH = f'{str(CUR_DIR / "gatt_server")}|{str(CUR_DIR / "gatt_client")}'
-GATT_CI_CONFIGS = ['name', 'smp_off|smp_off', 'min_bin|min_bin', 'log_off|log_off']
-
-
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
 @pytest.mark.two_duts
 @pytest.mark.parametrize(
     'count, app_path, config, erase_nvs',
-    [(2, GATT_APP_PATH, c, 'y') for c in GATT_CI_CONFIGS],
+    [
+        (
+            2,
+            f'{str(CUR_DIR / "gatt_server")}|{str(CUR_DIR / "gatt_client")}',
+            'name',
+            'y',
+        ),
+    ],
     indirect=True,
 )
 @idf_parametrize(
-    'target',
-    ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61', 'esp32h4', 'esp32s31'],
-    indirect=['target'],
+    'target', ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61'], indirect=['target']
 )
 def test_gatt_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
     gatt_client = dut[1]
@@ -109,23 +109,23 @@ def test_c2_26mhz_xtal_gatt_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> N
     assert 'Disconnected' not in str(gatt_server_output)
 
 
-# Case 3: gatt security server and gatt security client test (config: name, min_bin, log_off)
+# Case 3: gatt security server and gatt security client test
 # EXAMPLE_CI_ID=5
-GATT_SECURITY_APP_PATH = f'{str(CUR_DIR / "gatt_security_server")}|{str(CUR_DIR / "gatt_security_client")}'
-GATT_SECURITY_CI_CONFIGS = ['name', 'min_bin|min_bin', 'log_off|log_off']
-
-
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
 @pytest.mark.two_duts
 @pytest.mark.parametrize(
     'count, app_path, config, erase_nvs',
-    [(2, GATT_SECURITY_APP_PATH, c, 'y') for c in GATT_SECURITY_CI_CONFIGS],
+    [
+        (
+            2,
+            f'{str(CUR_DIR / "gatt_security_server")}|{str(CUR_DIR / "gatt_security_client")}',
+            'name',
+            'y',
+        ),
+    ],
     indirect=True,
 )
 @idf_parametrize(
-    'target',
-    ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61', 'esp32h4', 'esp32s31'],
-    indirect=['target'],
+    'target', ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61'], indirect=['target']
 )
 def test_gatt_security_func(app_path: str, dut: tuple[IdfDut, IdfDut], target: tuple) -> None:
     gatt_security_client = dut[1]
@@ -240,7 +240,6 @@ def test_c2_26mhz_xtal_gatt_security_func(app_path: str, dut: tuple[IdfDut, IdfD
 
 
 # Case 5: ble ibeacon test
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
 @pytest.mark.two_duts
 @pytest.mark.parametrize(
     'count, app_path, config, erase_nvs',
@@ -255,9 +254,7 @@ def test_c2_26mhz_xtal_gatt_security_func(app_path: str, dut: tuple[IdfDut, IdfD
     indirect=True,
 )
 @idf_parametrize(
-    'target',
-    ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61', 'esp32h4', 'esp32s31'],
-    indirect=['target'],
+    'target', ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61'], indirect=['target']
 )
 def test_ble_ibeacon_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
     ibeacon_sender = dut[0]
@@ -280,7 +277,7 @@ def test_ble_ibeacon_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
     ibeacon_receiver.expect_exact('RSSI of packet: ', timeout=30)
 
 
-# Case 6: ble ibeacon test for ESP32C2 26mhz xtal
+# Case 5: ble ibeacon test for ESP32C2 26mhz xtal
 @pytest.mark.two_duts
 @pytest.mark.xtal_26mhz
 @pytest.mark.parametrize(
@@ -318,9 +315,8 @@ def test_c2_26mhz_ble_ibeacon_func(app_path: str, dut: tuple[IdfDut, IdfDut]) ->
     ibeacon_receiver.expect_exact('RSSI of packet: ', timeout=30)
 
 
-# Case 7: gatt client and gatt server config test
+# Case 6: gatt client and gatt server config test
 # EXAMPLE_CI_ID=4
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
 @pytest.mark.two_duts
 @pytest.mark.parametrize(
     'count, app_path, config, erase_nvs',
@@ -335,9 +331,7 @@ def test_c2_26mhz_ble_ibeacon_func(app_path: str, dut: tuple[IdfDut, IdfDut]) ->
     indirect=True,
 )
 @idf_parametrize(
-    'target',
-    ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61', 'esp32h4', 'esp32s31'],
-    indirect=['target'],
+    'target', ['esp32', 'esp32c3', 'esp32c6', 'esp32c5', 'esp32h2', 'esp32s3', 'esp32c61'], indirect=['target']
 )
 def test_gatt_config_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
     gatt_client = dut[1]
@@ -370,7 +364,7 @@ def test_gatt_config_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
     assert 'Disconnected' not in str(gatt_server_output)
 
 
-# Case 8: gatt client and gatt server config test for ESP32C2 26mhz xtal
+# Case 7: gatt client and gatt server config test for ESP32C2 26mhz xtal
 # EXAMPLE_CI_ID=3
 @pytest.mark.two_duts
 @pytest.mark.xtal_26mhz
@@ -419,14 +413,11 @@ def test_c2_26mhz_xtal_gatt_config_func(app_path: str, dut: tuple[IdfDut, IdfDut
     assert 'Disconnected' not in str(gatt_server_output)
 
 
-# Case 9: BLE init deinit loop test
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
+# Case 8: BLE init deinit loop test
 @pytest.mark.generic
 @pytest.mark.parametrize('config, app_path', [('init_deinit', f'{str(CUR_DIR / "gatt_client")}')], indirect=True)
 @idf_parametrize(
-    'target',
-    ['esp32c6', 'esp32h2', 'esp32c3', 'esp32s3', 'esp32c5', 'esp32c61', 'esp32', 'esp32h4', 'esp32s31'],
-    indirect=['target'],
+    'target', ['esp32c6', 'esp32h2', 'esp32c3', 'esp32s3', 'esp32c5', 'esp32c61', 'esp32'], indirect=['target']
 )
 def test_bluedroid_host_init_deinit(dut: Dut) -> None:
     all_hp = []
@@ -438,7 +429,7 @@ def test_bluedroid_host_init_deinit(dut: Dut) -> None:
     assert len(list(set(all_hp))) == 1
 
 
-# Case 10: BLE init deinit loop test for ESP32C2 26mhz xtal
+# # Case 9: BLE init deinit loop test for ESP32C2 26mhz xtal
 @pytest.mark.two_duts
 @pytest.mark.xtal_26mhz
 @pytest.mark.parametrize(
@@ -457,78 +448,3 @@ def test_c2_26mhz_bluedroid_host_init_deinit(dut: Dut) -> None:
 
     # the heapsize after host deinit is same
     assert len(list(set(all_hp))) == 1
-
-
-def _run_ble_spp_func(dut: tuple[IdfDut, IdfDut]) -> None:
-    spp_server = dut[0]
-    spp_client = dut[1]
-
-    spp_client_addr = (
-        spp_client.expect(r'Bluetooth MAC: (([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})', timeout=30).group(1).decode('utf8')
-    )
-
-    spp_client.expect_exact('GATT client register, status 0', timeout=30)
-    spp_server.expect_exact('GATT server register, status 0', timeout=30)
-    spp_server.expect_exact('Advertising start successfully', timeout=30)
-    spp_client.expect_exact('Scanning start successfully', timeout=30)
-    spp_client.expect_exact('Connect to the remote device,', timeout=60)
-    spp_client.expect_exact('Connected, conn_id 0, remote ', timeout=30)
-    spp_server.expect_exact(f'Connected, conn_id 0, remote {spp_client_addr}', timeout=30)
-    spp_client.expect_exact('Service search result, start_handle', timeout=30)
-    spp_client.expect_exact('Service search complete', timeout=30)
-    spp_client.expect_exact('MTU exchange, status 0, MTU', timeout=30)
-    spp_server.expect_exact('MTU exchange, MTU', timeout=30)
-    spp_client.expect_exact('Notification register, index 2, status 0', timeout=30)
-    spp_client.expect_exact('Descriptor write, status 0', timeout=30)
-    spp_server.expect(r'SPP data (notification|indication) enable', timeout=30)
-    spp_client_output = spp_client.expect(pexpect.TIMEOUT, timeout=10)
-    spp_server_output = spp_server.expect(pexpect.TIMEOUT, timeout=10)
-    assert 'rst:' not in str(spp_client_output) and 'boot:' not in str(spp_client_output)
-    assert 'rst:' not in str(spp_server_output) and 'boot:' not in str(spp_server_output)
-    assert 'Disconnected' not in str(spp_client_output)
-    assert 'Disconnected' not in str(spp_server_output)
-
-
-# Case 10: ble spp client and ble spp server test
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='lack of runner # TODO: IDFCI-11112')
-@pytest.mark.two_duts
-@pytest.mark.parametrize(
-    'count, app_path, config, erase_nvs',
-    [
-        (
-            2,
-            f'{str(CUR_DIR / "ble_spp_server")}|{str(CUR_DIR / "ble_spp_client")}',
-            'name',
-            'y',
-        ),
-    ],
-    indirect=True,
-)
-@idf_parametrize(
-    'target',
-    ['esp32', 'esp32c3', 'esp32s3', 'esp32c6', 'esp32h2', 'esp32c61', 'esp32c5', 'esp32s31', 'esp32h4'],
-    indirect=['target'],
-)
-def test_ble_spp_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
-    _run_ble_spp_func(dut)
-
-
-# Case 11: ble spp client and ble spp server test for ESP32C2 26mhz xtal
-@pytest.mark.two_duts
-@pytest.mark.xtal_26mhz
-@pytest.mark.parametrize(
-    'count, target, baud, app_path, config, erase_nvs',
-    [
-        (
-            2,
-            'esp32c2|esp32c2',
-            '74880',
-            f'{str(CUR_DIR / "ble_spp_server")}|{str(CUR_DIR / "ble_spp_client")}',
-            'esp32c2_xtal26m',
-            'y',
-        ),
-    ],
-    indirect=True,
-)
-def test_c2_26mhz_xtal_ble_spp_func(app_path: str, dut: tuple[IdfDut, IdfDut]) -> None:
-    _run_ble_spp_func(dut)

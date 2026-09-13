@@ -35,7 +35,8 @@ menu "Main Flash configuration"
 
         choice SPI_FLASH_HPM
             prompt "High Performance Mode (READ DOCS FIRST, > 80MHz)"
-            depends on SOC_SPI_MEM_FLASH_SUPPORT_HPM && !ESPTOOLPY_OCT_FLASH
+            # Currently, only esp32s3 allows high performance mode.
+            depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4 || IDF_TARGET_ESP32C5) && !ESPTOOLPY_OCT_FLASH
             default SPI_FLASH_HPM_AUTO
             help
                 Whether the High Performance Mode of Flash is enabled. As an optional feature, user needs to manually
@@ -289,7 +290,7 @@ menu "SPI Flash driver"
     config SPI_FLASH_SHARE_SPI1_BUS
         bool  "Support other devices attached to SPI1 bus"
         default n
-        depends on IDF_TARGET_ESP32 && !CONFIG_APP_BUILD_TYPE_RAM
+        depends on IDF_TARGET_ESP32
         select SPI_MASTER_ISR_IN_IRAM
         help
             Each SPI bus needs a lock for arbitration among devices. This allows multiple

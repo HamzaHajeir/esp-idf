@@ -252,9 +252,9 @@ static void test_wifi_roc(void)
                                pdTRUE, pdFALSE, portMAX_DELAY);
     /* Confirm that Frame has been received successfully */
     if (bits == WIFI_ACTION_RX_EVENT) {
-        /* op_id is retained from previous ROC request */
+        wifi_roc_req_t req = {0};
+        req.ifx = WIFI_IF_STA;
         req.type = WIFI_ROC_CANCEL;
-        req.rx_cb = NULL;
         TEST_ESP_OK(esp_wifi_remain_on_channel(&req));
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);

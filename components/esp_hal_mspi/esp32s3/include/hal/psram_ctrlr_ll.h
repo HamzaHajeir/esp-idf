@@ -29,8 +29,6 @@ extern "C" {
 
 #define PSRAM_CTRLR_LL_MSPI_ID_0            0
 #define PSRAM_CTRLR_LL_MSPI_ID_1            1
-#define PSRAM_CTRLR_LL_MSPI_ID_SYSTEM       PSRAM_CTRLR_LL_MSPI_ID_0
-#define PSRAM_CTRLR_LL_MSPI_ID_PERI         PSRAM_CTRLR_LL_MSPI_ID_1
 
 #define PSRAM_LL_CS_SEL   SPI_MEM_CS1_DIS_M
 

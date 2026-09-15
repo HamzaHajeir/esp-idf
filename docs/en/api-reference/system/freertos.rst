@@ -31,7 +31,7 @@ ESP-IDF FreeRTOS is a FreeRTOS implementation based on Vanilla FreeRTOS v10.5.1,
     Amazon SMP FreeRTOS
     ^^^^^^^^^^^^^^^^^^^
 
-    Amazon SMP FreeRTOS is an SMP implementation of FreeRTOS that is officially supported by Amazon. Amazon SMP FreeRTOS is able to support N-cores (i.e., more than two cores). Amazon SMP FreeRTOS can be enabled via the ``CONFIG_FREERTOS_SMP`` option (only available on ESP32). For more details regarding Amazon SMP FreeRTOS, please refer to the `official Amazon SMP FreeRTOS documentation <https://freertos.org/symmetric-multiprocessing-introduction.html>`_.
+    Amazon SMP FreeRTOS is an SMP implementation of FreeRTOS that is officially supported by Amazon. Amazon SMP FreeRTOS is able to support N-cores (i.e., more than two cores). Amazon SMP FreeRTOS can be enabled via the :ref:`CONFIG_FREERTOS_SMP` option. For more details regarding Amazon SMP FreeRTOS, please refer to the `official Amazon SMP FreeRTOS documentation <https://freertos.org/symmetric-multiprocessing-introduction.html>`_.
 
     .. warning::
 
@@ -49,14 +49,14 @@ Vanilla FreeRTOS requires that ports and applications configure the kernel by ad
 
 For the full list of user configurable kernel options, see :ref:`Kconfig Options Reference <configuration-options-reference>`. The list below highlights some commonly used kernel configuration options:
 
-- :menuitem:`CONFIG_FREERTOS_UNICORE` runs FreeRTOS only on Core 0. Note that this is **not equivalent to running Vanilla FreeRTOS**. Furthermore, this option may affect behavior of components other than :component:`freertos`. For more details regarding the effects of running FreeRTOS on a single core, refer to :ref:`freertos-idf-single-core` (if using ESP-IDF FreeRTOS) or the official Amazon SMP FreeRTOS documentation. Alternatively, users can also search for occurrences of ``CONFIG_FREERTOS_UNICORE`` in the ESP-IDF components.
+- :ref:`CONFIG_FREERTOS_UNICORE` runs FreeRTOS only on Core 0. Note that this is **not equivalent to running Vanilla FreeRTOS**. Furthermore, this option may affect behavior of components other than :component:`freertos`. For more details regarding the effects of running FreeRTOS on a single core, refer to :ref:`freertos-idf-single-core` (if using ESP-IDF FreeRTOS) or the official Amazon SMP FreeRTOS documentation. Alternatively, users can also search for occurrences of ``CONFIG_FREERTOS_UNICORE`` in the ESP-IDF components.
 
 .. only:: not SOC_HP_CPU_HAS_MULTIPLE_CORES
 
     .. note::
-        As {IDF_TARGET_NAME} is a single core SoC, the :menuitem:`CONFIG_FREERTOS_UNICORE` configuration is always set.
+        As {IDF_TARGET_NAME} is a single core SoC, the :ref:`CONFIG_FREERTOS_UNICORE` configuration is always set.
 
-- :menuitem:`CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY` enables backward compatibility with some FreeRTOS macros/types/functions that were deprecated from v8.0 onwards.
+- :ref:`CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY` enables backward compatibility with some FreeRTOS macros/types/functions that were deprecated from v8.0 onwards.
 
 Port Configuration
 ^^^^^^^^^^^^^^^^^^
@@ -83,7 +83,7 @@ Unlike Vanilla FreeRTOS, users of FreeRTOS in ESP-IDF **must never call** :cpp:f
 Background Tasks
 ^^^^^^^^^^^^^^^^
 
-During startup, ESP-IDF and the FreeRTOS kernel automatically create multiple tasks that run in the background (listed in the table below).
+During startup, ESP-IDF and the FreeRTOS kernel automatically create multiple tasks that run in the background (listed in the the table below).
 
 .. list-table:: List of Tasks Created During Startup
     :widths: 10 75 5 5 5
@@ -96,27 +96,27 @@ During startup, ESP-IDF and the FreeRTOS kernel automatically create multiple ta
       - Priority
     * - Idle Tasks (``IDLEx``)
       - An idle task (``IDLEx``) is created for (and pinned to) each core, where ``x`` is the core's number. ``x`` is dropped when single-core configuration is enabled.
-      - :menuitem:`CONFIG_FREERTOS_IDLE_TASK_STACKSIZE`
+      - :ref:`CONFIG_FREERTOS_IDLE_TASK_STACKSIZE`
       - Core x
       - ``0``
     * - FreeRTOS Timer Task (``Tmr Svc``)
       - FreeRTOS will create the Timer Service/Daemon Task if any FreeRTOS Timer APIs are called by the application
-      - :menuitem:`CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH`
+      - :ref:`CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH`
       - Core 0
-      - :menuitem:`CONFIG_FREERTOS_TIMER_TASK_PRIORITY`
+      - :ref:`CONFIG_FREERTOS_TIMER_TASK_PRIORITY`
     * - Main Task (``main``)
       - Task that simply calls ``app_main``. This task will self delete when ``app_main`` returns
-      - :menuitem:`CONFIG_ESP_MAIN_TASK_STACK_SIZE`
-      - :menuitem:`CONFIG_ESP_MAIN_TASK_AFFINITY`
+      - :ref:`CONFIG_ESP_MAIN_TASK_STACK_SIZE`
+      - :ref:`CONFIG_ESP_MAIN_TASK_AFFINITY`
       - ``1``
     * - IPC Tasks (``ipcx``)
-      - When :menuitem:`CONFIG_FREERTOS_UNICORE` is false, an IPC task (``ipcx``) is created for (and pinned to) each core. IPC tasks are used to implement the Inter-processor Call (IPC) feature.
-      - :menuitem:`CONFIG_ESP_IPC_TASK_STACK_SIZE`
+      - When :ref:`CONFIG_FREERTOS_UNICORE` is false, an IPC task (``ipcx``) is created for (and pinned to) each core. IPC tasks are used to implement the Inter-processor Call (IPC) feature.
+      - :ref:`CONFIG_ESP_IPC_TASK_STACK_SIZE`
       - Core x
       - ``24``
     * - ESP Timer Task (``esp_timer``)
       - ESP-IDF creates the ESP Timer Task used to process ESP Timer callbacks
-      - :menuitem:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`
+      - :ref:`CONFIG_ESP_TIMER_TASK_STACK_SIZE`
       - Core 0
       - ``22``
 

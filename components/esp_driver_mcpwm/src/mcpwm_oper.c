@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,10 +12,9 @@ static void mcpwm_operator_default_isr(void *args);
 
 static esp_err_t mcpwm_operator_register_to_group(mcpwm_oper_t *oper, int group_id)
 {
-    mcpwm_group_t *group = NULL;
-    esp_err_t ret = ESP_OK;
+    mcpwm_group_t *group = mcpwm_acquire_group_handle(group_id);
+    ESP_RETURN_ON_FALSE(group, ESP_ERR_NO_MEM, TAG, "no mem for group (%d)", group_id);
 
-    ESP_GOTO_ON_ERROR(mcpwm_acquire_group_handle(group_id, 0, &group), err, TAG, "acquire group failed");
     int oper_id = -1;
     portENTER_CRITICAL(&group->spinlock);
     for (int i = 0; i < MCPWM_LL_GET(OPERATORS_PER_GROUP); i++) {
@@ -26,17 +25,15 @@ static esp_err_t mcpwm_operator_register_to_group(mcpwm_oper_t *oper, int group_
         }
     }
     portEXIT_CRITICAL(&group->spinlock);
-    ESP_GOTO_ON_FALSE(oper_id >= 0, ESP_ERR_NOT_FOUND, err, TAG, "no free operators in group (%d)", group_id);
-
-    oper->group = group;
-    oper->oper_id = oper_id;
-    return ESP_OK;
-
-err:
-    if (group) {
+    if (oper_id < 0) {
         mcpwm_release_group_handle(group);
+        group = NULL;
+    } else {
+        oper->group = group;
+        oper->oper_id = oper_id;
     }
-    return ret;
+    ESP_RETURN_ON_FALSE(oper_id >= 0, ESP_ERR_NOT_FOUND, TAG, "no free operators in group (%d)", group_id);
+    return ESP_OK;
 }
 
 static void mcpwm_operator_unregister_from_group(mcpwm_oper_t *oper)
@@ -85,6 +82,10 @@ esp_err_t mcpwm_new_operator(const mcpwm_operator_config_t *config, mcpwm_oper_h
     mcpwm_hal_context_t *hal = &group->hal;
     int oper_id = oper->oper_id;
 
+    // if interrupt priority specified before, it cannot be changed until the group is released
+    // check if the new priority specified consistents with the old one
+    ESP_GOTO_ON_ERROR(mcpwm_check_intr_priority(group, config->intr_priority), err, TAG, "set group interrupt priority failed");
+
     // reset MCPWM operator
     mcpwm_hal_operator_reset(hal, oper_id);
 
@@ -102,7 +103,6 @@ esp_err_t mcpwm_new_operator(const mcpwm_operator_config_t *config, mcpwm_oper_h
 
     // fill in other operator members
     oper->spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
-    oper->intr_priority = config->intr_priority;
     *ret_oper = oper;
     ESP_LOGD(TAG, "new operator (%d,%d) at %p", group_id, oper_id, oper);
     return ESP_OK;
@@ -233,18 +233,11 @@ esp_err_t mcpwm_operator_register_event_callbacks(mcpwm_oper_handle_t oper, cons
     // lazy install interrupt service
     if (!oper->intr) {
         // we want the interrupt service to be enabled after allocation successfully
-        int isr_flags = (MCPWM_INTR_ALLOC_FLAG & ~ESP_INTR_FLAG_INTRDISABLED) |
-                        (oper->intr_priority ? (1 << oper->intr_priority) : MCPWM_ALLOW_INTR_PRIORITY_MASK);
-        esp_intr_alloc_info_t intr_info = {
-            .source = soc_mcpwm_signals[group_id].irq_id,
-            .flags = isr_flags,
-            .intrstatusreg = (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev),
-            .intrstatusmask = MCPWM_LL_EVENT_OPER_MASK(oper_id),
-            .handler = mcpwm_operator_default_isr,
-            .arg = oper,
-            .bind_by.name = soc_mcpwm_signals[group_id].module_name,
-        };
-        ESP_RETURN_ON_ERROR(esp_intr_alloc_info(&intr_info, &oper->intr), TAG, "install interrupt service for operator failed");
+        int isr_flags = MCPWM_INTR_ALLOC_FLAG & ~ ESP_INTR_FLAG_INTRDISABLED;
+        isr_flags |= mcpwm_get_intr_priority_flag(group);
+        ESP_RETURN_ON_ERROR(esp_intr_alloc_intrstatus(soc_mcpwm_signals[group_id].irq_id, isr_flags,
+                                                      (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev), MCPWM_LL_EVENT_OPER_MASK(oper_id),
+                                                      mcpwm_operator_default_isr, oper, &oper->intr), TAG, "install interrupt service for operator failed");
     }
 
     // enable/disable interrupt events

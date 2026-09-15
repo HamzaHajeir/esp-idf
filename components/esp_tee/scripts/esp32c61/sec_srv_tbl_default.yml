@@ -210,13 +210,9 @@ secure_services:
   - family: attestation
     entries:
       - id: 170
-        type: IDF
-        function: psa_initial_attest_get_token
-        args: 5
-      - id: 171
-        type: IDF
-        function: psa_initial_attest_get_token_size
-        args: 2
+        type: custom
+        function: esp_tee_att_generate_token
+        args: 6
   # ID: 175-194 (20) - Secure Storage
   - family: secure_storage
     entries:
@@ -239,11 +235,11 @@ secure_services:
       - id: 179
         type: custom
         function: esp_tee_sec_storage_aead_encrypt
-        args: 6
+        args: 4
       - id: 180
         type: custom
         function: esp_tee_sec_storage_aead_decrypt
-        args: 6
+        args: 4
   # ID: 195-199 (5) - OTA
   - family: ota
     entries:

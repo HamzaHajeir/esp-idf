@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,7 +25,6 @@
 #include "esp_private/systimer.h"
 #include "hal/systimer_ll.h"
 #endif
-#include "esp_attr.h"
 
 ESP_HW_LOG_ATTR_TAG(TAG, "rtc_clk");
 
@@ -446,7 +445,7 @@ void rtc_clk_cpu_freq_set_xtal(void)
     /* BBPLL is kept enabled */
 }
 
-FORCE_IRAM_ATTR void rtc_clk_cpu_set_to_default_config(void)
+void rtc_clk_cpu_set_to_default_config(void)
 {
     rtc_clk_cpu_freq_to_xtal(CLK_LL_XTAL_FREQ_MHZ, 1);
 }
@@ -461,7 +460,7 @@ void rtc_clk_cpu_freq_set_xtal_for_sleep(void)
  * Must satisfy: cpu_freq = XTAL_FREQ / div.
  * Does not disable the PLL.
  */
-static FORCE_IRAM_ATTR void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
+static void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
 {
     rtc_cpu_freq_config_t cur_config;
     rtc_clk_cpu_freq_get_config(&cur_config);

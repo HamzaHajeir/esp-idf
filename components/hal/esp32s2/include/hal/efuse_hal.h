@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "soc/soc_caps.h"
-#include "hal/efuse_ll.h"
 #include_next "hal/efuse_hal.h"
 
 #ifdef __cplusplus

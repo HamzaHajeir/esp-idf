@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,7 +23,6 @@
 #include "hal/mspi_ll.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
-#include "hal/clk_tree_ll.h"
 #include "esp_private/bootloader_flash_internal.h"
 
 void IRAM_ATTR bootloader_flash_update_id(void)
@@ -46,11 +45,7 @@ void IRAM_ATTR bootloader_flash_cs_timing_config(void)
 
 void IRAM_ATTR bootloader_init_mspi_clock(void)
 {
-    cache_hal_disable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
-    clk_ll_cpll_enable();
-    _mspi_timing_ll_set_flash_core_clock(0, 80);
-    _mspi_timing_ll_set_flash_clk_src(0, FLASH_CLK_SRC_CPLL);
-    cache_hal_enable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
+    // IDF-14777
 }
 
 void IRAM_ATTR bootloader_flash_clock_config(const esp_image_header_t *pfhdr)
@@ -229,7 +224,6 @@ static void bootloader_spi_flash_resume(void)
 
 esp_err_t bootloader_init_spi_flash(void)
 {
-    bootloader_init_mspi_clock();
     bootloader_init_flash_configure();
 
 #if CONFIG_BOOTLOADER_FLASH_DC_AWARE
@@ -291,8 +285,10 @@ void bootloader_flash_hardware_init(void)
 {
     esp_rom_spiflash_attach(0, false);
 
-    // init cache and mmu
-    bootloader_init_ext_mem();
+    //init cache hal
+    // cache_hal_init();  // IDF-14651
+    //reset mmu
+    // mmu_hal_init();    // IDF-14669
     // update flash ID
     bootloader_flash_update_id();
     // Check and run XMC startup flow

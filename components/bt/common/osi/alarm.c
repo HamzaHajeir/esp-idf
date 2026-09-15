@@ -323,20 +323,9 @@ bool osi_alarm_is_active(osi_alarm_t *alarm)
 {
     assert(alarm != NULL);
 
-    assert(alarm_mutex != NULL);
-
-    bool active = false;
-    osi_mutex_lock(&alarm_mutex, OSI_MUTEX_MAX_TIMEOUT);
-    if (alarm_state != ALARM_STATE_OPEN) {
-        active = false;
-        goto end;
-    }
-
     if (alarm->alarm_hdl != NULL) {
-        active = esp_timer_is_active(alarm->alarm_hdl);
+        return esp_timer_is_active(alarm->alarm_hdl);
     }
 
-end:
-    osi_mutex_unlock(&alarm_mutex);
-    return active;
+    return false;
 }

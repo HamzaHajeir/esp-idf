@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -71,9 +71,8 @@
 #define SOC_BOD_SUPPORTED               1
 #define SOC_APM_SUPPORTED               1 /*!< Support for APM peripheral */
 #define SOC_PMU_SUPPORTED               1
-#define SOC_PMU_PVT_SUPPORTED           1
 #define SOC_PAU_SUPPORTED               1
-#define SOC_RTC_TIMER_SUPPORTED         1
+#define SOC_LP_TIMER_SUPPORTED          1
 #define SOC_LP_AON_SUPPORTED            1
 #define SOC_LP_PERIPHERALS_SUPPORTED    1
 #define SOC_LP_I2C_SUPPORTED            1
@@ -81,15 +80,13 @@
 #define SOC_CLK_TREE_SUPPORTED          1
 #define SOC_ASSIST_DEBUG_SUPPORTED      1
 #define SOC_WDT_SUPPORTED               1
-#define SOC_RTC_WDT_SUPPORTED           1
 #define SOC_SDIO_SLAVE_SUPPORTED        1
 #define SOC_SPI_FLASH_SUPPORTED         1
 #define SOC_ECDSA_SUPPORTED             1
 #define SOC_RNG_SUPPORTED               1
-#define SOC_KEY_MANAGER_SUPPORTED       0
+#define SOC_KEY_MANAGER_SUPPORTED       1
 #define SOC_HUK_SUPPORTED               1
 #define SOC_MODEM_CLOCK_SUPPORTED       1
-#define SOC_REGI2C_SUPPORTED            1
 #define SOC_LIGHT_SLEEP_SUPPORTED       1
 #define SOC_DEEP_SLEEP_SUPPORTED        1
 #define SOC_PM_SUPPORTED                1
@@ -100,7 +97,6 @@
 #define SOC_PHY_SUPPORTED               1
 #define SOC_BITSCRAMBLER_SUPPORTED      1
 #define SOC_SPI_EXTERNAL_NOR_FLASH_SUPPORTED    1
-#define SOC_RISCV_TRACE_SUPPORTED       1
 
 /*-------------------------- XTAL CAPS ---------------------------------------*/
 #define SOC_XTAL_SUPPORT_40M                        1
@@ -123,17 +119,30 @@
 #define SOC_ADC_DIG_CTRL_SUPPORTED              1
 #define SOC_ADC_DIG_IIR_FILTER_SUPPORTED        1
 #define SOC_ADC_MONITOR_SUPPORTED               1
+#define SOC_ADC_DIG_SUPPORTED_UNIT(UNIT)        1    //Digital controller supported ADC unit
 #define SOC_ADC_DMA_SUPPORTED                   1
 #define SOC_ADC_PERIPH_NUM                      (1U)
+#define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         (6)
+#define SOC_ADC_MAX_CHANNEL_NUM                 (6)
 #define SOC_ADC_ATTEN_NUM                       (4)
 
 /*!< Digital */
+#define SOC_ADC_DIGI_CONTROLLER_NUM             (1U)
 #define SOC_ADC_PATT_LEN_MAX                    (8) /*!< Two pattern tables, each contains 4 items. Each item takes 1 byte */
-#define SOC_ADC_DIGI_MIN_BITWIDTH               (12)
 #define SOC_ADC_DIGI_MAX_BITWIDTH               (12)
+#define SOC_ADC_DIGI_MIN_BITWIDTH               (12)
+#define SOC_ADC_DIGI_IIR_FILTER_NUM             (2)
 #define SOC_ADC_DIGI_MONITOR_NUM                (2)
 #define SOC_ADC_DIGI_RESULT_BYTES               (4)
 #define SOC_ADC_DIGI_DATA_BYTES_PER_CONV        (4)
+/*!< F_sample = F_digi_con / 2 / interval. F_digi_con = 5M for now. 30 <= interval <= 4095 */
+#define SOC_ADC_SAMPLE_FREQ_THRES_HIGH          83333
+#define SOC_ADC_SAMPLE_FREQ_THRES_LOW           611
+
+/*!< RTC */
+#define SOC_ADC_RTC_MIN_BITWIDTH                (12)
+#define SOC_ADC_RTC_MAX_BITWIDTH                (12)
+
 /*!< Calibration */
 #define SOC_ADC_CALIBRATION_V1_SUPPORTED        (1) /*!< support HW offset calibration version 1*/
 #define SOC_ADC_CALIB_CHAN_COMPENS_SUPPORTED    (1) /*!< support channel compensation to the HW offset calibration */
@@ -175,8 +184,6 @@
 
 #define SOC_CPU_HAS_LOCKUP_RESET        1
 
-#define SOC_CPU_HAS_ZC_EXTENSIONS       1
-
 #define SOC_CPU_ZCMP_WORKAROUND         1
 #define SOC_CPU_ZCMP_PUSH_REVERSED      1
 #define SOC_CPU_ZCMP_POPRET_ISSUE       1
@@ -200,6 +207,7 @@
 #define SOC_GDMA_SUPPORT_ETM            1
 #define SOC_GDMA_SUPPORT_SLEEP_RETENTION    1
 #define SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION   1
+#define SOC_GDMA_EXT_MEM_ENC_ALIGNMENT   (16)
 
 /*-------------------------- GPIO CAPS ---------------------------------------*/
 // ESP32-C5 has 1 GPIO peripheral
@@ -213,10 +221,8 @@
 #define SOC_GPIO_SUPPORT_ETM          1
 
 // Target has the full LP IO subsystem
-// GPIO0~7 on ESP32C5 can support chip HP peripheral powerdown-ed sleep wakeup
-#define SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP  (1)
-#define SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP           SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP
-#define SOC_RTC_GPIO_EDGE_WAKEUP_SUPPORTED          (1)
+// GPIO0~7 on ESP32C5 can support chip deep sleep wakeup
+#define SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP   (1)
 // LP IO peripherals have independent clock gating to manage
 #define SOC_LP_IO_CLOCK_IS_INDEPENDENT      (1)
 
@@ -226,7 +232,8 @@
 #define SOC_GPIO_IN_RANGE_MAX           28
 #define SOC_GPIO_OUT_RANGE_MAX          28
 
-#define SOC_GPIO_HP_PERIPH_PD_SLEEP_WAKEABLE_MASK          (0ULL | BIT0 | BIT1 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6)
+#define SOC_GPIO_DEEP_SLEEP_WAKE_VALID_GPIO_MASK        (0ULL | BIT0 | BIT1 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6)
+#define SOC_GPIO_DEEP_SLEEP_WAKE_SUPPORTED_PIN_CNT      (7)
 
 // digital I/O pad powered by VDD3P3_CPU or VDD_SPI(GPIO_NUM_7~GPIO_NUM_28)
 #define SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK 0x0000000001FFFF80ULL
@@ -257,23 +264,34 @@
 #define SOC_ETM_SUPPORT_SLEEP_RETENTION 1
 
 /*------------------------- Analog Comparator CAPS ---------------------------*/
+#define SOC_ANA_CMPR_NUM                       (1U)
+#define SOC_ANA_CMPR_CAN_DISTINGUISH_EDGE      (1)  // Support positive/negative/any cross interrupt
 #define SOC_ANA_CMPR_SUPPORT_ETM               (1)
-#define SOC_ANA_CMPR_SUPPORT_AUTO_SCAN         (1)
 
 /*-------------------------- I2C CAPS ----------------------------------------*/
-#define SOC_I2C_NUM                             (2U)
-#define SOC_HP_I2C_NUM                          (1U)
-#define SOC_LP_I2C_NUM                          (1U)
+#define SOC_I2C_NUM                 (2U)
+#define SOC_HP_I2C_NUM              (1U)
 
-#define SOC_I2C_SUPPORT_XTAL                    (1)
-#define SOC_I2C_SUPPORT_RTC                     (1)
-#define SOC_I2C_SUPPORT_10BIT_ADDR              (1)
+#define SOC_I2C_FIFO_LEN            (32) /*!< I2C hardware FIFO depth */
+#define SOC_I2C_CMD_REG_NUM         (8)  /*!< Number of I2C command registers */
+#define SOC_I2C_SUPPORT_SLAVE       (1)
 
-#define SOC_I2C_SUPPORT_SLAVE                   (1)
-#define SOC_I2C_SLAVE_SUPPORT_BROADCAST         (1)
-#define SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE     (1)
+#define SOC_I2C_SUPPORT_HW_FSM_RST  (1)
+#define SOC_I2C_SUPPORT_XTAL        (1)
+#define SOC_I2C_SUPPORT_RTC         (1)
+#define SOC_I2C_SUPPORT_10BIT_ADDR   (1)
+#define SOC_I2C_SLAVE_SUPPORT_BROADCAST    (1)
+#define SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE    (1)
+#define SOC_I2C_SLAVE_SUPPORT_I2CRAM_ACCESS   (1)
+#define SOC_I2C_SLAVE_SUPPORT_SLAVE_UNMATCH    (1)
 
-#define SOC_I2C_SUPPORT_SLEEP_RETENTION         (1)
+#define SOC_I2C_SUPPORT_SLEEP_RETENTION (1)
+
+/*-------------------------- LP_I2C CAPS -------------------------------------*/
+// ESP32-C5 has 1 LP_I2C
+#define SOC_LP_I2C_NUM              (1U)
+
+#define SOC_LP_I2C_FIFO_LEN         (16) /*!< LP_I2C hardware FIFO depth */
 
 /*-------------------------- I2S CAPS ----------------------------------------*/
 #define SOC_I2S_HW_VERSION_2        (1)
@@ -389,9 +407,11 @@
 
 /*-------------------------- SPI CAPS ----------------------------------------*/
 #define SOC_SPI_PERIPH_NUM                  2
+#define SOC_SPI_PERIPH_CS_NUM(i)            6
 #define SOC_SPI_MAXIMUM_BUFFER_SIZE         64
 #define SOC_SPI_SUPPORT_SLAVE_HD_VER2       1
 #define SOC_SPI_SUPPORT_SLEEP_RETENTION     1
+#define SOC_SPI_MAX_BITWIDTH(host_id)       (4) // Supported line mode: SPI2: 1, 2, 4
 
 /*-------------------------- SPIRAM CAPS ----------------------------------------*/
 #define SOC_SPIRAM_XIP_SUPPORTED        1
@@ -405,24 +425,33 @@
 #define SOC_SPI_MEM_SUPPORT_SW_SUSPEND                    (1)
 #define SOC_SPI_MEM_SUPPORT_CHECK_SUS                     (1)
 #define SOC_SPI_MEM_SUPPORT_WRAP                          (1)
+#define SOC_SPI_MEM_SUPPORT_WB_MODE_INDEPENDENT_CONTROL   (1)
 #define SOC_SPI_MEM_SUPPORT_CACHE_32BIT_ADDR_MAP          (1)
 #define SOC_SPI_MEM_SUPPORT_TIMING_TUNING                 (1)
 #define SOC_SPI_MEM_SUPPORT_TSUS_TRES_SEPERATE_CTR        (1)
+#define SOC_SPI_MEM_PSRAM_FREQ_AXI_CONSTRAINED            (1)
 #define SOC_MEMSPI_TIMING_TUNING_BY_MSPI_DELAY            (1)
 
 #define SOC_MEMSPI_IS_INDEPENDENT                 1
-
-#define SOC_SPI_MEM_FLASH_SUPPORT_HPM                         (1) /*!< Support High Performance Mode */
-
-#define SOC_MEMSPI_ENCRYPTION_ALIGNMENT           16    /*!< 16-byte alignment restriction to mem addr and size if encryption is enabled */
+#define SOC_MEMSPI_SRC_FREQ_120M_SUPPORTED        1
+#define SOC_MEMSPI_SRC_FREQ_80M_SUPPORTED         1
+#define SOC_MEMSPI_SRC_FREQ_40M_SUPPORTED         1
+#define SOC_MEMSPI_SRC_FREQ_20M_SUPPORTED         1
 
 /*-------------------------- SYSTIMER CAPS ----------------------------------*/
+#define SOC_SYSTIMER_COUNTER_NUM            2  // Number of counter units
+#define SOC_SYSTIMER_ALARM_NUM              3  // Number of alarm units
+#define SOC_SYSTIMER_BIT_WIDTH_LO           32 // Bit width of systimer low part
+#define SOC_SYSTIMER_BIT_WIDTH_HI           20 // Bit width of systimer high part
+#define SOC_SYSTIMER_FIXED_DIVIDER          1  // Clock source divider is fixed: 2.5
+#define SOC_SYSTIMER_SUPPORT_RC_FAST        1  // Systimer can use RC_FAST clock source
+#define SOC_SYSTIMER_INT_LEVEL              1  // Systimer peripheral uses level interrupt
+#define SOC_SYSTIMER_ALARM_MISS_COMPENSATE  1  // Systimer peripheral can generate interrupt immediately if t(target) > t(current)
 #define SOC_SYSTIMER_SUPPORT_ETM            1  // Systimer comparator can generate ETM event
 
 /*-------------------------- LP_TIMER CAPS ----------------------------------*/
 #define SOC_LP_TIMER_BIT_WIDTH_LO           32 // Bit width of lp_timer low part
 #define SOC_LP_TIMER_BIT_WIDTH_HI           16 // Bit width of lp_timer high part
-#define SOC_RTC_TIMER_V2                    1
 
 /*--------------------------- TIMER GROUP CAPS ---------------------------------------*/
 #define SOC_TIMER_SUPPORT_ETM             (1)
@@ -433,10 +462,9 @@
 #define SOC_MWDT_SUPPORT_SLEEP_RETENTION   (1)
 
 /*-------------------------- TWAI CAPS ---------------------------------------*/
-#define SOC_TWAI_CONTROLLER_NUM             2
-#define SOC_TWAI_MASK_FILTER_NUM            3
-#define SOC_TWAI_RANGE_FILTER_NUM           1U
-#define SOC_TWAI_SUPPORT_SLEEP_RETENTION    1
+#define SOC_TWAI_CONTROLLER_NUM         2
+#define SOC_TWAI_MASK_FILTER_NUM        3
+#define SOC_TWAI_RANGE_FILTER_NUM       1U
 
 /*-------------------------- eFuse CAPS----------------------------*/
 #define SOC_EFUSE_DIS_PAD_JTAG 1
@@ -466,7 +494,6 @@
 #define SOC_SECURE_BOOT_V2_RSA              1
 #define SOC_SECURE_BOOT_V2_ECC              1
 #define SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS   3
-#define SOC_EFUSE_SECURE_BOOT_P384_WR_DIS   1
 #define SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS   1
 #define SOC_SUPPORT_SECURE_BOOT_REVOKE_KEY  1
 
@@ -477,12 +504,9 @@
 #define SOC_FLASH_ENCRYPTION_XTS_AES_128        1  /* SOC_EFUSE_XTS_AES_KEY_128 (1) || SOC_KEY_MANAGER_FE_KEY_DEPLOY_XTS_AES_128 (1) */
 #define SOC_FLASH_ENCRYPTION_XTS_AES_256        1  /* SOC_EFUSE_XTS_AES_KEY_256 (0) || SOC_KEY_MANAGER_FE_KEY_DEPLOY_XTS_AES_256 (1) */
 #define SOC_FLASH_ENCRYPTION_XTS_AES_SUPPORT_PSEUDO_ROUND  1
-#define SOC_FLASH_ENCRYPTION_PAGE_CONFIGURABLE  1  /* Flash encryption can be configured on a MMU page basis */
 
 /*-------------------------- PSRAM Encryption CAPS----------------------------*/
-#define SOC_PSRAM_ENCRYPTION_XTS_AES_128        1
-#define SOC_PSRAM_ENCRYPTION_SEPARATE_KEY       1  /* PSRAM encryption can use independent key */
-#define SOC_PSRAM_ENCRYPTION_PAGE_CONFIGURABLE  1  /* PSRAM encryption can be configured on a MMU page basis */
+#define SOC_PSRAM_ENCRYPTION_XTS_AES_128    (1)
 
 /*------------------------Bootloader CAPS---------------------------------*/
 /* Support Recovery Bootloader */
@@ -500,6 +524,10 @@
 
 /*------------------------ Anti DPA (Security) CAPS --------------------------*/
 #define SOC_CRYPTO_DPA_PROTECTION_SUPPORTED     1
+
+/*-------------------------- RNG CAPS ---------------------------------------*/
+#define SOC_RNG_BUF_CHAIN_ENTROPY_SOURCE 1
+#define SOC_RNG_RTC_TIMER_ENTROPY_SOURCE 1
 
 /*-------------------------- UART CAPS ---------------------------------------*/
 // ESP32-C5 has 3 UARTs (2 HP UART, and 1 LP UART)
@@ -521,11 +549,15 @@
 #define SOC_UART_WAKEUP_SUPPORT_START_BIT_MODE     (1)
 #define SOC_UART_WAKEUP_SUPPORT_CHAR_SEQ_MODE      (1)
 
+/*--------------------------- UHCI CAPS -------------------------------------*/
+#define SOC_UHCI_NUM               (1UL)
+
 /*-------------------------- COEXISTENCE HARDWARE PTI CAPS -------------------------------*/
 #define SOC_COEX_HW_PTI                 (1)
 
 /*-------------------------- EXTERNAL COEXISTENCE CAPS -------------------------------------*/
 #define SOC_EXTERNAL_COEX_ADVANCE              (1) /*!< HARDWARE  EXTERNAL COEXISTENCE CAPS */
+#define SOC_EXTERNAL_COEX_LEADER_TX_LINE       (0) /*!< EXTERNAL COEXISTENCE TX LINE CAPS */
 
 /*--------------- PHY REGISTER AND MEMORY SIZE CAPS --------------------------*/
 // #define SOC_PHY_DIG_REGS_MEM_SIZE       (21*4)
@@ -553,31 +585,27 @@
 #define SOC_PM_SUPPORT_MAC_BB_PD        (1)
 #define SOC_PM_SUPPORT_RTC_PERIPH_PD    (1)
 
-#define SOC_PM_SUPPORT_REGDMA_TRIGGERED_PHY (1)
 #define SOC_PM_SUPPORT_PMU_MODEM_STATE  (1)
 /* macro redefine for pass esp_wifi headers md5sum check */
 #define MAC_SUPPORT_PMU_MODEM_STATE     SOC_PM_SUPPORT_PMU_MODEM_STATE
-#define SOC_PM_REGDMA_MODEM_LINK_PROTECT (1)
 
 #define SOC_PM_SUPPORT_PMU_CLK_ICG          (1)
-#define SOC_PM_SUPPORT_MODEM_CLOCK_DOMAIN_ICG      (1)
 
 #define SOC_PM_SUPPORT_DEEPSLEEP_CHECK_STUB_ONLY   (1) /*!<Supports CRC only the stub code in RTC memory */
 
 #define SOC_PM_CPU_RETENTION_BY_SW                 (1)
 #define SOC_PM_MODEM_RETENTION_BY_REGDMA           (1)
 #define SOC_EXT_MEM_CACHE_TAG_IN_CPU_DOMAIN        (1)
+#define SOC_PM_TOP_PD_NOT_ALLOWED                  (1)
 
 #define SOC_PM_PAU_LINK_NUM                 (5)
 #define SOC_PM_PAU_REGDMA_LINK_CONFIGURABLE (1)
+#define SOC_PM_PAU_REGDMA_LINK_IDX_WIFIMAC  (4) // The range of values for the link index is [0, SOC_PM_PAU_LINK_NUM)
 #define SOC_PM_PAU_REGDMA_COMMON_PHY_LINK_ENTRY (1)
-/** Workaround: software-triggered modem PHY retention uses dedicated WiFi MAC REGDMA, not entry link_sel */
-#define SOC_PM_PAU_REGDMA_MODEM_WIFIMAC_WORKAROUND (1)
-#define SOC_PM_PAU_REGDMA_LINK_IDX_PHY      (4) // The range of values for the link index is [0, SOC_PM_PAU_LINK_NUM)
 
 #define SOC_PM_PMU_MIN_SLP_SLOW_CLK_CYCLE_FIXED    (1)
 
-#define SOC_PM_FLASH_KEEP_POWER_IN_LSLP     (1)  /*!<Keep flash on in light sleep to reduce wake latency and current leakage*/
+#define SOC_PM_RETENTION_MODULE_NUM         (32)
 
 /*-------------------------- CLOCK SUBSYSTEM CAPS ----------------------------------------*/
 #define SOC_CLK_RC_FAST_SUPPORT_CALIBRATION       (1)
@@ -590,8 +618,6 @@
 #define SOC_CLK_LP_FAST_SUPPORT_XTAL_D2           (1)     /*!< Support XTAL_D2 clock as the LP_FAST clock source */
 
 #define SOC_RCC_IS_INDEPENDENT                    1       /*!< Reset and Clock Control is independent, thanks to the PCR registers */
-
-#define SOC_CLK_ROOT_CLK_SWITCH_PROTECT           1       /*!< Need to bypass root clock auto gating during 240M/160M PLL switch */
 
 #define SOC_CLK_ANA_I2C_MST_DEPENDS_ON_MODEM_APB  (1)     /*!< Analog I2C master clock depends on  CLK_160M_REF on clock tree */
 
@@ -617,37 +643,21 @@
 
 /*---------------------------------- Bluetooth CAPS ----------------------------------*/
 #define SOC_BLE_SUPPORTED                   (1)    /*!< Support Bluetooth Low Energy hardware */
-#define SOC_BLE_MESH_SUPPORTED              (1)    /*!< Support BLE MESH */
+// #define SOC_BLE_MESH_SUPPORTED              (1)    /*!< Support BLE MESH */
 #define SOC_ESP_NIMBLE_CONTROLLER           (1)    /*!< Support BLE EMBEDDED controller V1 */
 #define SOC_BLE_50_SUPPORTED                (1)    /*!< Support Bluetooth 5.0 */
 #define SOC_BLE_DEVICE_PRIVACY_SUPPORTED    (1)    /*!< Support BLE device privacy mode */
 #define SOC_BLE_POWER_CONTROL_SUPPORTED     (1)    /*!< Support Bluetooth Power Control */
-#define SOC_BLE_PERIODIC_ADV_ENH_SUPPORTED  (1)    /*!< Support For BLE Periodic Adv Enhancements */
-#define SOC_BLUFI_SUPPORTED                 (1)    /*!< Support BLUFI */
 #define SOC_BLE_MULTI_CONN_OPTIMIZATION     (1)    /*!< Support multiple connections optimization */
+#define SOC_BLE_PERIODIC_ADV_ENH_SUPPORTED  (1)    /*!< Support For BLE Periodic Adv Enhancements */
 #define SOC_BLE_CTE_SUPPORTED               (1)    /*!< Support Bluetooth LE Constant Tone Extension (CTE) */
-#define SOC_BLE_SUBRATE_SUPPORTED           (1)    /*!< Support Bluetooth LE Connection Subrating */
 #define SOC_BLE_PERIODIC_ADV_WITH_RESPONSE  (1)    /*!< Support Bluetooth LE Periodic Advertising with Response (PAwR) */
 
 /*------------------------------------- PHY CAPS -------------------------------------*/
 // #define SOC_PHY_COMBO_MODULE                  (1) /*!< Support Wi-Fi, BLE and 15.4*/
 #define SOC_PHY_CALIBRATION_CLOCK_IS_INDEPENDENT (1)
 
-/*------------------------------------- DEBUG CAPS -------------------------------------*/
-#define SOC_DEBUG_HAVE_OCD_STUB_BINS    (1)
-
 /*------------------------------------- ULP CAPS -------------------------------------*/
 #define SOC_LP_CORE_SINGLE_INTERRUPT_VECTOR         (1) /*!< LP Core interrupts all map to a single entry in vector table */
 #define SOC_LP_CORE_SUPPORT_ETM                     (1) /*!< LP Core supports ETM */
 #define SOC_LP_CORE_SUPPORT_STORE_LOAD_EXCEPTIONS   (1) /*!< LP Core will raise exceptions if accessing invalid addresses */
-#define SOC_LP_CORE_SUPPORT_I2C                     (1) /*!< LP Core supports I2C */
-#define SOC_LP_CORE_HW_AUTO_CLRWAKEUPCAUSE          (1) /*!< LP core requests sleep, PMU clears both HP and LP wakeup causes */
-#define SOC_LP_CORE_LP_UART_WAKEUP_KEEP_TRIGGERED   (1) /*!< LP UART wakeup source is kept triggered */
-
-/*-------------------------- RISC-V TRACE CAPS ------------------------------*/
-#define SOC_RISCV_TRACE_PACKET_FORMAT_VER           (200) /*!< Efficient Trace v2.0 */
-#define SOC_RISCV_TRACE_HAS_CONFIG_REG              (1) /*!< Has the encoder config register */
-#define SOC_RISCV_TRACE_AHB_CONFIGURABLE            (1) /*!< AHB write master is configurable */
-#define SOC_RISCV_TRACE_FILTER_SUPPORTED            (1) /*!< Has the filter unit */
-#define SOC_RISCV_TRACE_PRIV_WIDTH                  (1U) /*!< Bits in the privilege field (privilege_width_p) */
-#define SOC_RISCV_TRACE_ECAUSE_WIDTH                (6) /*!< Bits in the exception cause field (ecause_width_p) */

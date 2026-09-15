@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
+from typing import Tuple
 
 import pytest
 from pytest_embedded_idf import IdfDut
@@ -11,16 +12,12 @@ from pytest_embedded_idf.utils import idf_parametrize
 @pytest.mark.parametrize(
     'count, app_path',
     [
-        (
-            2,
-            f'{os.path.join(os.path.dirname(__file__), "basic", "host")}|'
-            f'{os.path.join(os.path.dirname(__file__), "basic", "slave")}',
-        ),
+        (2, f'{os.path.join(os.path.dirname(__file__), "host")}|{os.path.join(os.path.dirname(__file__), "slave")}'),
     ],
     indirect=True,
 )
 @idf_parametrize('target', ['esp32'], indirect=['target'])
-def test_example_sdio_communication(dut: tuple[IdfDut, IdfDut]) -> None:
+def test_example_sdio_communication(dut: Tuple[IdfDut, IdfDut]) -> None:
     """
     Configurations
     host = host -> slave = slave

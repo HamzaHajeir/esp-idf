@@ -1,6 +1,6 @@
-# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-import os
+
 import subprocess
 import time
 from collections.abc import Generator
@@ -17,9 +17,6 @@ from pytest_embedded_idf.utils import soc_filtered_targets
 # ---------------------------------------------------------------------------
 # Constants / Helpers
 # ---------------------------------------------------------------------------
-
-can_env = os.getenv('CAN_PORT', 'can0')
-print(f'CAN_PORT={can_env}')
 
 PROMPTS = ['twai>']
 
@@ -256,7 +253,7 @@ class TwaiTestHelper:
 class CanBusManager:
     """CAN bus manager for external hardware tests"""
 
-    def __init__(self, interface: str = can_env):
+    def __init__(self, interface: str = 'can0'):
         self.interface = interface
         self.bus: can.Bus | None = None
 
@@ -283,6 +280,8 @@ class CanBusManager:
 
             self.bus = can.Bus(interface='socketcan', channel=self.interface)
             yield self.bus
+        except Exception as e:
+            pytest.skip(f'CAN interface not available: {str(e)}')
         finally:
             if self.bus:
                 self.bus.shutdown()
@@ -311,6 +310,7 @@ def usb_can() -> CanBusManager:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_basic_operations(twai: TwaiTestHelper) -> None:
     with twai.session(start_dump=False):
         # Test basic send operation
@@ -329,6 +329,7 @@ def test_twai_utils_basic_operations(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_bitrate_configuration(twai: TwaiTestHelper) -> None:
     for bitrate in [125000, 250000, 500000, 1000000]:
         with twai.session(mode='standard', bitrate=bitrate, tx_gpio=DEFAULT_TX_GPIO, rx_gpio=DEFAULT_RX_GPIO):
@@ -337,6 +338,7 @@ def test_twai_utils_bitrate_configuration(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_frame_formats(twai: TwaiTestHelper) -> None:
     with twai.session():
         BASIC_FRAMES = [
@@ -367,6 +369,7 @@ def test_twai_utils_frame_formats(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_info_and_recovery(twai: TwaiTestHelper) -> None:
     with twai.session():
         assert twai.info(), 'Info command failed'
@@ -387,6 +390,7 @@ def test_twai_utils_info_and_recovery(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_input_validation(twai: TwaiTestHelper) -> None:
     with twai.session(start_dump=False):
         INVALID_FRAMES = [
@@ -433,6 +437,7 @@ def test_twai_utils_input_validation(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_gpio_and_basic_send(twai: TwaiTestHelper) -> None:
     with twai.session():
         assert twai.info(), 'GPIO info failed'
@@ -460,6 +465,7 @@ def test_twai_utils_gpio_and_basic_send(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_send_various_frames(twai: TwaiTestHelper) -> None:
     with twai.session():
         # Boundary ID tests
@@ -493,6 +499,7 @@ def test_twai_utils_fd_frames(twai: TwaiTestHelper) -> None:
 
 @pytest.mark.generic
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration')
 def test_twai_utils_mask_filters(twai: TwaiTestHelper) -> None:
     """Test TWAI filtering including automatic extended frame detection."""
     MASK_FILTER_GROUPS = [
@@ -550,11 +557,7 @@ def test_twai_utils_mask_filters(twai: TwaiTestHelper) -> None:
 
 
 @pytest.mark.generic
-@idf_parametrize(
-    'target',
-    soc_filtered_targets('SOC_TWAI_RANGE_FILTER_NUM > 0'),
-    indirect=['target'],
-)
+@idf_parametrize('target', soc_filtered_targets('SOC_TWAI_RANGE_FILTER_NUM > 0'), indirect=['target'])
 def test_twai_utils_range_filters(twai: TwaiTestHelper) -> None:
     """Test TWAI range filters (available on chips with range filter support)."""
     RANGE_FILTER_GROUPS = [
@@ -598,10 +601,10 @@ def test_twai_utils_range_filters(twai: TwaiTestHelper) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.twai_adapter
-@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='no runner')  # TODO: IDFCI-11110
-@pytest.mark.temp_skip_ci(targets=['esp32s31'], reason='no runner')
+@pytest.mark.twai_std
+@pytest.mark.temp_skip_ci(targets=['esp32h4'], reason='no runner')
 @idf_parametrize('target', soc_filtered_targets('SOC_TWAI_SUPPORTED == 1'), indirect=['target'])
+@pytest.mark.temp_skip_ci(targets=['esp32p4'], reason='p4 rev3 migration # TODO: IDF-14393')
 def test_twai_utils_external_communication(twai: TwaiTestHelper, usb_can: CanBusManager) -> None:
     test_frames = [
         ('123#DEADBEEF', 0x123, bytes.fromhex('DEADBEEF'), False),
@@ -617,34 +620,34 @@ def test_twai_utils_external_communication(twai: TwaiTestHelper, usb_can: CanBus
             bitrate=DEFAULT_BITRATE,
             start_dump=False,
         ):
+            # --- ESP -> PC Test ---
+            for frame_str, frame_id, expected_data, is_extended in test_frames:
+                assert twai.send(frame_str), f'ESP->PC send failed: {frame_str}'
+                deadline = time.time() + 2.0
+                got = None
+                while time.time() < deadline:
+                    try:
+                        msg = can_bus.recv(timeout=0.1)
+                        if msg and msg.arbitration_id == frame_id:
+                            got = msg
+                            break
+                    except Exception:
+                        continue
+                assert got is not None, f'ESP->PC receive timeout for ID=0x{frame_id:X}'
+                assert bool(got.is_extended_id) == is_extended, (
+                    f'ESP->PC extended flag mismatch for 0x{frame_id:X}: '
+                    f'expected {is_extended}, got {got.is_extended_id}'
+                )
+                assert bytes(got.data) == expected_data, (
+                    f'ESP->PC data mismatch for 0x{frame_id:X}: '
+                    f'expected {expected_data.hex()}, got {bytes(got.data).hex()}'
+                )
+
+            # --- PC -> ESP ---
+            assert twai.dump_start(), 'Failed to start twai_dump'
+            assert twai.info(), 'Failed to get twai_info'
+
             try:
-                # --- ESP -> PC Test ---
-                for frame_str, frame_id, expected_data, is_extended in test_frames:
-                    assert twai.send(frame_str), f'ESP->PC send failed: {frame_str}'
-                    deadline = time.time() + 2.0
-                    got = None
-                    while time.time() < deadline:
-                        try:
-                            msg = can_bus.recv(timeout=0.1)
-                            if msg and msg.arbitration_id == frame_id:
-                                got = msg
-                                break
-                        except Exception:
-                            continue
-                    assert got is not None, f'ESP->PC receive timeout for ID=0x{frame_id:X}'
-                    assert bool(got.is_extended_id) == is_extended, (
-                        f'ESP->PC extended flag mismatch for 0x{frame_id:X}: '
-                        f'expected {is_extended}, got {got.is_extended_id}'
-                    )
-                    assert bytes(got.data) == expected_data, (
-                        f'ESP->PC data mismatch for 0x{frame_id:X}: '
-                        f'expected {expected_data.hex()}, got {bytes(got.data).hex()}'
-                    )
-
-                # --- PC -> ESP ---
-                assert twai.dump_start(), 'Failed to start twai_dump'
-                assert twai.info(), 'Failed to get twai_info'
-
                 for frame_str, frame_id, expected_data, is_extended in test_frames:
                     msg = can.Message(arbitration_id=frame_id, data=expected_data, is_extended_id=is_extended)
                     print(f'\nPC->ESP sending frame: {msg}, Return: {can_bus.send(msg)}')

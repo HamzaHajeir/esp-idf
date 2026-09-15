@@ -264,13 +264,6 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
            SPI_TRANS_MULTILINE_CMD
          - SPICOMMON_BUSFLAG_OCTAL
 
-.. only:: SOC_SPI_SUPPORT_DDR_CLOCK
-
-    DDR 时钟
-    ^^^^^^^^
-
-    在 :cpp:member:`spi_transaction_t::flags` 中设置 :c:macro:`SPI_TRANS_DDRCLK`，可使当前传输事务使用时钟双边沿数据模式，该模式下， cmd/addr/data 段都将在时钟的上升沿和下降沿都进行传输，没有设置该标志时，传输将回到传统单边沿数据模式。DDRCLK 模式在 2/4/8 线模式下同样支持。
-
 命令阶段和地址阶段
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -381,25 +374,6 @@ SPI 主机驱动程序的示例代码存放在 ESP-IDF 示例项目的 :example:
 SPI 主机逐字节地将数据读入和写入内存。默认情况下，数据优先以最高有效位 (MSB) 发送，极少数情况下会优先使用最低有效位 (LSB)。如果需要发送一个小于 8 位的值，这些位应以 MSB 优先的方式写入内存。
 
 例如，如果需要发送 ``0b00010``，则应将其写成 ``uint8_t`` 变量，读取长度设置为 5 位。此时，设备仍然会收到 8 位数据，并另有 3 个“随机”位，所以读取过程必须准确。
-
-不是所有芯片都支持任意位长度的数据传输，发送或接收不支持的位长度时会返回 :c:macro:`ESP_ERR_NOT_SUPPORTED` 错误。支持的长度如下表所示（**YES** 表示支持任意长度，**NO** 表示只支持整字节 8 bits 长度）：
-
-+------+--------+-------+----------+--------------------+---------------------+
-|               | ESP32 | ESP32-S2 | ESP32-S3/C2/C3/C6  | ESP32-H2/P4/C5/C61  |
-+======+========+=======+==========+====================+=====================+
-| TX   | DMA    | YES   | YES      | (bit_len % 8) != 1 | YES                 |
-+      +--------+-------+----------+--------------------+---------------------+
-|      | NO DMA | YES   | YES      | (bit_len % 8) != 1 | YES                 |
-+------+--------+-------+----------+--------------------+---------------------+
-| RX   | DMA    | NO    | NO       | YES                | YES                 |
-+      +--------+-------+----------+--------------------+---------------------+
-|      | NO DMA | YES   | NO       | YES                | YES                 |
-+------+--------+-------+----------+--------------------+---------------------+
-
-如仍需使用不支持的长度传输，根据表格可以有以下替代方法：
-
-1. 使用 :cpp:member:`spi_transaction_t::cmd` 和 :cpp:member:`spi_transaction_t::addr` 和数据阶段组合。缺点：命令和地址阶段不接收从机数据。
-2. 使用两次支持长度的传输组合，比如 ``2+7`` 实现 ``9 bit`` 传输，期间保持 CS 线有效。缺点：两次传输之间有最小时间间隔（见 :ref:`transaction_time_cost`），整体速率较低。
 
 此外，{IDF_TARGET_NAME} 属于小端芯片，即 ``uint16_t`` 和 ``uint32_t`` 变量的最低有效位存储在最小的地址。因此，如果 ``uint16_t`` 存储在内存中，则首先发送位 [7:0]，其次是位 [15:8]。
 
@@ -562,7 +536,6 @@ GPIO 矩阵与 IO_MUX 管脚
 
 影响大传输事务传输速度的主要参数是时钟频率。而多个小传输事务的传输速度主要由传输事务间隔时长决定。
 
-.. _transaction_time_cost:
 
 传输事务持续时间
 ^^^^^^^^^^^^^^^^^^^^
@@ -587,7 +560,7 @@ GPIO 矩阵与 IO_MUX 管脚
 - 使用 DMA 的轮询传输事务：{IDF_TARGET_MAX_TRANS_TIME_POLL_DMA} µs。
 - 使用 CPU 的轮询传输事务：{IDF_TARGET_MAX_TRANS_TIME_POLL_CPU} µs。
 
-请注意，以上数据测试时，:menuitem:`CONFIG_SPI_MASTER_ISR_IN_IRAM` 选项处于启用状态，SPI 传输事务相关的代码放置在 IRAM 中。若关闭此选项（例如为了节省 IRAM），可能影响传输事务持续时间。
+请注意，以上数据测试时，:ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM` 选项处于启用状态，SPI 传输事务相关的代码放置在 IRAM 中。若关闭此选项（例如为了节省 IRAM），可能影响传输事务持续时间。
 
 SPI 时钟频率
 ^^^^^^^^^^^^^^^^^^^
@@ -643,11 +616,11 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_interface_con
 缓存缺失
 ^^^^^^^^^^
 
-默认配置只将 ISR 置于 IRAM 中。其他 SPI 相关功能，包括驱动本身和回调都可能发生缓存缺失，需等待代码从 flash 中读取。为避免缓存缺失，可参考 :menuitem:`CONFIG_SPI_MASTER_IN_IRAM`，将整个 SPI 驱动置入 IRAM，并将整个回调及其 callee 函数一起置入 IRAM。
+默认配置只将 ISR 置于 IRAM 中。其他 SPI 相关功能，包括驱动本身和回调都可能发生缓存缺失，需等待代码从 flash 中读取。为避免缓存缺失，可参考 :ref:`CONFIG_SPI_MASTER_IN_IRAM`，将整个 SPI 驱动置入 IRAM，并将整个回调及其 callee 函数一起置入 IRAM。
 
 .. note::
 
-    SPI 驱动是基于 FreeRTOS 的 API 实现的，在使用 :menuitem:`CONFIG_SPI_MASTER_IN_IRAM` 时，应启用 :menuitem:`CONFIG_FREERTOS_IN_IRAM`。
+    SPI 驱动是基于 FreeRTOS 的 API 实现的，在使用 :ref:`CONFIG_SPI_MASTER_IN_IRAM` 时，应启用 :ref:`CONFIG_FREERTOS_IN_IRAM`。
 
 单个中断传输事务传输 n 字节的总成本为 **20+8n/Fspi[MHz]** [µs]，故传输速度为 **n/(20+8n/Fspi)**。8 MHz 时钟速度的传输速度见下表。
 
@@ -688,7 +661,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_interface_con
 
 传输事务长度较短时将提高传输事务间隔成本，因此应尽可能将几个短传输事务压缩成一个传输事务，以提升传输速度。
 
-注意，ISR 在 flash 操作期间默认处于禁用状态。要在 flash 操作期间继续发送传输事务，请启用 :menuitem:`CONFIG_SPI_MASTER_ISR_IN_IRAM`，并在 :cpp:member:`spi_bus_config_t::intr_flags` 中设置 :c:macro:`ESP_INTR_FLAG_IRAM`。此时，flash 操作前列队的传输事务将由 ISR 并行处理。此外，每个设备的回调和它们的 ``callee`` 函数都应该在 IRAM 中，避免回调因缓存丢失而崩溃。详情请参阅 :ref:`iram-safe-interrupt-handlers`。
+注意，ISR 在 flash 操作期间默认处于禁用状态。要在 flash 操作期间继续发送传输事务，请启用 :ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM`，并在 :cpp:member:`spi_bus_config_t::intr_flags` 中设置 :c:macro:`ESP_INTR_FLAG_IRAM`。此时，flash 操作前列队的传输事务将由 ISR 并行处理。此外，每个设备的回调和它们的 ``callee`` 函数都应该在 IRAM 中，避免回调因缓存丢失而崩溃。详情请参阅 :ref:`iram-safe-interrupt-handlers`。
 
 .. only:: esp32h2
 
@@ -858,10 +831,6 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_interface_con
     3. SPI 读取和写入阶段同时进行时，全双工模式和半双工模式下，:cpp:type:`spi_device_interface_config_t` 和 :cpp:type:`spi_transaction_ext_t` 中的 ``dummy_bits`` 均会失效。
 
     4. 全双工传输事务模式中，命令阶段和地址阶段与 ``cs_ena_pretrans`` 不兼容。
-
-    .. only:: esp32
-
-        5. 若启用了 DMA，则 RX 缓冲区应该以字对齐（从 32 位边界开始，字节长度为 4 的倍数）。否则 DMA 可能覆盖未对齐部分的数据。
 
 
 应用示例

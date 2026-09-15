@@ -99,7 +99,7 @@ static void test_pcnt_sleep_retention(void)
     printf("check if the sleep happened as expected\r\n");
     TEST_ASSERT_EQUAL(0, sleep_ctx.sleep_request_result);
 
-#if SOC_PMU_SUPPORTED
+#if SOC_PMU_SUPPORTED && !SOC_PM_TOP_PD_NOT_ALLOWED
     // check if the power domain also is powered down
     TEST_ASSERT_EQUAL(0, (sleep_ctx.sleep_flags) & PMU_SLEEP_PD_TOP);
 #endif
@@ -125,7 +125,7 @@ static void test_pcnt_sleep_retention(void)
         TEST_ESP_OK(pcnt_unit_get_count(units[i], &count_value));
         TEST_ASSERT_EQUAL(20, count_value);
         // check the register value
-        reg_value = pcnt_ll_get_count(PCNT_LL_GET_HW(unit_config.group_id), i);
+        reg_value = pcnt_ll_get_count(&PCNT, i);
         TEST_ASSERT_EQUAL(20, reg_value);
     }
 

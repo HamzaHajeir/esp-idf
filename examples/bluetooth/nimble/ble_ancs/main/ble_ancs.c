@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -103,7 +103,7 @@ char *CategoryID_to_String(uint8_t CategoryID)
 
 void ble_receive_apple_notification_source(uint8_t *message, uint16_t message_len)
 {
-    if (!message || message_len < 8) {
+    if (!message || message_len < 5) {
         return;
     }
 
@@ -113,7 +113,7 @@ void ble_receive_apple_notification_source(uint8_t *message, uint16_t message_le
     uint8_t CategoryID = message[2];
     char    *Cidstr    = CategoryID_to_String(CategoryID);
     uint8_t CategoryCount = message[3];
-    uint32_t NotificationUID = ((uint32_t)message[4]) | ((uint32_t)message[5] << 8) | ((uint32_t)message[6] << 16) | ((uint32_t)message[7] << 24);
+    uint32_t NotificationUID = (message[4]) | (message[5]<< 8) | (message[6]<< 16) | (message[7] << 24);
     ESP_LOGI(NimBLE_ANCS_TAG, "EventID:%s EventFlags:0x%x CategoryID:%s CategoryCount:%d NotificationUID:%" PRIu32, EventIDS, EventFlags, Cidstr, CategoryCount, NotificationUID);
 }
 
@@ -126,23 +126,14 @@ void ble_receive_apple_data_source(uint8_t *message, uint16_t message_len)
     switch (Command_id)
     {
         case CommandIDGetNotificationAttributes: {
-            if (message_len < 5) {
-                ESP_LOGE(NimBLE_ANCS_TAG, "Invalid message length for attributes: %d",
-                         message_len);
-                return;
-            }
-            uint32_t NotificationUID = ((uint32_t)message[1]) | ((uint32_t)message[2] << 8) | ((uint32_t)message[3] << 16) | ((uint32_t)message[4] << 24);
-            uint32_t remain_attr_len = message_len - 5;
+            uint32_t NotificationUID = (message[1]) | (message[2]<< 8) | (message[3]<< 16) | (message[4] << 24);
+            uint32_t remian_attr_len = message_len - 5;
             uint8_t *attrs = &message[5];
             ESP_LOGI(NimBLE_ANCS_TAG, "recevice Notification Attributes response Command_id %d NotificationUID %" PRIu32, Command_id, NotificationUID);
-            while(remain_attr_len > 0) {
-                if (remain_attr_len < 3) {
-                    ESP_LOGE(NimBLE_ANCS_TAG, "incomplete attribute header");
-                    break;
-                }
+            while(remian_attr_len > 0) {
                 uint8_t AttributeID = attrs[0];
                 uint16_t len = attrs[1] | (attrs[2] << 8);
-                if(len > (remain_attr_len - 3)) {
+                if(len > (remian_attr_len -3)) {
                     ESP_LOGE(NimBLE_ANCS_TAG, "data error");
                     break;
                 }
@@ -179,16 +170,16 @@ void ble_receive_apple_data_source(uint8_t *message, uint16_t message_len)
                 }
 
                 attrs += (1 + 2 + len);
-                remain_attr_len -= (1 + 2 + len);
+                remian_attr_len -= (1 + 2 + len);
             }
 
             break;
         }
         case CommandIDGetAppAttributes:
-            ESP_LOGI(NimBLE_ANCS_TAG, "received APP Attributes response");
+            ESP_LOGI(NimBLE_ANCS_TAG, "recevice APP Attributes response");
             break;
         case CommandIDPerformNotificationAction:
-            ESP_LOGI(NimBLE_ANCS_TAG, "received Perform Notification Action");
+            ESP_LOGI(NimBLE_ANCS_TAG, "recevice Perform Notification Action");
             break;
         default:
             ESP_LOGI(NimBLE_ANCS_TAG, "unknown Command ID");
@@ -217,4 +208,5 @@ char *Errcode_to_String(uint16_t status)
             break;
     }
     return Errstr;
+
 }

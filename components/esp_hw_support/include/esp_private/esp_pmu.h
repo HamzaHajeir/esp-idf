@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,18 +13,26 @@
 
 #include "soc/soc_caps.h"
 #include "soc/clk_tree_defs.h"
-#include "hal/pmu_types.h"
 
 #if SOC_PMU_SUPPORTED
 #include "hal/pmu_hal.h"
 #include "pmu_param.h"
 #include "pmu_bit_defs.h"
-#include "soc/pmu_icg_mapping.h"
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief PMU ICG modem code of HP system
+ * @note  This type is required in rtc_clk_init.c when PMU not fully supported
+ */
+typedef enum {
+    PMU_HP_ICG_MODEM_CODE_SLEEP = 0,
+    PMU_HP_ICG_MODEM_CODE_MODEM = 1,
+    PMU_HP_ICG_MODEM_CODE_ACTIVE = 2,
+} pmu_hp_icg_modem_mode_t;
 
 #if SOC_PMU_SUPPORTED
 
@@ -39,7 +47,6 @@ extern "C" {
 #define RTC_SLEEP_PD_MODEM              PMU_SLEEP_PD_MODEM      //!< Power down modem(include wifi, ble and 15.4)
 
 //These flags are not power domains, but will affect some sleep parameters
-#define RTC_SLEEP_USE_RTC_WDT           BIT(23)
 #define RTC_SLEEP_FLASH_DPD             BIT(24)
 #define RTC_SLEEP_LP_PERIPH_USE_RC_FAST BIT(25)
 #define RTC_SLEEP_POWER_BY_VBAT         BIT(26)
@@ -67,8 +74,8 @@ extern "C" {
 #define RTC_GPIO_TRIG_EN            (PMU_GPIO_WAKEUP_EN)
 #endif
 
-#if !SOC_RTC_TIMER_V1
-#define RTC_TIMER_TRIG_EN           PMU_RTC_TIMER_WAKEUP_EN  //!< Timer wakeup
+#if SOC_LP_TIMER_SUPPORTED
+#define RTC_TIMER_TRIG_EN           PMU_LP_TIMER_WAKEUP_EN  //!< Timer wakeup
 #else
 #define RTC_TIMER_TRIG_EN           0
 #endif
@@ -79,25 +86,18 @@ extern "C" {
 #define RTC_WIFI_TRIG_EN            0
 #endif
 
+#if SOC_UART_SUPPORT_WAKEUP_INT
 #define RTC_UART0_TRIG_EN           PMU_UART0_WAKEUP_EN     //!< UART0 wakeup (light sleep only)
 #define RTC_UART1_TRIG_EN           PMU_UART1_WAKEUP_EN     //!< UART1 wakeup (light sleep only)
-#define RTC_UART2_TRIG_EN           0
-#define RTC_UART3_TRIG_EN           0
-#define RTC_UART4_TRIG_EN           0
-
 #if SOC_UART_HP_NUM > 2
-#undef RTC_UART2_TRIG_EN
 #define RTC_UART2_TRIG_EN           PMU_UART2_WAKEUP_EN     //!< UART2 wakeup (light sleep only)
+#else
+#define RTC_UART2_TRIG_EN           0
 #endif
-
-#if SOC_UART_HP_NUM > 3
-#undef RTC_UART3_TRIG_EN
-#define RTC_UART3_TRIG_EN           PMU_UART3_WAKEUP_EN     //!< UART3 wakeup (light sleep only)
-#endif
-
-#if SOC_UART_HP_NUM > 4
-#undef RTC_UART4_TRIG_EN
-#define RTC_UART4_TRIG_EN           PMU_UART4_WAKEUP_EN     //!< UART4 wakeup (light sleep only)
+#else
+#define RTC_UART0_TRIG_EN           0
+#define RTC_UART1_TRIG_EN           0
+#define RTC_UART2_TRIG_EN           0
 #endif
 
 #if SOC_BT_SUPPORTED
@@ -115,8 +115,8 @@ extern "C" {
 #define RTC_USB_TRIG_EN             PMU_USB_WAKEUP_EN
 
 #if SOC_LP_CORE_SUPPORTED
-#define RTC_LP_CORE_TRIG_EN         PMU_LP_CORE_WAKEUP_HP_EN    //!< LP core wakeup
-#define RTC_LP_CORE_TRAP_TRIG_EN    PMU_LP_CORE_TRAP_WAKEUP_EN  //!< LP core trap (exception) wakeup
+#define RTC_LP_CORE_TRIG_EN         PMU_LP_CORE_WAKEUP_EN   //!< LP core wakeup
+#define RTC_LP_CORE_TRAP_TRIG_EN    PMU_LP_CORE_TRAP_WAKEUP_EN   //!< LP core trap (exception) wakeup
 #else
 #define RTC_LP_CORE_TRIG_EN         0
 #define RTC_LP_CORE_TRAP_TRIG_EN    0
@@ -148,8 +148,6 @@ extern "C" {
                                RTC_UART0_TRIG_EN        | \
                                RTC_UART1_TRIG_EN        | \
                                RTC_UART2_TRIG_EN        | \
-                               RTC_UART3_TRIG_EN        | \
-                               RTC_UART4_TRIG_EN        | \
                                RTC_BT_TRIG_EN           | \
                                RTC_LP_CORE_TRIG_EN      | \
                                RTC_TOUCH_TRIG_EN        | \
@@ -188,27 +186,9 @@ extern "C" {
 typedef struct {
     pmu_hal_context_t *hal;
     void *mc;
-#if PMU_SLEEP_PRIV_ENABLED
-    void *priv;
-#endif
-#if SOC_SPI_FLASH_HAS_DEDICATED_LDO
-    bool flash_ldo_volt_1v8;
-#endif
 } pmu_context_t;
 
 pmu_context_t * PMU_instance(void);
-
-/**
- * @brief Runtime pmu sleep extra arguments
- */
-typedef struct {
-    uint32_t sleep_flags;                 //!< Power domains to power down and sleep sub-mode flags
-    uint32_t clk_flags[2];                //!< Sleep clock ICG flags: [0]=bits[31:0], [1]=bits[63:32]
-    uint32_t adjustment;                  //!< Total software and hardware time overhead (us)
-    soc_rtc_slow_clk_src_t slowclk_src;   //!< RTC slow clock source used by PMU timing
-    uint32_t slowclk_period;              //!< Recalibrated slow clock period (us, Q13.19)
-    uint32_t fastclk_period;              //!< Recalibrated fast clock period (us, Q13.19)
-} pmu_sleep_extra_args_t;
 
 typedef enum pmu_sleep_protect_mode {
     PMU_SLEEP_PROTECT_HP_SLEEP = 0,
@@ -279,12 +259,19 @@ uint32_t pmu_sleep_calculate_hw_wait_time(uint32_t sleep_flags, soc_rtc_slow_clk
 /**
  * @brief Get default sleep configuration
  * @param config pmu_sleep_config instance
- * @param args pmu sleep runtime arguments
+ * @param sleep_flags flags indicates the power domain that will be powered down and the sleep submode
+ * @param clk_flags indicates the clock ICG cell that will be ungated
+ * @param adjustment total software and hardware time overhead
+ * @param slowclk_src slow clock source of pmu
+ * @param slowclk_period re-calibrated slow clock period in microseconds,
+ *                       Q13.19 fixed point format
+ * @param fastclk_period re-calibrated fast clock period in microseconds,
+ *                       Q13.19 fixed point format
  * @param dslp configuration for deep sleep mode
 
  * @return hardware time overhead in us
  */
-const pmu_sleep_config_t* pmu_sleep_config_default(pmu_sleep_config_t *config, pmu_sleep_extra_args_t *args, bool dslp);
+const pmu_sleep_config_t* pmu_sleep_config_default(pmu_sleep_config_t *config, uint32_t sleep_flags, uint32_t clk_flags, uint32_t adjustment, soc_rtc_slow_clk_src_t slowclk_src, uint32_t slowclk_period, uint32_t fastclk_period, bool dslp);
 
 /**
  * @brief Prepare the chip to enter sleep mode

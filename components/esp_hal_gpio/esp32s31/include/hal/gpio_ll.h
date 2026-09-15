@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,6 +11,8 @@
  ******************************************************************************/
 
 // The LL layer for ESP32-S31 GPIO register operations
+
+// TODO: This GPIO LL is not very update to date!!! Needs to check every function carefully!
 
 #pragma once
 
@@ -33,8 +35,6 @@
 #include "hal/gpio_types.h"
 #include "hal/misc.h"
 #include "hal/assert.h"
-#include "hal/config.h"
-#include "rom/gpio.h"
 
 // Get GPIO hardware instance with giving gpio num
 #define GPIO_LL_GET_HW(num) (((num) == 0) ? (&GPIO) : NULL)
@@ -45,8 +45,6 @@
 #define GPIO_LL_INTR3_ENA      (BIT(4))
 
 #define GPIO_LL_INTR_SOURCE0   ETS_GPIO_INTR0_SOURCE
-
-#define GPIO_LL_CLK_SRC_SELECTABLE 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,95 +57,9 @@ extern "C" {
  * @param gpio_num GPIO number
  * @param[out] io_config Pointer to the structure that saves the specific IO configuration
  */
-__attribute__((always_inline))
 static inline void gpio_ll_get_io_config(gpio_dev_t *hw, uint32_t gpio_num, gpio_io_config_t *io_config)
 {
-    uint32_t bit_shift = (gpio_num < 32) ? gpio_num : (gpio_num - 32);
-    uint32_t bit_mask = 1 << bit_shift;
-    io_config->pu = IO_MUX.gpio[gpio_num].fun_wpu;
-    io_config->pd = IO_MUX.gpio[gpio_num].fun_wpd;
-    io_config->ie = IO_MUX.gpio[gpio_num].fun_ie;
-    io_config->oe = (((gpio_num < 32) ? hw->enable.val : hw->enable1.val) & bit_mask) >> bit_shift;
-    io_config->oe_ctrl_by_periph = !(hw->func_out_sel_cfg[gpio_num].oen_sel);
-    io_config->oe_inv = hw->func_out_sel_cfg[gpio_num].oen_inv_sel;
-    io_config->od = hw->pin[gpio_num].pad_driver;
-    io_config->drv = (gpio_drive_cap_t)IO_MUX.gpio[gpio_num].fun_drv;
-    io_config->fun_sel = IO_MUX.gpio[gpio_num].mcu_sel;
-    io_config->sig_out = hw->func_out_sel_cfg[gpio_num].out_sel;
-    io_config->slp_sel = IO_MUX.gpio[gpio_num].slp_sel;
-}
-
-/**
- * @brief Get a 64-bit mask of all digital GPIOs that are currently held.
- * Reads the two hold control registers once, avoiding per-pin register access.
- *
- * @param hw Peripheral GPIO hardware instance address (unused, hold regs are in LP_SYS).
- * @return Bitmask where bit N is set if GPIO N is held. Only digital IO bits are meaningful.
- */
-__attribute__((always_inline))
-static inline uint64_t gpio_ll_get_digital_gpio_hold_mask(gpio_dev_t *hw)
-{
-    (void)hw;
-    uint32_t hold0 = LP_SYS.hp_gpio_o_hold_ctrl0.hp_gpio_0_hold_ctrl0;
-    uint32_t hold1 = LP_SYS.hp_gpio_o_hold_ctrl1.hp_gpio_0_hold_ctrl1;
-    return ((uint64_t)hold0 << SOC_RTCIO_PIN_COUNT) |
-           ((uint64_t)hold1 << (32 + SOC_RTCIO_PIN_COUNT));
-}
-
-/**
- * @brief Backup IOMUX pad configuration for sleep isolate.
- * Only fills pu, pd, ie, fun_sel in io_config from a single IOMUX register read.
- *
- * @param gpio_num GPIO number
- * @param[out] io_config Pointer to the IO configuration structure
- */
-__attribute__((always_inline))
-static inline void gpio_ll_backup_pad_config_for_sleep_isolate(uint32_t gpio_num, gpio_io_config_t *io_config)
-{
-    uint32_t iomux_reg_val = IO_MUX.gpio[gpio_num].val;
-    io_config->pu = (iomux_reg_val & FUN_PU_M) >> FUN_PU_S;
-    io_config->pd = (iomux_reg_val & FUN_PD_M) >> FUN_PD_S;
-    io_config->ie = (iomux_reg_val & FUN_IE_M) >> FUN_IE_S;
-    io_config->fun_sel = (iomux_reg_val & MCU_SEL_M) >> MCU_SEL_S;
-}
-
-/**
- * @brief Set pad configuration for sleep isolate with minimal register writes.
- * Reads pu, pd, ie, oe, fun_sel from io_config and writes them to hardware registers
- * in a single IOMUX read-modify-write plus one GPIO enable write.
- *
- * @param gpio_num GPIO number
- * @param io_config Pointer to the IO configuration structure
- */
-__attribute__((always_inline))
-static inline void gpio_ll_set_pad_config_for_sleep_isolate(uint32_t gpio_num, gpio_io_config_t *io_config)
-{
-    uint32_t iomux_reg_val = IO_MUX.gpio[gpio_num].val;
-    iomux_reg_val &= ~(FUN_PU_M | FUN_PD_M | FUN_IE_M | MCU_SEL_M);
-    if (io_config->pu) {
-        iomux_reg_val |= FUN_PU_M;
-    }
-    if (io_config->pd) {
-        iomux_reg_val |= FUN_PD_M;
-    }
-    if (io_config->ie) {
-        iomux_reg_val |= FUN_IE_M;
-    }
-    iomux_reg_val |= (io_config->fun_sel << MCU_SEL_S) & MCU_SEL_M;
-    IO_MUX.gpio[gpio_num].val = iomux_reg_val;
-    if (io_config->oe) {
-        if (gpio_num < 32) {
-            GPIO.enable_w1ts.enable_w1ts = (0x1 << gpio_num);
-        } else {
-            GPIO.enable1_w1ts.enable1_w1ts = (0x1 << (gpio_num - 32));
-        }
-    } else {
-        if (gpio_num < 32) {
-            GPIO.enable_w1tc.enable_w1tc = (0x1 << gpio_num);
-        } else {
-            GPIO.enable1_w1tc.enable1_w1tc = (0x1 << (gpio_num - 32));
-        }
-    }
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -158,23 +70,12 @@ static inline void gpio_ll_set_pad_config_for_sleep_isolate(uint32_t gpio_num, g
   */
 static inline void gpio_ll_pullup_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].fun_wpu = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
-/**
- * @brief Connect a peripheral signal which tagged as output attribute with a GPIO.
- *
- * @note There's no limitation on the number of signals that a GPIO can combine with.
- *
- * @param gpio_num GPIO number
- * @param signal_idx Peripheral signal index (tagged as output attribute). Particularly, `SIG_GPIO_OUT_IDX` means disconnect GPIO and other peripherals. Only the GPIO driver can control the output level.
- * @param out_inv True if the signal output needs to be inverted, otherwise False.
- */
-__attribute__((always_inline))
 static inline void gpio_ll_set_output_signal_matrix_source(gpio_dev_t *hw, uint32_t gpio_num, uint32_t signal_idx, bool out_inv)
 {
-    hw->func_out_sel_cfg[gpio_num].out_sel = signal_idx;
-    hw->func_out_sel_cfg[gpio_num].out_inv_sel = out_inv;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -186,16 +87,7 @@ static inline void gpio_ll_set_output_signal_matrix_source(gpio_dev_t *hw, uint3
 __attribute__((always_inline))
 static inline void gpio_ll_pullup_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    // The pull-up value of the USB pins are controlled by the pins’ pull-up value together with USB pull-up value
-    // USB DP pin is default to PU enabled
-    // Note that esp32s31 has supported USB_EXCHG_PINS feature. If this efuse is burnt, the gpio pin
-    // which should be checked is USB_INT_PHY0_DM_GPIO_NUM instead.
-    // TODO: read the specific efuse with efuse_ll.h
-    if (gpio_num == USB_INT_PHY0_DP_GPIO_NUM) {
-        USB_SERIAL_JTAG.conf0.pad_pull_override = 1;
-        USB_SERIAL_JTAG.conf0.dp_pullup = 0;
-    }
-    IO_MUX.gpio[gpio_num].fun_wpu = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -206,7 +98,7 @@ static inline void gpio_ll_pullup_dis(gpio_dev_t *hw, uint32_t gpio_num)
   */
 static inline void gpio_ll_pulldown_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].fun_wpd = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -218,7 +110,7 @@ static inline void gpio_ll_pulldown_en(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_pulldown_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].fun_wpd = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -243,7 +135,7 @@ static inline void gpio_ll_set_intr_type(gpio_dev_t *hw, uint32_t gpio_num, gpio
 __attribute__((always_inline))
 static inline void gpio_ll_get_intr_status(gpio_dev_t *hw, uint32_t core_id, uint32_t *status)
 {
-    (void)core_id; // TODO: IDF-7995 There are 4 interrupt sources for GPIO on S31. New feature! Need to fix this function later.
+    (void)core_id; // TODO: IDF-7995 There are 4 interrupt sources for GPIO on P4. New feature! Need to fix this function later.
     *status = hw->intr_0.int_0;
 }
 
@@ -257,7 +149,7 @@ static inline void gpio_ll_get_intr_status(gpio_dev_t *hw, uint32_t core_id, uin
 __attribute__((always_inline))
 static inline void gpio_ll_get_intr_status_high(gpio_dev_t *hw, uint32_t core_id, uint32_t *status)
 {
-    (void)core_id; // TODO: IDF-7995 There are 4 interrupt sources for GPIO on S31. New feature! Need to fix this function later.
+    (void)core_id; // TODO: IDF-7995 There are 4 interrupt sources for GPIO on P4. New feature! Need to fix this function later.
     *status = hw->intr_01.int_01;
 }
 
@@ -308,7 +200,7 @@ static inline void gpio_ll_intr_enable_on_core(gpio_dev_t *hw, uint32_t core_id,
 __attribute__((always_inline))
 static inline void gpio_ll_intr_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    hw->pin[gpio_num].int_ena = 0;                             //disable GPIO intr
+    // hw->pin[gpio_num].int_ena = 0;                             //disable GPIO intr
 }
 
 /**
@@ -320,7 +212,7 @@ static inline void gpio_ll_intr_disable(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_input_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].fun_ie = 0;
+    // IO_MUX.gpio[gpio_num].fun_ie = 0;
 }
 
 /**
@@ -332,20 +224,7 @@ static inline void gpio_ll_input_disable(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_input_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].fun_ie = 1;
-}
-
-/**
-  * @brief Check if input mode is enabled on GPIO.
-  *
-  * @param hw Peripheral GPIO hardware instance address.
-  * @param gpio_num GPIO number
-  * @return true if input mode is enabled, false otherwise
-  */
-__attribute__((always_inline))
-static inline bool gpio_ll_input_is_enabled(gpio_dev_t *hw, uint32_t gpio_num)
-{
-    return IO_MUX.gpio[gpio_num].fun_ie ? true : false;
+    // IO_MUX.gpio[gpio_num].fun_ie = 1;
 }
 
 /**
@@ -356,7 +235,7 @@ static inline bool gpio_ll_input_is_enabled(gpio_dev_t *hw, uint32_t gpio_num)
  */
 static inline void gpio_ll_pin_filter_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].filter_en = 1;
+    // IO_MUX.gpio[gpio_num].filter_en = 1;
 }
 
 /**
@@ -367,7 +246,7 @@ static inline void gpio_ll_pin_filter_enable(gpio_dev_t *hw, uint32_t gpio_num)
  */
 static inline void gpio_ll_pin_filter_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].filter_en = 0;
+    // IO_MUX.gpio[gpio_num].filter_en = 0;
 }
 
 /**
@@ -378,12 +257,7 @@ static inline void gpio_ll_pin_filter_disable(gpio_dev_t *hw, uint32_t gpio_num)
   */
 static inline void gpio_ll_pin_input_hysteresis_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    // On ESP32S31, there is an efuse bit that controls the hysteresis enable or not for all IOs.
-    // We are not going to use the hardware control for S31.
-    // Therefore, we need to always switch to use software control first.
-    // i.e. Swt hys_sel to 1, so that hys_en determines whether hysteresis is enabled or not
-    IO_MUX.gpio[gpio_num].hys_sel = 1;
-    IO_MUX.gpio[gpio_num].hys_en = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -394,8 +268,7 @@ static inline void gpio_ll_pin_input_hysteresis_enable(gpio_dev_t *hw, uint32_t 
   */
 static inline void gpio_ll_pin_input_hysteresis_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].hys_sel = 1;
-    IO_MUX.gpio[gpio_num].hys_en = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -431,23 +304,6 @@ static inline void gpio_ll_output_enable(gpio_dev_t *hw, uint32_t gpio_num)
 }
 
 /**
-  * @brief Check if GPIO output is enabled.
-  *
-  * @param hw Peripheral GPIO hardware instance address.
-  * @param gpio_num GPIO number
-  * @return true if output is enabled, false otherwise
-  */
-__attribute__((always_inline))
-static inline bool gpio_ll_output_is_enabled(gpio_dev_t *hw, uint32_t gpio_num)
-{
-    if (gpio_num < 32) {
-        return (hw->enable.val >> gpio_num) & 0x1;
-    } else {
-        return (hw->enable1.val >> (gpio_num - 32)) & 0x1;
-    }
-}
-
-/**
   * @brief Disable open-drain mode on GPIO.
   *
   * @param hw Peripheral GPIO hardware instance address.
@@ -479,9 +335,6 @@ static inline void gpio_ll_od_enable(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_set_level(gpio_dev_t *hw, uint32_t gpio_num, uint32_t level)
 {
-#if HAL_CONFIG(GPIO_USE_ROM_API)
-    rom_gpio_set_output_level(gpio_num, level);
-#else
     if (level) {
         if (gpio_num < 32) {
             hw->out_w1ts.val = 1 << gpio_num;
@@ -495,7 +348,6 @@ static inline void gpio_ll_set_level(gpio_dev_t *hw, uint32_t gpio_num, uint32_t
             hw->out1_w1tc.val = 1 << (gpio_num - 32);
         }
     }
-#endif
 }
 
 /**
@@ -513,15 +365,11 @@ static inline void gpio_ll_set_level(gpio_dev_t *hw, uint32_t gpio_num, uint32_t
 __attribute__((always_inline))
 static inline int gpio_ll_get_level(gpio_dev_t *hw, uint32_t gpio_num)
 {
-#if HAL_CONFIG(GPIO_USE_ROM_API)
-    return rom_gpio_get_input_level(gpio_num);
-#else
     if (gpio_num < 32) {
         return (hw->in.in_data_next >> gpio_num) & 0x1;
     } else {
         return (hw->in1.in1_data_next >> (gpio_num - 32)) & 0x1;
     }
-#endif
 }
 
 /**
@@ -555,7 +403,7 @@ static inline void gpio_ll_wakeup_disable(gpio_dev_t *hw, uint32_t gpio_num)
   */
 static inline void gpio_ll_set_drive_capability(gpio_dev_t *hw, uint32_t gpio_num, gpio_drive_cap_t strength)
 {
-    IO_MUX.gpio[gpio_num].fun_drv = strength;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -567,8 +415,13 @@ static inline void gpio_ll_set_drive_capability(gpio_dev_t *hw, uint32_t gpio_nu
   */
 static inline void gpio_ll_get_drive_capability(gpio_dev_t *hw, uint32_t gpio_num, gpio_drive_cap_t *strength)
 {
-    *strength = (gpio_drive_cap_t)(IO_MUX.gpio[gpio_num].fun_drv);
+    // TODO: [ESP32S31] IDF-14780
 }
+
+// On ESP32S31, all digital GPIO pads can be held together during Deep-sleep through PMU.hp_sys[PMU_MODE_HP_SLEEP].syscntl.hp_pad_hold_all = 1
+// However, since the hold register for digital IOs is in TOP domain (HP_SYSTEM.gpio_o_hold_ctrlx), it gets powered down in Deep-sleep.
+// Therefore, after waking up from Deep-sleep, the register has been reset, it is not able to hold at that time.
+// In all, the users can not achieve the purpose of being hold all the time. So this feature is considered not usable on P4.
 
 /**
   * @brief Enable gpio pad hold function.
@@ -579,12 +432,12 @@ static inline void gpio_ll_get_drive_capability(gpio_dev_t *hw, uint32_t gpio_nu
 __attribute__((always_inline))
 static inline void gpio_ll_hold_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    if (gpio_num < SOC_RTCIO_PIN_COUNT) {
-        REG_SET_BIT(LP_SYSTEM_REG_PADCTRL_REG, (0x1 << (gpio_num + SOC_RTCIO_PIN_COUNT)));
-    } else if (gpio_num < SOC_RTCIO_PIN_COUNT + 32) {
-        REG_SET_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL0_REG, (0x1 << (gpio_num - SOC_RTCIO_PIN_COUNT)));
+    if (gpio_num < 8) {
+        REG_SET_BIT(LP_SYSTEM_REG_PADCTRL_REG, (0x1 << (gpio_num + 8)));
+    } else if (gpio_num < 40) {
+        REG_SET_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL0_REG, (0x1 << (gpio_num - 8)));
     } else {
-        REG_SET_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL1_REG, (0x1 << (gpio_num - SOC_RTCIO_PIN_COUNT - 32)));
+        REG_SET_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL1_REG, (0x1 << (gpio_num - 40)));
     }
 }
 
@@ -597,12 +450,12 @@ static inline void gpio_ll_hold_en(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_hold_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    if (gpio_num < SOC_RTCIO_PIN_COUNT) {
-        REG_CLR_BIT(LP_SYSTEM_REG_PADCTRL_REG, (0x1 << (gpio_num + SOC_RTCIO_PIN_COUNT)));
-    } else if (gpio_num < SOC_RTCIO_PIN_COUNT + 32) {
-        REG_CLR_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL0_REG, (0x1 << (gpio_num - SOC_RTCIO_PIN_COUNT)));
+    if (gpio_num < 8) {
+        REG_CLR_BIT(LP_SYSTEM_REG_PADCTRL_REG, (0x1 << (gpio_num + 8)));
+    } else if (gpio_num < 40) {
+        REG_CLR_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL0_REG, (0x1 << (gpio_num - 8)));
     } else {
-        REG_CLR_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL1_REG, (0x1 << (gpio_num - SOC_RTCIO_PIN_COUNT - 32)));
+        REG_CLR_BIT(LP_SYSTEM_REG_HP_GPIO_O_HOLD_CTRL1_REG, (0x1 << (gpio_num - 40)));
     }
 }
 
@@ -623,19 +476,14 @@ static inline bool gpio_ll_is_digital_io_hold(gpio_dev_t *hw, uint32_t gpio_num)
 {
     uint64_t bit_mask = 1ULL << gpio_num;
     if (!(bit_mask & SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK)) {
-        // This function only handles digital IOs. If LP IO is queried here, there is a bug in the upper-level code.
-        // GPIO 0-7
+        // GPIO 0-15
         abort();
     } else {
-        if (gpio_num < 32 + SOC_RTCIO_PIN_COUNT) {
-            // GPIO 8-39
-            return !!(LP_SYS.hp_gpio_o_hold_ctrl0.hp_gpio_0_hold_ctrl0 & (bit_mask >> SOC_RTCIO_PIN_COUNT));
-        } else {
-            // GPIO 40-62
-            return !!(LP_SYS.hp_gpio_o_hold_ctrl1.hp_gpio_0_hold_ctrl1 & (bit_mask >> (32 + SOC_RTCIO_PIN_COUNT)));
-        }
+        // if (gpio_num < 32 + SOC_RTCIO_PIN_COUNT) {
+        //     // GPIO 16-47
+        //     return !!(LP_SYSTEM.gpio_o_hold_ctrl0.reg_gpio_0_hold_ctrl0 & (bit_mask >> SOC_RTCIO_PIN_COUNT));
+        // }
     }
-    return false;
 }
 
 /**
@@ -652,24 +500,6 @@ static inline void gpio_ll_set_input_signal_from(gpio_dev_t *hw, uint32_t signal
 }
 
 /**
- * @brief Connect a GPIO input with a peripheral signal, which tagged as input attribute.
- *
- * @note There's no limitation on the number of signals that a GPIO can combine with.
- *
- * @param hw Peripheral GPIO hardware instance address.
- * @param signal_idx Peripheral signal index (tagged as input attribute)
- * @param gpio_num GPIO number, especially, `GPIO_MATRIX_CONST_ZERO_INPUT` means connect logic 0 to signal
- *                                          `GPIO_MATRIX_CONST_ONE_INPUT` means connect logic 1 to signal
- * @param in_inv True if the GPIO input needs to be inverted, otherwise False.
- */
-static inline void gpio_ll_set_input_signal_matrix_source(gpio_dev_t *hw, uint32_t signal_idx, uint32_t gpio_num, bool in_inv)
-{
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->func_in_sel_cfg[signal_idx], in_sel, gpio_num);
-    hw->func_in_sel_cfg[signal_idx].in_inv_sel = in_inv;
-    gpio_ll_set_input_signal_from(hw, signal_idx, true);
-}
-
-/**
   * @brief Configure the source of output enable signal for the pad (only takes effect if func sel is selected to be GPIO).
   *
   * @param hw Peripheral GPIO hardware instance address.
@@ -677,7 +507,6 @@ static inline void gpio_ll_set_input_signal_matrix_source(gpio_dev_t *hw, uint32
   * @param ctrl_by_periph True if use output enable signal from peripheral, false if force the output enable signal to be sourced from bit n of GPIO_ENABLE_REG
   * @param oen_inv True if the output enable needs to be inverted, otherwise False.
   */
-__attribute__((always_inline))
 static inline void gpio_ll_set_output_enable_ctrl(gpio_dev_t *hw, uint8_t gpio_num, bool ctrl_by_periph, bool oen_inv)
 {
     hw->func_out_sel_cfg[gpio_num].oen_inv_sel = oen_inv;       // control valid only when using gpio matrix to route signal to the IO
@@ -694,11 +523,7 @@ static inline void gpio_ll_set_output_enable_ctrl(gpio_dev_t *hw, uint8_t gpio_n
 __attribute__((always_inline))
 static inline void gpio_ll_func_sel(gpio_dev_t *hw, uint8_t gpio_num, uint32_t func)
 {
-    // Disable USB Serial JTAG if pin 33 or pin 34 needs to select an IOMUX function
-    if (gpio_num == USB_INT_PHY0_DM_GPIO_NUM || gpio_num == USB_INT_PHY0_DP_GPIO_NUM) {
-        USB_SERIAL_JTAG.conf0.usb_pad_enable = 0;
-    }
-    IO_MUX.gpio[gpio_num].mcu_sel = func;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -712,7 +537,7 @@ static inline void gpio_ll_iomux_set_clk_src(soc_module_clk_t src)
     case SOC_MOD_CLK_XTAL:
         HP_SYS_CLKRST.iomux_ctrl0.reg_iomux_clk_src_sel = 0;
         break;
-    case SOC_MOD_CLK_REF_F80M:
+    case SOC_MOD_CLK_PLL_F80M:
         HP_SYS_CLKRST.iomux_ctrl0.reg_iomux_clk_src_sel = 1;
         break;
     default:
@@ -745,8 +570,7 @@ static inline int gpio_ll_get_in_signal_connected_io(gpio_dev_t *hw, uint32_t in
 static inline void gpio_ll_force_hold_all(void)
 {
     // WT flag, it gets self-cleared after the configuration is done
-    PMU.imm.pad_hold_all.tie_high_hp_pad_hold_all = 1;
-    PMU.imm.pad_hold_all.tie_high_lp_pad_hold_all = 1;
+    // PMU.imm.pad_hold_all.tie_high_hp_pad_hold_all = 1;
 }
 
 /**
@@ -756,8 +580,7 @@ static inline void gpio_ll_force_hold_all(void)
 static inline void gpio_ll_force_unhold_all(void)
 {
     // WT flag, it gets self-cleared after the configuration is done
-    PMU.imm.pad_hold_all.tie_low_hp_pad_hold_all = 1;
-    PMU.imm.pad_hold_all.tie_low_lp_pad_hold_all = 1;
+    // PMU.imm.pad_hold_all.tie_low_hp_pad_hold_all = 1;
 }
 
 /**
@@ -769,7 +592,7 @@ static inline void gpio_ll_force_unhold_all(void)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_sel_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].slp_sel = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -782,7 +605,7 @@ static inline void gpio_ll_sleep_sel_en(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_sel_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].slp_sel = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -794,7 +617,7 @@ static inline void gpio_ll_sleep_sel_dis(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_pullup_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_wpu = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -806,7 +629,7 @@ static inline void gpio_ll_sleep_pullup_dis(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_pullup_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_wpu = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -818,7 +641,7 @@ static inline void gpio_ll_sleep_pullup_en(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_pulldown_en(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_wpd = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -830,7 +653,7 @@ static inline void gpio_ll_sleep_pulldown_en(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_pulldown_dis(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_wpd = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -842,7 +665,7 @@ static inline void gpio_ll_sleep_pulldown_dis(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_input_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_ie = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -854,7 +677,7 @@ static inline void gpio_ll_sleep_input_disable(gpio_dev_t *hw, uint32_t gpio_num
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_input_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_ie = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -866,7 +689,7 @@ static inline void gpio_ll_sleep_input_enable(gpio_dev_t *hw, uint32_t gpio_num)
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_output_disable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_oe = 0;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 /**
@@ -878,7 +701,7 @@ static inline void gpio_ll_sleep_output_disable(gpio_dev_t *hw, uint32_t gpio_nu
 __attribute__((always_inline))
 static inline void gpio_ll_sleep_output_enable(gpio_dev_t *hw, uint32_t gpio_num)
 {
-    IO_MUX.gpio[gpio_num].mcu_oe = 1;
+    // TODO: [ESP32S31] IDF-14780
 }
 
 #ifdef __cplusplus

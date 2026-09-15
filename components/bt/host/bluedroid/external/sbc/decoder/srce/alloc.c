@@ -17,6 +17,7 @@
  *
  ******************************************************************************/
 #include "common/bt_target.h"
+#include <stdlib.h>
 #include <oi_codec_sbc_private.h>
 
 #if (defined(SBC_DEC_INCLUDED) && SBC_DEC_INCLUDED == TRUE)

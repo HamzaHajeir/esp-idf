@@ -122,18 +122,15 @@ set(CMAKE_BUILD_EARLY_EXPANSION 1)
 
 # smaller number means lower priority
 set(__TARGETS_IDF_COMPONENTS "")                # 0
-set(__TARGETS_IDF_MANAGED_COMPONENTS "")        # 1
-set(__TARGETS_PROJECT_MANAGED_COMPONENTS "")    # 2
-set(__TARGETS_PROJECT_EXTRA_COMPONENTS "")      # 3
-set(__TARGETS_PROJECT_COMPONENTS "")            # 4
+set(__TARGETS_PROJECT_MANAGED_COMPONENTS "")    # 1
+set(__TARGETS_PROJECT_EXTRA_COMPONENTS "")      # 2
+set(__TARGETS_PROJECT_COMPONENTS "")            # 3
 
 foreach(__component_target ${__component_targets})
     __component_get_property(__component_source ${__component_target} COMPONENT_SOURCE)
 
     if("${__component_source}" STREQUAL "idf_components")
         list(APPEND __TARGETS_IDF_COMPONENTS ${__component_target})
-    elseif("${__component_source}" STREQUAL "idf_managed_components")
-        list(APPEND __TARGETS_IDF_MANAGED_COMPONENTS ${__component_target})
     elseif("${__component_source}" STREQUAL "project_managed_components")
         list(APPEND __TARGETS_PROJECT_MANAGED_COMPONENTS ${__component_target})
     elseif("${__component_source}" STREQUAL "project_extra_components")
@@ -150,7 +147,6 @@ set(__sorted_component_targets "")
 foreach(__target IN LISTS __TARGETS_PROJECT_COMPONENTS
                           __TARGETS_PROJECT_EXTRA_COMPONENTS
                           __TARGETS_PROJECT_MANAGED_COMPONENTS
-                          __TARGETS_IDF_MANAGED_COMPONENTS
                           __TARGETS_IDF_COMPONENTS)
     __component_get_property(__component_name ${__target} COMPONENT_NAME)
     list(APPEND __sorted_component_targets ${__target})

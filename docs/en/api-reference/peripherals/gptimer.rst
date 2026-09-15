@@ -296,7 +296,7 @@ The GPTimer driver supports dynamically updating the alarm value in the interrup
     // Start the timer
     ESP_ERROR_CHECK(gptimer_start(gptimer));
 
-.. only:: SOC_TIMER_SUPPORT_ETM and SOC_ETM_SUPPORTED
+.. only:: SOC_TIMER_SUPPORT_ETM
 
     .. _gptimer-etm-event-and-task:
 
@@ -311,7 +311,7 @@ The GPTimer driver supports dynamically updating the alarm value in the interrup
 Power Management
 ----------------
 
-When power management :menuitem:`CONFIG_PM_ENABLE` is enabled, the system may adjust or disable the clock source before entering sleep mode, causing the GPTimer to lose accuracy.
+When power management :ref:`CONFIG_PM_ENABLE` is enabled, the system may adjust or disable the clock source before entering sleep mode, causing the GPTimer to lose accuracy.
 
 To prevent this, the GPTimer driver creates a power management lock internally. When the :cpp:func:`gptimer_enable` function is called, the lock is activated to ensure the system does not enter sleep mode, thus maintaining the timer's accuracy. To reduce power consumption, you can call the :cpp:func:`gptimer_disable` function to release the power management lock, allowing the system to enter sleep mode. However, this will stop the timer, so you need to restart the timer after waking up.
 
@@ -338,7 +338,7 @@ The following functions can also be used in an interrupt context:
 Cache Safety
 ------------
 
-When the file system performs Flash read/write operations, the system temporarily disables the Cache function to avoid errors when loading instructions and data from Flash. This causes the GPTimer interrupt handler to be unresponsive during this period, preventing the user callback function from executing in time. If you want the interrupt handler to run normally when the Cache is disabled, you can enable the :menuitem:`CONFIG_GPTIMER_ISR_CACHE_SAFE` option.
+When the file system performs Flash read/write operations, the system temporarily disables the Cache function to avoid errors when loading instructions and data from Flash. This causes the GPTimer interrupt handler to be unresponsive during this period, preventing the user callback function from executing in time. If you want the interrupt handler to run normally when the Cache is disabled, you can enable the :ref:`CONFIG_GPTIMER_ISR_CACHE_SAFE` option.
 
 .. note::
 
@@ -347,18 +347,18 @@ When the file system performs Flash read/write operations, the system temporaril
 Performance
 -----------
 
-To improve the real-time responsiveness of interrupt handling, the GPTimer driver provides the :menuitem:`CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM` option. Once enabled, the interrupt handler is placed in internal RAM, reducing delays caused by potential cache misses when loading instructions from Flash.
+To improve the real-time responsiveness of interrupt handling, the GPTimer driver provides the :ref:`CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM` option. Once enabled, the interrupt handler is placed in internal RAM, reducing delays caused by potential cache misses when loading instructions from Flash.
 
 .. note::
 
     However, the user callback function and its context data called by the interrupt handler may still reside in Flash. Cache misses are still possible, so users must manually place the callback function and data in internal RAM, for example by using :c:macro:`IRAM_ATTR` and :c:macro:`DRAM_ATTR`.
 
-As mentioned above, the GPTimer driver allows some functions to be called in an interrupt context. By enabling the :menuitem:`CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` option, these functions can also be placed in IRAM, which helps avoid performance loss caused by cache misses and allows them to be used when the Cache is disabled.
+As mentioned above, the GPTimer driver allows some functions to be called in an interrupt context. By enabling the :ref:`CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` option, these functions can also be placed in IRAM, which helps avoid performance loss caused by cache misses and allows them to be used when the Cache is disabled.
 
 Other Kconfig Options
 ---------------------
 
-- The :menuitem:`CONFIG_GPTIMER_ENABLE_DEBUG_LOG` option forces the GPTimer driver to enable all debug logs, regardless of the global log level settings. Enabling this option helps developers obtain more detailed log information during debugging, making it easier to locate and solve problems.
+- The :ref:`CONFIG_GPTIMER_ENABLE_DEBUG_LOG` option forces the GPTimer driver to enable all debug logs, regardless of the global log level settings. Enabling this option helps developers obtain more detailed log information during debugging, making it easier to locate and solve problems.
 
 Resource Consumption
 --------------------
@@ -368,9 +368,9 @@ Use the :doc:`/api-guides/tools/idf-size` tool to check the code and data consum
 - Compiler optimization level set to ``-Os`` to ensure minimal code size.
 - Default log level set to ``ESP_LOG_INFO`` to balance debug information and performance.
 - Disable the following driver optimization options:
-    - :menuitem:`CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM` - Do not place the interrupt handler in IRAM.
-    - :menuitem:`CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` - Do not place control functions in IRAM.
-    - :menuitem:`CONFIG_GPTIMER_ISR_CACHE_SAFE` - Do not enable Cache safety options.
+    - :ref:`CONFIG_GPTIMER_ISR_HANDLER_IN_IRAM` - Do not place the interrupt handler in IRAM.
+    - :ref:`CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` - Do not place control functions in IRAM.
+    - :ref:`CONFIG_GPTIMER_ISR_CACHE_SAFE` - Do not enable Cache safety options.
 
 **Note that the following data are not exact values and are for reference only; they may differ on different chip models.**
 
@@ -393,7 +393,7 @@ Application Examples
 
     - :example:`peripherals/timer_group/gptimer` demonstrates how to use the general-purpose timer APIs on ESP SOC chips to generate periodic alarm events and trigger different alarm actions.
     - :example:`peripherals/timer_group/wiegand_interface` uses two timers (one in one-shot alarm mode and the other in periodic alarm mode) to trigger interrupts and change the GPIO output state in the alarm event callback function, simulating the output waveform of the Wiegand protocol.
-    :SOC_TIMER_SUPPORT_ETM and SOC_ETM_SUPPORTED: - :example:`peripherals/timer_group/gptimer_capture_hc_sr04` demonstrates how to use the general-purpose timer and Event Task Matrix (ETM) to accurately capture timestamps of ultrasonic sensor events and convert them into distance information.
+    :SOC_TIMER_SUPPORT_ETM: - :example:`peripherals/timer_group/gptimer_capture_hc_sr04` demonstrates how to use the general-purpose timer and Event Task Matrix (ETM) to accurately capture timestamps of ultrasonic sensor events and convert them into distance information.
 
 API Reference
 =============
@@ -416,6 +416,6 @@ GPTimer HAL Types
 GPTimer ETM APIs
 ----------------
 
-.. only:: SOC_TIMER_SUPPORT_ETM and SOC_ETM_SUPPORTED
+.. only:: SOC_TIMER_SUPPORT_ETM
 
     .. include-build-file:: inc/gptimer_etm.inc

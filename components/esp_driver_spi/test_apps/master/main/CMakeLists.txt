@@ -1,4 +1,3 @@
-idf_build_get_property(target IDF_TARGET)
 
 set(srcs
     "test_app_main.c"
@@ -7,21 +6,16 @@ set(srcs
     "test_spi_bus_lock.c"
 )
 
-# TODO: IDF-10593 ～ IDF-10585: SCT is temporarily supported on follow chips
-set(sct_targets esp32s2 esp32s3 esp32c2 esp32c3 esp32c6 esp32h2 esp32h21)
-if("${target}" IN_LIST sct_targets)
-    # sct test using slave hd APIs, need slave hd support
-    # tmp skip sct test under iram_safe, both sct and slave hd are not cleaned
-    if(CONFIG_SOC_SPI_SUPPORT_SLAVE_HD_VER2 AND NOT CONFIG_COMPILER_DUMP_RTL_FILES)
-        list(APPEND srcs "test_spi_master_sct.c")
-    endif()
+# sct test using slave hd APIs, need slave hd support
+# tmp skip sct test under iram_safe, both sct and slave hd are not cleaned
+if(CONFIG_SOC_SPI_SUPPORT_SLAVE_HD_VER2 AND CONFIG_SOC_SPI_SCT_SUPPORTED AND NOT CONFIG_COMPILER_DUMP_RTL_FILES)
+    list(APPEND srcs "test_spi_master_sct.c")
 endif()
 
 # In order for the cases defined by `TEST_CASE` to be linked into the final elf,
 # the component can be registered as WHOLE_ARCHIVE
 idf_component_register(
     SRCS ${srcs}
-    # esp_psram is required for CONFIG_SPIRAM, used by the release configs
-    PRIV_REQUIRES esp_driver_spi spi_flash esp_timer esp_driver_gpio esp_mm esp_driver_uart esp_psram
+    PRIV_REQUIRES esp_driver_spi spi_flash esp_timer esp_driver_gpio esp_mm
     WHOLE_ARCHIVE
 )

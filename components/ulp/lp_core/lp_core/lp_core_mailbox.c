@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -95,7 +95,7 @@ static inline bool lp_core_mailbox_check_timeout(uint32_t start_cycle, int32_t t
 
 static void ulp_lp_core_mailbox_intr_handler(void)
 {
-    lp_message_t received[LP_MAILBOX_RX_MSG_COUNT / 2];
+    lp_message_t received[LP_MAILBOX_RX_MSG_COUNT];
     int received_count = 0;
 
     /* `s_isr_arg` cannot be NULL but let's be safe and test it */
@@ -109,15 +109,14 @@ static void ulp_lp_core_mailbox_intr_handler(void)
     uint32_t clr_mask = 0;
 
     for (int i = 0; i < LP_MAILBOX_RX_MSG_COUNT; i += 2) {
-        const uint32_t mask = BIT(LP_MAILBOX_RX_MSG_IDX + i);
+        const uint32_t mask = BIT(i);
         if (status & mask) {
             clr_mask |= mask;
             received[received_count] = lp_core_mailbox_impl_get_message(s_isr_arg->mb_ctx, LP_MAILBOX_RX_MSG_IDX + i);
             /* Acknowledge reception */
             const int ack_msg_idx = LP_MAILBOX_RX_MSG_IDX + lp_core_next_msg_idx(i);
             lp_core_mailbox_impl_set_message(s_isr_arg->mb_ctx, ack_msg_idx, LP_MAILBOX_ACK);
-            /* Clear ACK self-interrupt (writing ACK sets LP's own interrupt bit) */
-            lp_core_mailbox_impl_intr_clear(s_isr_arg->mb_ctx, BIT(ack_msg_idx));
+            lp_core_mailbox_impl_intr_clear(s_isr_arg->mb_ctx, ack_msg_idx);
             received_count++;
             /* We must not acknowledge more messages than what the caller needs */
             s_isr_arg->rcv_remaining--;
@@ -158,7 +157,6 @@ esp_err_t lp_core_mailbox_init(lp_mailbox_t *mailbox, lp_mailbox_config_t *confi
         return ESP_ERR_INVALID_STATE;
     }
     hal_memset(&s_mailbox, 0, sizeof(s_mailbox));
-    lp_core_mailbox_impl_init();
     s_mailbox.mb_ctx = lp_core_mailbox_impl_get_context();
     if (s_mailbox.mb_ctx == NULL) {
         return ESP_ERR_INVALID_STATE;

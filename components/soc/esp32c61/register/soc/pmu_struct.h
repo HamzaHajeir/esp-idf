@@ -208,6 +208,7 @@ typedef struct pmu_hp_hw_regmap_t{
     pmu_hp_xtal_reg_t          xtal;
 } pmu_hp_hw_regmap_t;
 
+/** */
 typedef union {
     struct {
         uint32_t reserved0: 21;
@@ -634,7 +635,7 @@ typedef union {
         uint32_t sleep_switch_active_end  : 1;
         uint32_t sleep_switch_modem_end   : 1;
         uint32_t modem_switch_sleep_end   : 1;
-        uint32_t active_switch_sleep_end  : 1;
+        uint32_t active_swtich_sleep_end  : 1;
         uint32_t modem_switch_active_start: 1;
         uint32_t sleep_switch_active_start: 1;
         uint32_t sleep_switch_modem_start : 1;

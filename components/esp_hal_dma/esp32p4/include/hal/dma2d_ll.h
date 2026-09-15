@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,6 @@
 #include <stddef.h> /* Required for NULL constant */
 #include <stdint.h>
 #include <stdbool.h>
-#include "esp_attr.h"
 #include "hal/dma2d_types.h"
 #include "soc/dma2d_channel.h"
 #include "soc/dma2d_struct.h"
@@ -34,6 +33,10 @@
 #define DMA2D_LL_TX_CHANS_PER_INST      3
 // Number of 2D-DMA RX (IN) channels in each instance
 #define DMA2D_LL_RX_CHANS_PER_INST      2
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 // 2D-DMA interrupts
@@ -88,21 +91,6 @@
 #define DMA2D_LL_CHANNEL_PERIPH_SEL_BIT_WIDTH      (3)
 
 #define DMA2D_LL_DESC_ALIGNMENT 8 // Descriptor must be aligned to 8 bytes
-#define DMA2D_LL_DESC_2D_FIELD_MAX 0x3FFFU // 2D descriptor width/height/coordinate fields are 14-bit
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef enum {
-    DMA2D_LL_MEM_LP_MODE_SHUT_DOWN,     // power down memory during low power stage
-} dma2d_ll_mem_lp_mode_t;
-
-// COLOR SPACE CONVERSION TABLES
-extern const int dma2d_csc_param_yuv2rgb_bt601_table[3][4];
-extern const int dma2d_csc_param_yuv2rgb_bt709_table[3][4];
-extern const int dma2d_csc_param_rgb2yuv_bt601_table[3][4];
-extern const int dma2d_csc_param_rgb2yuv_bt709_table[3][4];
 
 ///////////////////////////////////// Common /////////////////////////////////////////
 /**
@@ -111,7 +99,7 @@ extern const int dma2d_csc_param_rgb2yuv_bt709_table[3][4];
  * @param group_id Group ID
  * @param enable True to enable; false to disable
  */
-static inline void _dma2d_ll_enable_bus_clock(int group_id, bool enable)
+static inline void dma2d_ll_enable_bus_clock(int group_id, bool enable)
 {
     (void)group_id;
     HP_SYS_CLKRST.soc_clk_ctrl1.reg_dma2d_sys_clk_en = enable;
@@ -121,7 +109,7 @@ static inline void _dma2d_ll_enable_bus_clock(int group_id, bool enable)
 /// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
 #define dma2d_ll_enable_bus_clock(...) do { \
         (void)__DECLARE_RCC_ATOMIC_ENV; \
-        _dma2d_ll_enable_bus_clock(__VA_ARGS__); \
+        dma2d_ll_enable_bus_clock(__VA_ARGS__); \
     } while(0)
 
 /**
@@ -129,7 +117,7 @@ static inline void _dma2d_ll_enable_bus_clock(int group_id, bool enable)
  *
  * @param group_id Group ID
  */
-static inline void _dma2d_ll_reset_register(int group_id)
+static inline void dma2d_ll_reset_register(int group_id)
 {
     (void)group_id;
     HP_SYS_CLKRST.hp_rst_en0.reg_rst_en_dma2d = 1;
@@ -140,7 +128,7 @@ static inline void _dma2d_ll_reset_register(int group_id)
 /// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
 #define dma2d_ll_reset_register(...) do { \
         (void)__DECLARE_RCC_ATOMIC_ENV; \
-        _dma2d_ll_reset_register(__VA_ARGS__); \
+        dma2d_ll_reset_register(__VA_ARGS__); \
     } while(0)
 
 /**
@@ -151,48 +139,6 @@ static inline bool dma2d_ll_is_bus_clock_enabled(int group_id)
 {
     (void) group_id;
     return HP_SYS_CLKRST.soc_clk_ctrl1.reg_dma2d_sys_clk_en;
-}
-
-/**
- * @brief Force power on the DMA2D memory block, regardless of the outside PMU logic
- *
- * @param dev Peripheral instance address
- */
-static inline void dma2d_ll_mem_force_power_on(dma2d_dev_t *dev)
-{
-    (void)dev;
-}
-
-/**
- * @brief Force the DMA2D memory block into low power mode, regardless of the outside PMU logic
- *
- * @param dev Peripheral instance address
- */
-static inline void dma2d_ll_mem_force_low_power(dma2d_dev_t *dev)
-{
-    (void)dev;
-}
-
-/**
- * @brief Power control the DMA2D memory block by the outside PMU logic
- *
- * @param dev Peripheral instance address
- */
-static inline void dma2d_ll_mem_power_by_pmu(dma2d_dev_t *dev)
-{
-    (void)dev;
-}
-
-/**
- * @brief Set low power mode for DMA2D memory block
- *
- * @param dev Peripheral instance address
- * @param mode DMA2D memory low power mode in low power stage
- */
-static inline void dma2d_ll_mem_set_low_power_mode(dma2d_dev_t *dev, dma2d_ll_mem_lp_mode_t mode)
-{
-    (void)dev;
-    HAL_ASSERT(mode == DMA2D_LL_MEM_LP_MODE_SHUT_DOWN);
 }
 
 /**
@@ -299,23 +245,23 @@ static inline void dma2d_ll_rx_enable_page_bound_wrap(dma2d_dev_t *dev, uint32_t
  * @brief Set 2D-DMA RX channel maximum burst reading data length in bytes
  */
 __attribute__((always_inline))
-static inline void dma2d_ll_rx_set_data_burst_length(dma2d_dev_t *dev, uint32_t channel, uint32_t length)
+static inline void dma2d_ll_rx_set_data_burst_length(dma2d_dev_t *dev, uint32_t channel, dma2d_data_burst_length_t length)
 {
     uint32_t sel;
     switch (length) {
-    case 8:
+    case DMA2D_DATA_BURST_LENGTH_8:
         sel = 0;
         break;
-    case 16:
+    case DMA2D_DATA_BURST_LENGTH_16:
         sel = 1;
         break;
-    case 32:
+    case DMA2D_DATA_BURST_LENGTH_32:
         sel = 2;
         break;
-    case 64:
+    case DMA2D_DATA_BURST_LENGTH_64:
         sel = 3;
         break;
-    case 128:
+    case DMA2D_DATA_BURST_LENGTH_128:
         sel = 4;
         break;
     default:
@@ -542,9 +488,12 @@ static inline void dma2d_ll_rx_configure_color_space_conv(dma2d_dev_t *dev, uint
     uint32_t input_sel = 7; // Disable CSC
     // L2
     bool proc_en = false; // Disable generic color convert module between color input & color output
-    const int (*table)[4] = NULL;
+    int (*table)[4] = NULL;
     // L3
     uint32_t output_sel = 1; // Output directly
+
+    const int color_space_conv_param_yuv2rgb_bt601_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_YUV2RGB_BT601;
+    const int color_space_conv_param_yuv2rgb_bt709_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_YUV2RGB_BT709;
 
     switch (csc_sel) {
     case DMA2D_CSC_RX_NONE:
@@ -576,52 +525,52 @@ static inline void dma2d_ll_rx_configure_color_space_conv(dma2d_dev_t *dev, uint
     case DMA2D_CSC_RX_YUV422_TO_RGB888_601:
         input_sel = 0;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_RX_YUV420_TO_RGB565_601:
     case DMA2D_CSC_RX_YUV422_TO_RGB565_601:
         input_sel = 0;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 0;
         break;
     case DMA2D_CSC_RX_YUV420_TO_RGB888_709:
     case DMA2D_CSC_RX_YUV422_TO_RGB888_709:
         input_sel = 0;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_RX_YUV420_TO_RGB565_709:
     case DMA2D_CSC_RX_YUV422_TO_RGB565_709:
         input_sel = 0;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 0;
         break;
     case DMA2D_CSC_RX_YUV444_TO_RGB888_601:
         input_sel = 2;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_RX_YUV444_TO_RGB565_601:
         input_sel = 2;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 0;
         break;
     case DMA2D_CSC_RX_YUV444_TO_RGB888_709:
         input_sel = 2;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_RX_YUV444_TO_RGB565_709:
         input_sel = 2;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 0;
         break;
     default:
@@ -812,23 +761,23 @@ static inline void dma2d_ll_tx_enable_page_bound_wrap(dma2d_dev_t *dev, uint32_t
  * @brief Set 2D-DMA TX channel maximum burst reading data length in bytes
  */
 __attribute__((always_inline))
-static inline void dma2d_ll_tx_set_data_burst_length(dma2d_dev_t *dev, uint32_t channel, uint32_t length)
+static inline void dma2d_ll_tx_set_data_burst_length(dma2d_dev_t *dev, uint32_t channel, dma2d_data_burst_length_t length)
 {
     uint32_t sel;
     switch (length) {
-    case 8:
+    case DMA2D_DATA_BURST_LENGTH_8:
         sel = 0;
         break;
-    case 16:
+    case DMA2D_DATA_BURST_LENGTH_16:
         sel = 1;
         break;
-    case 32:
+    case DMA2D_DATA_BURST_LENGTH_32:
         sel = 2;
         break;
-    case 64:
+    case DMA2D_DATA_BURST_LENGTH_64:
         sel = 3;
         break;
-    case 128:
+    case DMA2D_DATA_BURST_LENGTH_128:
         sel = 4;
         break;
     default:
@@ -1045,16 +994,21 @@ static inline void dma2d_ll_tx_configure_color_space_conv(dma2d_dev_t *dev, uint
     uint32_t input_sel = 7; // Disable CSC
     // L2
     bool proc_en = false; // Disable generic color convert module between color input & color output
-    const int (*table)[4] = NULL;
+    int (*table)[4] = NULL;
     // L3
     uint32_t output_sel = 2; // Output directly
+
+    const int color_space_conv_param_rgb2yuv_bt601_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_RGB2YUV_BT601;
+    const int color_space_conv_param_rgb2yuv_bt709_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_RGB2YUV_BT709;
+    const int color_space_conv_param_yuv2rgb_bt601_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_YUV2RGB_BT601;
+    const int color_space_conv_param_yuv2rgb_bt709_table[3][4] = DMA2D_COLOR_SPACE_CONV_PARAM_YUV2RGB_BT709;
 
     switch (csc_sel) {
     case DMA2D_CSC_TX_NONE:
         input_sel = 7;
         break;
     case DMA2D_CSC_TX_SCRAMBLE:
-        input_sel = 3; // only 3 bytes/pixel format is supported for scrambling
+        input_sel = 2; // Or 3
         proc_en = false;
         output_sel = 2;
         break;
@@ -1071,49 +1025,49 @@ static inline void dma2d_ll_tx_configure_color_space_conv(dma2d_dev_t *dev, uint
     case DMA2D_CSC_TX_RGB888_TO_YUV444_601:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_rgb2yuv_bt601_table;
+        table = (int (*)[4])color_space_conv_param_rgb2yuv_bt601_table;
         output_sel = 2;
         break;
     case DMA2D_CSC_TX_RGB888_TO_YUV444_709:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_rgb2yuv_bt709_table;
+        table = (int (*)[4])color_space_conv_param_rgb2yuv_bt709_table;
         output_sel = 2;
         break;
     case DMA2D_CSC_TX_RGB888_TO_YUV422_601:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_rgb2yuv_bt601_table;
+        table = (int (*)[4])color_space_conv_param_rgb2yuv_bt601_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_TX_RGB888_TO_YUV422_709:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_rgb2yuv_bt709_table;
+        table = (int (*)[4])color_space_conv_param_rgb2yuv_bt709_table;
         output_sel = 1;
         break;
     case DMA2D_CSC_TX_YUV444_TO_RGB888_601:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 2;
         break;
     case DMA2D_CSC_TX_YUV444_TO_RGB888_709:
         input_sel = 3;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 2;
         break;
     case DMA2D_CSC_TX_YUV422_TO_RGB888_601:
         input_sel = 1;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt601_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt601_table;
         output_sel = 2;
         break;
     case DMA2D_CSC_TX_YUV422_TO_RGB888_709:
         input_sel = 1;
         proc_en = true;
-        table = dma2d_csc_param_yuv2rgb_bt709_table;
+        table = (int (*)[4])color_space_conv_param_yuv2rgb_bt709_table;
         output_sel = 2;
         break;
     default:

@@ -10,7 +10,6 @@ components/vfs/test_apps:
       reason: lack of runners
 
   depends_components:
-    - *common_components
     - vfs
     - fatfs
     - spiffs

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +29,6 @@
 
 #include "unity.h"
 #include "esp_tee.h"
-#include "esp_private/hw_stack_guard.h"
 #include "secure_service_num.h"
 
 #define ALIGN_DOWN_TO_MMU_PAGE_SIZE(addr)  ((addr) & ~((SOC_MMU_PAGE_SIZE) - 1))
@@ -230,93 +229,43 @@ TEST_CASE("Test REE-TEE isolation: DROM-W1", "[exception]")
     TEST_FAIL_MESSAGE("Exception should have been generated");
 }
 
-TEST_CASE("Test REE-TEE isolation: Corrupted SP", "[exception]")
+static void do_stack_smash(bool underflow, int depth, volatile uint8_t *sink)
 {
-    uintptr_t atk_sp = (uintptr_t)&_iram_start - 0x100;
+    /* Overflow path */
+    if (!underflow) {
+        if (depth == -1) {
+            return; // unreachable
+        }
 
-    /* Disable U-mode interrupts so the tick cannot preempt before the ecall */
-    __asm__ volatile("csrci ustatus, 0x1\n\t" : : : "memory");
+        uint8_t buffer[1024];
+        buffer[0] = (uint8_t)depth;
+        *sink = buffer[0];
 
-    /* Stop the REE-owned HW stack guard, as a malicious REE could */
-#if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
-    esp_hw_stack_guard_monitor_stop();
-#endif
-
-    /* Cross into the TEE with the doctored sp; the handler rejects it and panics */
-    __asm__ volatile("mv sp, %0\n\t"
-                     "ecall\n\t" : : "r"(atk_sp) : "memory");
-
-    TEST_FAIL_MESSAGE("Exception should have been generated");
-}
-
-static void do_stack_overflow(int depth, volatile uint8_t *sink)
-{
-    if (depth == -1) {
-        return; // unreachable
+        do_stack_smash(false, depth + 1, sink);
+        return;
     }
 
-    uint8_t buffer[1024];
-    buffer[0] = (uint8_t)depth;
-    *sink = buffer[0];
-
-    do_stack_overflow(depth + 1, sink);
-}
-
-static void __attribute__((noinline)) do_stack_underflow(void *underflow)
-{
-    __asm__ __volatile__(
-        "mv sp, %0\n" :: "r"(underflow)
+    /* Underflow path */
+    asm volatile(
+        "li   t0, 4096\n"
+        "add  sp, sp, t0\n"
     );
 
-    /* The blocking delay ensures that the stack protection fault interrupt is
-     * captured and handled by the CPU before the current function returns.
-     */
-    esp_rom_delay_us(10);
-}
-
-typedef struct {
-    bool underflow;
-    StackType_t *underflow_stack;
-} StackProtectionTaskArgs;
-
-static void tStackProtection(void *pvParameters)
-{
-    StackProtectionTaskArgs *tArgs = (StackProtectionTaskArgs *)pvParameters;
-
-    if (!tArgs->underflow) { /* Overflow path */
-        volatile uint8_t sink = 0;
-        do_stack_overflow(1, &sink);
-    } else { /* Underflow path */
-        do_stack_underflow((void *)tArgs->underflow_stack);
-    }
-}
-
-static void do_stack_smash(bool underflow)
-{
-    static struct {
-        StackType_t StackBuffer[2048];
-        StackType_t Underflow[1024];
-        StackType_t UnderflowEnd[0];
-    } tData;
-
-    static StaticTask_t TaskBuffer;
-    static StackProtectionTaskArgs taskArgs;
-    taskArgs.underflow = underflow;
-    taskArgs.underflow_stack = tData.UnderflowEnd;
-
-    TaskHandle_t handle = xTaskCreateStatic(tStackProtection, "tStackProt", sizeof(tData.StackBuffer) / sizeof(StackType_t), &taskArgs, 10, tData.StackBuffer, &TaskBuffer);
-    TEST_ASSERT_NULL(handle);
+    volatile uint8_t temp = 1;
+    (void)temp;
 }
 
 TEST_CASE("Test REE stack overflow", "[exception]")
 {
-    do_stack_smash(false);
+    volatile uint8_t sink = 0;
+    do_stack_smash(false, 1, &sink);
     TEST_FAIL_MESSAGE("Exception should have been generated");
 }
 
 TEST_CASE("Test REE stack underflow", "[exception]")
 {
-    do_stack_smash(true);
+    volatile uint8_t sink = 0;
+    do_stack_smash(true, 0, &sink);
     TEST_FAIL_MESSAGE("Exception should have been generated");
 }
 

@@ -8,31 +8,25 @@ Peripherals API
 
     :SOC_ADC_SUPPORTED: adc/index
     :SOC_ANA_CMPR_SUPPORTED: ana_cmpr
-    :SOC_GDMA_SUPPORT_CRC: async_crc
-    :SOC_DMA2D_SUPPORTED: async_color_convert
-    :SOC_ASYNC_MEMCPY_SUPPORTED: async_memcpy
     :SOC_BITSCRAMBLER_SUPPORTED: bitscrambler
     :SOC_MIPI_CSI_SUPPORTED: camera_driver
     :SOC_CLK_TREE_SUPPORTED: clk_tree
-    :SOC_CORDIC_SUPPORTED: cordic
     :SOC_DAC_SUPPORTED: dac
     :SOC_ECDSA_SUPPORTED: ecdsa
     :SOC_ETM_SUPPORTED: etm
     gpio
-    :SOC_GPTIMER_SUPPORTED: gptimer
+    gptimer
     :SOC_DEDICATED_GPIO_SUPPORTED: dedic_gpio
     :SOC_HMAC_SUPPORTED: hmac
     :SOC_DIG_SIGN_SUPPORTED: ds
     :SOC_I2C_SUPPORTED: i2c
     :SOC_I2S_SUPPORTED: i2s
-    :SOC_I3C_MASTER_SUPPORTED: i3c_master
     :SOC_ISP_SUPPORTED: isp
     :SOC_JPEG_CODEC_SUPPORTED: jpeg
-    :SOC_KEY_MANAGER_SUPPORTED: key_manager
     lcd/index
     :SOC_GP_LDO_SUPPORTED: ldo_regulator
-    :SOC_LEDC_SUPPORTED: ledc
-    :SOC_MCPWM_SUPPORTED: mcpwm/index
+    ledc
+    :SOC_MCPWM_SUPPORTED: mcpwm
     :SOC_PARLIO_SUPPORTED: parlio/index
     :SOC_PCNT_SUPPORTED: pcnt
     :SOC_PPA_SUPPORTED: ppa
@@ -51,8 +45,8 @@ Peripherals API
     :SOC_TEMP_SENSOR_SUPPORTED: temp_sensor
     :SOC_TOUCH_SENSOR_SUPPORTED: cap_touch_sens
     :SOC_TWAI_SUPPORTED: twai
-    :SOC_UART_SUPPORTED: uart
-    :SOC_USB_OTG_SUPPORTED: USB Device Stack <https://docs.espressif.com/projects/esp-usb/en/latest/{IDF_TARGET_PATH_NAME}/usb_device.html>
-    :SOC_USB_OTG_SUPPORTED: USB Host <https://docs.espressif.com/projects/esp-usb/en/latest/{IDF_TARGET_PATH_NAME}/usb_host.html>
+    uart
+    :SOC_USB_OTG_SUPPORTED: usb_device
+    :SOC_USB_OTG_SUPPORTED: usb_host
 
 Code examples for this API section are provided in the :example:`peripherals` directory of ESP-IDF examples.

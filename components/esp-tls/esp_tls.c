@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -51,8 +51,8 @@ static const char *TAG = "esp-tls";
 
 #ifdef CONFIG_ESP_TLS_USING_MBEDTLS
 #include "esp_tls_mbedtls.h"
-#elif CONFIG_ESP_TLS_CUSTOM_STACK
-#include "esp_tls_custom_stack.h"
+#elif CONFIG_ESP_TLS_USING_WOLFSSL
+#include "esp_tls_wolfssl.h"
 #endif
 
 #ifdef ESP_PLATFORM
@@ -80,33 +80,25 @@ static const char *TAG = "esp-tls";
 #define _esp_tls_server_session_ticket_ctx_free    esp_mbedtls_server_session_ticket_ctx_free
 #define _esp_tls_get_bytes_avail            esp_mbedtls_get_bytes_avail
 #define _esp_tls_init_global_ca_store       esp_mbedtls_init_global_ca_store
-#define _esp_tls_set_global_ca_store        esp_mbedtls_set_global_ca_store
+#define _esp_tls_set_global_ca_store        esp_mbedtls_set_global_ca_store                 /*!< Callback function for setting global CA store data for TLS/SSL */
 #define _esp_tls_get_global_ca_store        esp_mbedtls_get_global_ca_store
-#define _esp_tls_free_global_ca_store       esp_mbedtls_free_global_ca_store
+#define _esp_tls_free_global_ca_store       esp_mbedtls_free_global_ca_store                /*!< Callback function for freeing global ca store for TLS/SSL */
 #define _esp_tls_get_ciphersuites_list      esp_mbedtls_get_ciphersuites_list
-#elif CONFIG_ESP_TLS_CUSTOM_STACK
-#define _esp_create_ssl_handle              esp_tls_custom_stack_create_ssl_handle
-#define _esp_tls_handshake                  esp_tls_custom_stack_handshake
-#define _esp_tls_read                       esp_tls_custom_stack_read
-#define _esp_tls_write                      esp_tls_custom_stack_write
-#define _esp_tls_conn_delete                esp_tls_custom_stack_conn_delete
-#define _esp_tls_net_init                   esp_tls_custom_stack_net_init
-#define _esp_tls_get_client_session         esp_tls_custom_stack_get_client_session
-#define _esp_tls_free_client_session        esp_tls_custom_stack_free_client_session
-#define _esp_tls_get_ssl_context            esp_tls_custom_stack_get_ssl_context
-#define _esp_tls_server_session_create      esp_tls_custom_stack_server_session_create
-#define _esp_tls_server_session_init        esp_tls_custom_stack_server_session_init
-#define _esp_tls_server_session_continue_async     esp_tls_custom_stack_server_session_continue_async
-#define _esp_tls_server_session_delete      esp_tls_custom_stack_server_session_delete
-#define _esp_tls_server_session_ticket_ctx_init    esp_tls_custom_stack_server_session_ticket_ctx_init
-#define _esp_tls_server_session_ticket_ctx_free    esp_tls_custom_stack_server_session_ticket_ctx_free
-#define _esp_tls_get_bytes_avail            esp_tls_custom_stack_get_bytes_avail
-#define _esp_tls_init_global_ca_store       esp_tls_custom_stack_init_global_ca_store
-#define _esp_tls_set_global_ca_store        esp_tls_custom_stack_set_global_ca_store
-#define _esp_tls_get_global_ca_store        esp_tls_custom_stack_get_global_ca_store
-#define _esp_tls_free_global_ca_store       esp_tls_custom_stack_free_global_ca_store
-#define _esp_tls_get_ciphersuites_list      esp_tls_custom_stack_get_ciphersuites_list
-#else
+#elif CONFIG_ESP_TLS_USING_WOLFSSL /* CONFIG_ESP_TLS_USING_MBEDTLS */
+#define _esp_create_ssl_handle              esp_create_wolfssl_handle
+#define _esp_tls_handshake                  esp_wolfssl_handshake
+#define _esp_tls_read                       esp_wolfssl_read
+#define _esp_tls_write                      esp_wolfssl_write
+#define _esp_tls_conn_delete                esp_wolfssl_conn_delete
+#define _esp_tls_net_init                   esp_wolfssl_net_init
+#define _esp_tls_server_session_create      esp_wolfssl_server_session_create
+#define _esp_tls_server_session_delete      esp_wolfssl_server_session_delete
+#define _esp_tls_get_bytes_avail            esp_wolfssl_get_bytes_avail
+#define _esp_tls_init_global_ca_store       esp_wolfssl_init_global_ca_store
+#define _esp_tls_set_global_ca_store        esp_wolfssl_set_global_ca_store                 /*!< Callback function for setting global CA store data for TLS/SSL */
+#define _esp_tls_free_global_ca_store       esp_wolfssl_free_global_ca_store                /*!< Callback function for freeing global ca store for TLS/SSL */
+#define _esp_tls_get_ssl_context            esp_wolfssl_get_ssl_context
+#else   /* ESP_TLS_USING_WOLFSSL */
 #error "No TLS stack configured"
 #endif
 
@@ -145,15 +137,6 @@ ssize_t esp_tls_conn_read(esp_tls_t *tls, void  *data, size_t datalen)
     if (!tls) {
         return -1;
     }
-    if (!tls->read) {
-        return -1;
-    }
-#if CONFIG_MBEDTLS_DYNAMIC_BUFFER
-    if (tls->is_tls && tls->conn_state != ESP_TLS_DONE) {
-        ESP_LOGE(TAG, "TLS handshake has not completed, read operation not permitted");
-        return -1;
-    }
-#endif
     return tls->read(tls, (char *)data, datalen);
 }
 
@@ -162,15 +145,6 @@ ssize_t esp_tls_conn_write(esp_tls_t *tls, const void  *data, size_t datalen)
     if (!tls || !data) {
         return -1;
     }
-    if (!tls->write) {
-        return -1;
-    }
-#if CONFIG_MBEDTLS_DYNAMIC_BUFFER
-    if (tls->is_tls && tls->conn_state != ESP_TLS_DONE) {
-        ESP_LOGE(TAG, "TLS handshake has not completed, write operation not permitted");
-        return -1;
-    }
-#endif
     return tls->write(tls, (char *)data, datalen);
 }
 
@@ -188,10 +162,7 @@ int esp_tls_conn_destroy(esp_tls_t *tls)
         esp_tls_internal_event_tracker_destroy(tls->error_handle);
 #if CONFIG_MBEDTLS_SSL_PROTO_TLS1_3 && CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
         if (tls->client_session) {
-            mbedtls_platform_zeroize(tls->client_session, tls->client_session_len);
             free(tls->client_session);
-            tls->client_session = NULL;
-            tls->client_session_len = 0;
         }
 #endif // CONFIG_MBEDTLS_SSL_PROTO_TLS1_3 && CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
         free(tls);
@@ -319,16 +290,6 @@ static esp_err_t esp_tls_set_socket_options(int fd, const esp_tls_cfg_t *cfg)
             ESP_LOGE(TAG, "Fail to setsockopt SO_SNDTIMEO");
             return ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED;
         }
-
-#if CONFIG_ESP_TLS_ENABLE_TCP_NODELAY
-        /* Disable Nagle's algorithm. Small control-plane writes (e.g. MQTT PUBLISH/PUBACK/PINGREQ)
-         * otherwise interact with the peer's delayed-ACK and stall ~40-200 ms until its timer fires.
-         * Non-fatal: a latency hint, not required for a correct connection (unlike the timeouts). */
-        int nodelay = 1;
-        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) != 0) {
-            ESP_LOGW(TAG, "Fail to setsockopt TCP_NODELAY (non-fatal)");
-        }
-#endif
 
         if (cfg->keep_alive_cfg && cfg->keep_alive_cfg->keep_alive_enable) {
             int keep_alive_enable = 1;
@@ -585,7 +546,7 @@ static int esp_tls_low_level_conn(const char *hostname, int hostlen, int port, c
  */
 esp_err_t esp_tls_plain_tcp_connect(const char *host, int hostlen, int port, const esp_tls_cfg_t *cfg, esp_tls_error_handle_t error_handle, int *sockfd)
 {
-    if (sockfd == NULL || error_handle == NULL || host == NULL || hostlen < 0) {
+    if (sockfd == NULL || error_handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     return tcp_connect(host, hostlen, port, cfg, error_handle, sockfd);
@@ -605,12 +566,12 @@ int esp_tls_conn_new_sync(const char *hostname, int hostlen, int port, const esp
         } else if (ret == -1) {
             ESP_LOGE(TAG, "Failed to open new connection");
             return -1;
-        } else if (ret == 0 && cfg->timeout_ms > 0) {
+        } else if (ret == 0 && cfg->timeout_ms >= 0) {
             uint64_t elapsed_time_us = esp_tls_get_platform_time() - start_time_us;
             if ((elapsed_time_us / 1000) >= cfg->timeout_ms) {
                 ESP_LOGW(TAG, "Failed to open new connection in specified timeout");
                 ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_ESP, ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT);
-                return -1;
+                return 0;
             }
         }
     }
@@ -667,10 +628,6 @@ int esp_tls_conn_http_new_sync(const char *url, const esp_tls_cfg_t *cfg, esp_tl
  */
 int esp_tls_conn_http_new_async(const char *url, const esp_tls_cfg_t *cfg, esp_tls_t *tls)
 {
-    if (!url || !cfg || !tls) {
-        return -1;
-    }
-
     /* Parse URI */
     struct http_parser_url u;
     http_parser_url_init(&u);

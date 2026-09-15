@@ -53,7 +53,6 @@ typedef struct {
                                          *   Left 0 if not known.
                                          */
     bool use_gpio;                      ///< True if the GPIO matrix is used, otherwise false
-    bool use_ddr_clk;                   ///< Whether to use DDR mode for clock
 } spi_hal_timing_param_t;
 
 /**
@@ -71,7 +70,6 @@ typedef struct {
     int timing_dummy;                   ///< Extra dummy needed to compensate the timing
     int timing_miso_delay;              ///< Extra miso delay clocks to compensate the timing
     spi_sampling_point_t rx_sample_point;///< Sample data follow standard SPI timing in master mode
-    bool use_ddr_clk;                   ///< Whether to use DDR mode for clock
 } spi_hal_timing_conf_t;
 
 /**
@@ -129,6 +127,7 @@ typedef struct {
     };//boolean configurations
 } spi_hal_dev_config_t;
 
+#ifdef SOC_SPI_SCT_SUPPORTED
 /**
  * SCT mode required configurations, per segment
  */
@@ -153,6 +152,7 @@ typedef struct {
     /* DONE State */
     int cs_hold;                        ///< Hold time of CS inactive edge after the last SPI clock
 } spi_hal_seg_config_t;
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED
 
 /**
  * Init the peripheral and the context.
@@ -163,12 +163,12 @@ typedef struct {
 void spi_hal_init(spi_hal_context_t *hal, uint32_t host_id);
 
 /**
- * Config default output data IO level when bus idle
+ * Config default output IO level when don't have transaction
  *
  * @param hal Context of the HAL layer.
  * @param level IO level to config
  */
-void spi_hal_set_data_pin_idle_level(spi_hal_context_t *hal, bool level);
+void spi_hal_config_io_default_level(spi_hal_context_t *hal, bool level);
 
 /**
  * Deinit the peripheral (and the context if needed).
@@ -312,6 +312,7 @@ void spi_hal_cal_timing(int source_freq_hz, int eff_clk, bool gpio_is_used, int 
  */
 int spi_hal_get_freq_limit(bool gpio_is_used, int input_delay_ns);
 
+#ifdef SOC_SPI_SCT_SUPPORTED
 /*----------------------------------------------------------
  * Segmented-Configure-Transfer (SCT) Mode
  * ---------------------------------------------------------*/
@@ -353,6 +354,7 @@ void spi_hal_sct_set_conf_bits_len(spi_hal_context_t *hal, uint32_t conf_len);
  * Set conf_bitslen base to HW for sct, only supported on s2.
  */
 #define spi_hal_sct_setup_conf_base(hal, conf_base)     spi_ll_set_conf_base_bitslen((hal)->hw, conf_base)
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED
 #endif  //#if SOC_GPSPI_SUPPORTED
 
 #ifdef __cplusplus

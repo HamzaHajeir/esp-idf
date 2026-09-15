@@ -6,7 +6,6 @@
 
 // The HAL layer for RTC CNTL (common part)
 
-#include <stddef.h>
 #include "soc/soc_caps.h"
 #include "soc/lldesc.h"
 #include "hal/rtc_hal.h"

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,8 +12,8 @@
 #include "soc/soc.h"
 #include "soc/lp_aon_struct.h"
 #include "hal/misc.h"
-#include "esp_attr.h"
 #include "esp32h21/rom/rtc.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -69,24 +69,19 @@ static inline uint32_t lp_aon_ll_ext1_get_wakeup_pins(void)
     return HAL_FORCE_READ_U32_REG_FIELD(LP_AON.ext_wakeup_cntl, aon_ext_wakeup_sel);
 }
 
+
 /**
  *  @brief ROM obtains the wake-up type through LP_AON_STORE9_REG[0].
  *         Set the flag to inform
  * @param true: deepsleep      false: lightsleep
  */
-FORCE_INLINE_ATTR void lp_aon_ll_inform_wakeup_type(bool dslp)
+static inline void lp_aon_ll_inform_wakeup_type(bool dslp)
 {
     if (dslp) {
         REG_SET_BIT(RTC_SLEEP_MODE_REG, BIT(0));    /* Tell rom to run deep sleep wake stub */
     } else {
         REG_CLR_BIT(RTC_SLEEP_MODE_REG, BIT(0));    /* Tell rom to run light sleep wake stub */
     }
-}
-
-static inline void lp_aon_ll_set_ldo_sw(uint32_t value)
-{
-    CLEAR_PERI_REG_MASK(LP_AON_DATE_REG, LP_AON_DREG_LDO_HW);
-    REG_SET_FIELD(LP_AON_DATE_REG, LP_AON_DREG_LDO_SW, value);
 }
 
 #ifdef __cplusplus

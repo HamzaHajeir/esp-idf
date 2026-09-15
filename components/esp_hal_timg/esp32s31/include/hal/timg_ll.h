@@ -12,7 +12,6 @@
 #include "hal/assert.h"
 #include "hal/misc.h"
 #include "soc/timer_group_struct.h"
-#include "soc/hp_sys_clkrst_struct.h"
 
 #define TIMG_LL_GET(_attr) TIMG_LL_ ## _attr
 
@@ -20,11 +19,13 @@
 #define TIMG_LL_INST_NUM 2
 
 // Number of general purpose timers in each Timer Group
-#define TIMG_LL_GPTIMERS_PER_INST 2
+#define TIMG_LL_GPTIMERS_PER_INST 1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// TODO: ["ESP32S31"] IDF-14745
 
 /**
  * @brief Enable the bus clock for timer group module
@@ -34,11 +35,7 @@ extern "C" {
  */
 static inline void _timg_ll_enable_bus_clock(int group_id, bool enable)
 {
-    if (group_id == 0) {
-        HP_SYS_CLKRST.timergrp0_ctrl0.reg_timergrp0_apb_clk_en = enable;
-    } else {
-        HP_SYS_CLKRST.timergrp1_ctrl0.reg_timergrp1_apb_clk_en = enable;
-    }
+    // TODO: ["ESP32S31"] IDF-14745
 }
 
 /// use a macro to wrap the function, force the caller to use it in a critical section
@@ -59,15 +56,7 @@ static inline void _timg_ll_enable_bus_clock(int group_id, bool enable)
  */
 static inline void _timg_ll_reset_register(int group_id)
 {
-    if (group_id == 0) {
-        HP_SYS_CLKRST.timergrp0_ctrl0.reg_timergrp0_rst_en = 1;
-        HP_SYS_CLKRST.timergrp0_ctrl0.reg_timergrp0_rst_en = 0;
-        TIMERG0.wdtconfig0.wdt_flashboot_mod_en = 0;
-    } else {
-        HP_SYS_CLKRST.timergrp1_ctrl0.reg_timergrp1_rst_en = 1;
-        HP_SYS_CLKRST.timergrp1_ctrl0.reg_timergrp1_rst_en = 0;
-        TIMERG1.wdtconfig0.wdt_flashboot_mod_en = 0;
-    }
+    // TODO: ["ESP32S31"] IDF-14745
 }
 
 /// use a macro to wrap the function, force the caller to use it in a critical section

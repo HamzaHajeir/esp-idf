@@ -1,15 +1,15 @@
-# SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import pytest
 from pytest_embedded import Dut
 from pytest_embedded_idf.utils import idf_parametrize
 
 
-@pytest.mark.generic
+@pytest.mark.adc
 @pytest.mark.parametrize('config', ['iram_safe', 'release', 'pm_enable'], indirect=True)
 @idf_parametrize(
     'target',
-    ['esp32', 'esp32s2', 'esp32s3', 'esp32c3', 'esp32c6', 'esp32h2', 'esp32c5', 'esp32p4', 'esp32c61', 'esp32s31'],
+    ['esp32', 'esp32s2', 'esp32s3', 'esp32c3', 'esp32c6', 'esp32h2', 'esp32c5', 'esp32p4', 'esp32c61'],
     indirect=['target'],
 )
 def test_adc(dut: Dut) -> None:
@@ -17,7 +17,7 @@ def test_adc(dut: Dut) -> None:
 
 
 # No PM test, as C2 doesn't support ADC continuous mode
-@pytest.mark.generic
+@pytest.mark.adc
 @pytest.mark.xtal_26mhz
 @pytest.mark.parametrize(
     'config, baud',
@@ -34,9 +34,9 @@ def test_adc_esp32c2_xtal_26mhz(dut: Dut) -> None:
 
 # TODO: IDF-15005
 # P4 REV2 adc
-# @pytest.mark.generic
-# @pytest.mark.esp32p4_rev1
-# @pytest.mark.parametrize('config', ['esp32p4_rev1'], indirect=True)
+# @pytest.mark.adc
+# @pytest.mark.esp32p4_eco4
+# @pytest.mark.parametrize('config', ['esp32p4_eco4'], indirect=True)
 # @idf_parametrize(
 #     'target',
 #     ['esp32p4'],

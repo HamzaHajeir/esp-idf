@@ -114,23 +114,16 @@ int hci_start_up(void)
     }
 
     const size_t workqueue_len[] = {HCI_HOST_TASK_WORKQUEUE0_LEN, HCI_HOST_TASK_WORKQUEUE1_LEN};
-#if (!CONFIG_BT_BLUEDROID_HCI_TASK_STACK_IN_EXT_MEM)
     hci_host_thread = osi_thread_create(HCI_HOST_TASK_NAME, HCI_HOST_TASK_STACK_SIZE, HCI_HOST_TASK_PRIO, HCI_HOST_TASK_PINNED_TO_CORE,
-                                        HCI_HOST_TASK_WORKQUEUE_NUM, workqueue_len, false);
-#else
-    hci_host_thread = osi_thread_create(HCI_HOST_TASK_NAME, HCI_HOST_TASK_STACK_SIZE, HCI_HOST_TASK_PRIO, HCI_HOST_TASK_PINNED_TO_CORE,
-                                        HCI_HOST_TASK_WORKQUEUE_NUM, workqueue_len, true);
-#endif
+                                        HCI_HOST_TASK_WORKQUEUE_NUM, workqueue_len);
     if (hci_host_thread == NULL) {
-        goto error;
+        return -2;
     }
 
     osi_event_bind(hci_host_env.downstream_data_ready, hci_host_thread, HCI_DOWNSTREAM_DATA_QUEUE_IDX);
 
     packet_fragmenter->init(&packet_fragmenter_callbacks);
-    if (!hal->open(&hal_callbacks, hci_host_thread)) {
-        goto error;
-    }
+    hal->open(&hal_callbacks, hci_host_thread);
 
     hci_host_startup_flag = true;
     return 0;
@@ -142,14 +135,12 @@ error:
 void hci_shut_down(void)
 {
     hci_host_startup_flag  = false;
-
-    /* Close HAL and cleanup before freeing thread: hal->open() and osi_event_bind()
-     * stored references to hci_host_thread; they must not use it after osi_thread_free(). */
-    if (hci_host_thread != NULL) {
-        hal->close();
-        packet_fragmenter->cleanup();
-    }
     hci_layer_deinit_env();
+
+    packet_fragmenter->cleanup();
+
+    //low_power_manager->cleanup();
+    hal->close();
 
     osi_thread_free(hci_host_thread);
     hci_host_thread = NULL;
@@ -157,21 +148,11 @@ void hci_shut_down(void)
 
 bool hci_downstream_data_post(uint32_t timeout)
 {
-    bool ret;
-
     if (hci_host_env.downstream_data_ready == NULL) {
         HCI_TRACE_WARNING("%s downstream_data_ready event not created", __func__);
         return false;
     }
-
-    ret = osi_thread_post_event(hci_host_env.downstream_data_ready, timeout);
-    if (!ret) {
-        HCI_TRACE_DEBUG("%s post fail credits=%d cmdq=%u pktq=%u",
-                        __func__, hci_host_env.command_credits,
-                        (unsigned)fixed_pkt_queue_length(hci_host_env.command_queue),
-                        (unsigned)fixed_queue_length(hci_host_env.packet_queue));
-    }
-    return ret;
+    return osi_thread_post_event(hci_host_env.downstream_data_ready, timeout);
 }
 
 static int hci_layer_init_env(void)
@@ -216,7 +197,7 @@ static int hci_layer_init_env(void)
         HCI_TRACE_ERROR("%s unable to create command response timer.", __func__);
         return -1;
     }
-#if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
     btsnd_hcic_ble_sync_sem_init();
 #endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
 
@@ -232,23 +213,19 @@ static void hci_layer_deinit_env(void)
 
     if (hci_host_env.command_queue) {
         fixed_pkt_queue_free(hci_host_env.command_queue, (fixed_pkt_queue_free_cb)osi_free_func);
-        hci_host_env.command_queue = NULL;
     }
     if (hci_host_env.packet_queue) {
         fixed_queue_free(hci_host_env.packet_queue, osi_free_func);
-        hci_host_env.packet_queue = NULL;
     }
 
     cmd_wait_q = &hci_host_env.cmd_waiting_q;
     list_free(cmd_wait_q->commands_pending_response);
-    cmd_wait_q->commands_pending_response = NULL;
     osi_mutex_free(&cmd_wait_q->commands_pending_response_lock);
-    cmd_wait_q->commands_pending_response_lock = NULL;
     osi_alarm_free(cmd_wait_q->command_response_timer);
     cmd_wait_q->command_response_timer = NULL;
-#if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
     btsnd_hcic_ble_sync_sem_deinit();
-#endif // ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
+#endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
 }
 
 static void hci_downstream_data_handler(void *arg)
@@ -261,8 +238,6 @@ static void hci_downstream_data_handler(void *arg)
      * All packets will be directly copied to single queue in driver layer with
      * H4 type header added (1 byte).
      */
-    UNUSED(arg);
-
     while (hci_host_check_send_available()) {
         /*Now Target only allowed one packet per TX*/
         BT_HDR *pkt = packet_fragmenter->fragment_current_packet();
@@ -278,11 +253,6 @@ static void hci_downstream_data_handler(void *arg)
             break;
         }
     }
-
-    HCI_TRACE_DEBUG("%s done credits=%d cmdq=%u pktq=%u",
-                    __func__, hci_host_env.command_credits,
-                    (unsigned)fixed_pkt_queue_length(hci_host_env.command_queue),
-                    (unsigned)fixed_queue_length(hci_host_env.packet_queue));
 }
 
 static void transmit_command(
@@ -433,16 +403,10 @@ static void command_timed_out(void *context)
 {
     command_waiting_response_t *cmd_wait_q = (command_waiting_response_t *)context;
     pkt_linked_item_t *wait_entry;
-    uint16_t opcode = 0;
 
     osi_mutex_lock(&cmd_wait_q->commands_pending_response_lock, OSI_MUTEX_MAX_TIMEOUT);
     wait_entry = (list_is_empty(cmd_wait_q->commands_pending_response) ?
                   NULL : list_front(cmd_wait_q->commands_pending_response));
-    if (wait_entry != NULL) {
-        hci_cmd_metadata_t *metadata = (hci_cmd_metadata_t *)(wait_entry->data);
-        opcode = metadata->opcode;
-        UNUSED(opcode);
-    }
     osi_mutex_unlock(&cmd_wait_q->commands_pending_response_lock);
 
     if (wait_entry == NULL) {
@@ -451,7 +415,9 @@ static void command_timed_out(void *context)
         // We shouldn't try to recover the stack from this command timeout.
         // If it's caused by a software bug, fix it. If it's a hardware bug, fix it.
     {
-        HCI_TRACE_ERROR("%s hci layer timeout waiting for response to a command. opcode: 0x%x", __func__, opcode);
+        hci_cmd_metadata_t *metadata = (hci_cmd_metadata_t *)(wait_entry->data);
+        HCI_TRACE_ERROR("%s hci layer timeout waiting for response to a command. opcode: 0x%x", __func__, metadata->opcode);
+        UNUSED(metadata);
     }
 }
 
@@ -477,32 +443,16 @@ static bool filter_incoming_event(BT_HDR *packet)
 {
     pkt_linked_item_t *wait_entry = NULL;
     hci_cmd_metadata_t *metadata = NULL;
-    uint8_t *stream;
+    uint8_t *stream = packet->data + packet->offset;
     uint8_t event_code;
     command_opcode_t opcode;
 
-    if (packet == NULL) {
-        return true;
-    }
-
-    stream = packet->data + packet->offset;
-
-    if (packet->len < HCI_EVENT_PREAMBLE_SIZE) {
-        HCI_TRACE_WARNING("dropping too short HCI event (len=%u)", packet->len);
-        osi_free(packet);
-        return true;
-    }
     STREAM_TO_UINT8(event_code, stream);
     STREAM_SKIP_UINT8(stream); // Skip the parameter total length field
 
     HCI_TRACE_DEBUG("Receive packet event_code=0x%x\n", event_code);
 
     if (event_code == HCI_COMMAND_COMPLETE_EVT) {
-        if (packet->len < HCI_EVENT_PREAMBLE_SIZE + HCI_CC_EVENT_MIN_PARAM_LEN) {
-            HCI_TRACE_WARNING("dropping too short Command Complete (len=%u)", packet->len);
-            osi_free(packet);
-            return true;
-        }
         STREAM_TO_UINT8(hci_host_env.command_credits, stream);
         STREAM_TO_UINT16(opcode, stream);
         wait_entry = get_waiting_command(opcode);
@@ -513,7 +463,7 @@ static bool filter_incoming_event(BT_HDR *packet)
         metadata = (hci_cmd_metadata_t *)(wait_entry->data);
         if (metadata->command_complete_cb) {
             metadata->command_complete_cb(packet, metadata->context);
-#if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
             BlE_SYNC *sync_info =  btsnd_hcic_ble_get_sync_info();
             if(!sync_info) {
                 HCI_TRACE_WARNING("%s sync_info is NULL. opcode = 0x%x", __func__, opcode);
@@ -523,7 +473,7 @@ static bool filter_incoming_event(BT_HDR *packet)
                     sync_info->opcode = 0;
                 }
             }
-#endif // #if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
+#endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
         } else if (metadata->flags_vnd & HCI_CMD_MSG_F_VND_FUTURE) {
             future_ready((future_t *)(metadata->complete_future), packet);
         }
@@ -531,11 +481,6 @@ static bool filter_incoming_event(BT_HDR *packet)
         goto intercepted;
     } else if (event_code == HCI_COMMAND_STATUS_EVT) {
         uint8_t status;
-        if (packet->len < HCI_EVENT_PREAMBLE_SIZE + HCI_CS_EVENT_MIN_PARAM_LEN) {
-            HCI_TRACE_WARNING("dropping too short Command Status (len=%u)", packet->len);
-            osi_free(packet);
-            return true;
-        }
         STREAM_TO_UINT8(status, stream);
         STREAM_TO_UINT8(hci_host_env.command_credits, stream);
         STREAM_TO_UINT16(opcode, stream);
@@ -550,18 +495,6 @@ static bool filter_incoming_event(BT_HDR *packet)
         metadata = (hci_cmd_metadata_t *)(wait_entry->data);
         if (metadata->command_status_cb) {
             metadata->command_status_cb(status, &metadata->command, metadata->context);
-#if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
-            /* No Command Complete follows a failed Command Status (Core Spec Vol 4 Part E). */
-            if (status != HCI_SUCCESS) {
-                BlE_SYNC *sync_info = btsnd_hcic_ble_get_sync_info();
-                if (!sync_info) {
-                    HCI_TRACE_WARNING("%s sync_info is NULL. opcode = 0x%x", __func__, opcode);
-                } else if (sync_info->sync_sem && sync_info->opcode == opcode) {
-                    osi_sem_give(&sync_info->sync_sem);
-                    sync_info->opcode = 0;
-                }
-            }
-#endif // #if ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
         }
 
         goto intercepted;
@@ -600,23 +533,8 @@ intercepted:
 static void dispatch_reassembled(BT_HDR *packet)
 {
     // Events should already have been dispatched before this point
-    // Tell Up-layer received packet.
-    do {
-        if ((packet->event & BT_EVT_MASK) == BT_EVT_TO_BTU_HCI_ACL) {
-            if (btu_hci_acl_data_post(packet)) {
-                packet = NULL;
-            }
-            // TODO: Use controller to host flow control
-            break;
-        }
-
-        if (btu_task_post(SIG_BTU_HCI_MSG, packet, OSI_THREAD_MAX_TIMEOUT)) {
-            packet = NULL;
-            break;
-        }
-    } while (0);
-
-    if (packet != NULL) {
+    //Tell Up-layer received packet.
+    if (btu_task_post(SIG_BTU_HCI_MSG, packet, OSI_THREAD_MAX_TIMEOUT) == false) {
         osi_free(packet);
     }
 }
@@ -789,7 +707,11 @@ const char *hci_status_code_to_string(uint8_t status)
         case HCI_ERR_CONN_TOUT_DUE_TO_MIC_FAILURE:   return "MIC Failure";           /* 0x3D */
         case HCI_ERR_CONN_FAILED_ESTABLISHMENT:      return "Conn Failed";           /* 0x3E */
         case HCI_ERR_MAC_CONNECTION_FAILED:          return "Previously Used";       /* 0x3F */
-        default:                                     return "Unknown Status";
+        default: {
+            static char buf[24];
+            snprintf(buf, sizeof(buf), "Unknown Status (0x%02X)", status);
+            return buf;
+        }
     }
 }
 #endif

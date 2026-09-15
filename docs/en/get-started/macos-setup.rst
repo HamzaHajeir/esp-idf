@@ -24,36 +24,13 @@ Install the required prerequisites via `Homebrew <https://brew.sh/>`_:
 
     Python 3.10 is the minimum supported version for ESP-IDF.
 
-    For the Python version required by the EIM, please refer to the `EIM documentation <https://docs.espressif.com/projects/idf-im-ui/en/latest/prerequisites.html#python-version>`_.
+    However, for `Offline Installation`_, EIM requires **Python 3.11 or versions later**.
 
 
 Step 2: Install the EIM
 =======================
 
-You can install the EIM using one of the following methods:
-
-- `Download the EIM`_
-- `Install the EIM with Package Manager Homebrew`_
-
-Installing EIM with Homebrew allows you to easily keep EIM up to date with a single command.
-
-
-Download the EIM
-~~~~~~~~~~~~~~~~~
-
-.. figure:: ../../_static/get-started-eim-download.drawio.png
-   :alt: EIM Download Page
-   :align: left
-   :width: 35%
-   :target: https://dl.espressif.com/dl/eim/
-
-You can choose either an online or offline installer, available in Graphical User Interface (GUI) or Command Line Interface (CLI) versions.
-
-
-Install the EIM with Package Manager Homebrew
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Add the EIM repository to the `Homebrew <https://brew.sh/>`__ to make it available for installation:
+Add the EIM repository to the Homebrew to make it available for installation:
 
 .. code-block:: bash
 
@@ -70,6 +47,12 @@ Then, install the EIM Graphical User Interface (GUI) or Command Line Interface (
     .. code-block:: bash
 
         brew install eim
+
+.. note::
+
+    Installing via Homebrew makes it easier to keep EIM up to date.
+
+    Alternatively, download the EIM installer for macOS from the `Espressif Download Page <https://dl.espressif.com/dl/eim/>`__, which provides both online and offline installers available in both CLI and GUI versions.
 
 
 Step 3: Install ESP-IDF Using EIM

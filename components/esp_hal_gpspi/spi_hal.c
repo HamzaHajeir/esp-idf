@@ -9,12 +9,11 @@
 #include "hal/spi_hal.h"
 #include "soc/soc_caps.h"
 #include "soc/clk_tree_defs.h"
-#include "soc/spi_periph.h"
 
 void spi_hal_init(spi_hal_context_t *hal, uint32_t host_id)
 {
     memset(hal, 0, sizeof(spi_hal_context_t));
-    spi_dev_t *hw = spi_periph_signal[host_id].hw;
+    spi_dev_t *hw = SPI_LL_GET_HW(host_id);
     hal->hw = hw;
     spi_ll_master_init(hw);
 
@@ -28,11 +27,11 @@ void spi_hal_init(spi_hal_context_t *hal, uint32_t host_id)
     spi_ll_apply_config(hw);
 }
 
-void spi_hal_set_data_pin_idle_level(spi_hal_context_t *hal, bool level)
+void spi_hal_config_io_default_level(spi_hal_context_t *hal, bool level)
 {
 #if SPI_LL_MOSI_FREE_LEVEL
     // Config default output data line level when don't have transaction
-    spi_ll_set_data_pin_idle_level(hal->hw, level);
+    spi_ll_set_mosi_free_level(hal->hw, level);
     spi_ll_apply_config(hal->hw);
 #endif
 }
@@ -46,7 +45,7 @@ void spi_hal_deinit(spi_hal_context_t *hal)
     }
 }
 
-#ifdef SPI_LL_PERIPH_HAS_SCT
+#ifdef SOC_SPI_SCT_SUPPORTED
 void spi_hal_sct_init(spi_hal_context_t *hal)
 {
     spi_ll_conf_state_enable(hal->hw, true);
@@ -64,7 +63,7 @@ void spi_hal_sct_deinit(spi_hal_context_t *hal)
     spi_ll_clear_int_stat(hal->hw);
     spi_ll_enable_int(hal->hw); //recover trans_done intr
 }
-#endif  //#ifdef SPI_LL_PERIPH_HAS_SCT
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED
 
 int spi_hal_master_cal_clock(int fapb, int hz, int duty_cycle)
 {

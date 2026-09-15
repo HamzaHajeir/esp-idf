@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,58 +20,62 @@
 #include "unity.h"
 #include "sdkconfig.h"
 
-/*
- * Test: A lower-priority task must be able to run and send data to a queue
- * when the higher-priority task yields (blocks).
- *
- * Pattern: The lower-priority task blocks on a semaphore until told to proceed,
- * then sends to a queue. The higher-priority task gives the semaphore and
- * immediately blocks on the queue receive.
- */
+static volatile bool trigger;
+static volatile bool flag;
 
+#ifndef CONFIG_FREERTOS_SMP
+#define MAX_YIELD_COUNT 10000
+#else
+//TODO: IDF-5081
+#define MAX_YIELD_COUNT 17000
+#endif // CONFIG_FREERTOS_SMP
+
+
+/* Task:
+   - Waits for 'trigger' variable to be set
+   - Reads the cycle count on this CPU
+   - Pushes it into a queue supplied as a param
+   - Busy-waits until the main task terminates it
+*/
 static void task_send_to_queue(void *param)
 {
-    void **args = (void **)param;
-    QueueHandle_t queue = (QueueHandle_t)args[0];
-    SemaphoreHandle_t sem = (SemaphoreHandle_t)args[1];
+    QueueHandle_t queue = (QueueHandle_t) param;
+    uint32_t ccount;
 
-    /* Block until the main task tells us to go */
-    xSemaphoreTake(sem, portMAX_DELAY);
+    while(!trigger) {}
 
-    uint32_t value = 42;
-    xQueueSendToBack(queue, &value, 0);
+    ccount = 0;
+    flag = true;
+    xQueueSendToBack(queue, &ccount, 0);
+    /* This is to ensure that higher priority task
+       won't wake anyhow, due to this task terminating.
 
-    /* Stay alive until deleted */
-    vTaskSuspend(NULL);
+       The task runs until terminated by the main task.
+    */
+    while(1) {}
 }
 
 TEST_CASE("Yield from lower priority task, same CPU", "[freertos]")
 {
+    /* Do this 3 times, mostly for the benchmark value - the first
+       run includes a cache miss so uses more cycles than it should. */
     for (int i = 0; i < 3; i++) {
         TaskHandle_t sender_task;
         QueueHandle_t queue = xQueueCreate(1, sizeof(uint32_t));
-        SemaphoreHandle_t sem = xSemaphoreCreateBinary();
-        void *args[2] = { queue, sem };
+        flag = false;
+        trigger = false;
 
-        /* Lower-priority task blocks on the semaphore */
-        xTaskCreatePinnedToCore(task_send_to_queue, "YIELD", 2048, args,
-                                CONFIG_UNITY_FREERTOS_PRIORITY - 1, &sender_task,
-                                CONFIG_UNITY_FREERTOS_CPU);
+        /* "yield" task sits on our CPU, lower priority to us */
+        xTaskCreatePinnedToCore(task_send_to_queue, "YIELD", 2048, (void *)queue, CONFIG_UNITY_FREERTOS_PRIORITY - 1, &sender_task, CONFIG_UNITY_FREERTOS_CPU);
 
-        /* Let the task start and block on the semaphore */
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(1); /* make sure everything is set up */
+        trigger = true;
 
-        /* Give the semaphore — the lower-priority task won't run yet because
-         * we (higher priority) are still ready. Then block on queue receive,
-         * which yields the CPU to the lower-priority task. */
-        xSemaphoreGive(sem);
-
-        uint32_t received;
-        TEST_ASSERT(xQueueReceive(queue, &received, pdMS_TO_TICKS(100)));
-        TEST_ASSERT_EQUAL(42, received);
+        uint32_t yield_ccount;
+        TEST_ASSERT( xQueueReceive(queue, &yield_ccount, 100 / portTICK_PERIOD_MS) );
+        TEST_ASSERT( flag );
 
         vTaskDelete(sender_task);
         vQueueDelete(queue);
-        vSemaphoreDelete(sem);
     }
 }

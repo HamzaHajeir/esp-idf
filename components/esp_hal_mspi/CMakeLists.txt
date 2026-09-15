@@ -1,12 +1,6 @@
 idf_build_get_property(target IDF_TARGET)
 idf_build_get_property(esp_tee_build ESP_TEE_BUILD)
 
-if(${target} STREQUAL "linux")
-    idf_component_register(INCLUDE_DIRS "include"
-                           REQUIRES soc hal)
-    return()
-endif()
-
 set(srcs)
 set(includes "include" "${target}/include")
 
@@ -30,11 +24,9 @@ elseif(NOT BOOTLOADER_BUILD)
 
 endif()
 
-list(APPEND srcs "${target}/mspi_periph.c")
-
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS ${includes}
-    REQUIRES soc hal esp_hal_gpspi esp_hal_clock # TODO: IDF-15106 remove esp_hal_clock dependency
+    REQUIRES soc hal esp_hal_gpspi
     PRIV_REQUIRES esp_hal_gpio
 )

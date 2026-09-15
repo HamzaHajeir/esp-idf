@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,7 @@
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "etm_retention.h"
+#include "hal/etm_periph.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -27,11 +27,17 @@
 #include "esp_private/etm_interface.h"
 #include "esp_private/sleep_retention.h"
 #include "esp_private/critical_section.h"
-#include "esp_private/esp_clk_tree_common.h"
 
 #define ETM_MEM_ALLOC_CAPS   MALLOC_CAP_DEFAULT
 
 #define ETM_USE_RETENTION_LINK  (SOC_ETM_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+
+#if !SOC_RCC_IS_INDEPENDENT
+// Reset and Clock Control registers are mixing with other peripherals, so we need to use a critical section
+#define ETM_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define ETM_RCC_ATOMIC()
+#endif
 
 ESP_LOG_ATTR_TAG(TAG, "etm");
 
@@ -64,9 +70,6 @@ struct esp_etm_channel_t {
     _Atomic etm_chan_fsm_t fsm;   // record ETM channel's driver state
     esp_etm_event_handle_t event; // which event is connect to the channel
     esp_etm_task_handle_t task;   // which task is connect to the channel
-#if ETM_LL_SUPPORT(CLOCK_SRC)
-    etm_clock_source_t clk_src;   // function clock source enabled for this channel
-#endif
 };
 
 // ETM driver platform, it's always a singleton
@@ -92,10 +95,6 @@ static void etm_create_retention_module(etm_group_t *group)
         if (sleep_retention_module_allocate(module) != ESP_OK) {
             // even though the sleep retention module create failed, ETM driver should still work, so just warning here
             ESP_LOGW(TAG, "create retention link failed on ETM Group%d, power domain won't be turned off during sleep", group_id);
-        } else {
-            if (sleep_retention_module_attach(module) != ESP_OK) {
-                ESP_LOGW(TAG, "attach retention link failed on ETM Group%d, power domain won't be turned off during sleep", group_id);
-            }
         }
     }
     _lock_release(&s_platform.mutex);
@@ -118,10 +117,9 @@ static etm_group_t *etm_acquire_group_handle(int group_id)
             group->group_id = group_id;
             group->spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
             // enable bus clock for the ETM registers
-            PERIPH_RCC_ATOMIC() {
+            ETM_RCC_ATOMIC() {
                 etm_ll_enable_bus_clock(group_id, true);
                 etm_ll_reset_register(group_id);
-                etm_ll_enable_function_clock(group_id, true);
             }
 
 #if ETM_USE_RETENTION_LINK
@@ -133,7 +131,6 @@ static etm_group_t *etm_acquire_group_handle(int group_id)
                         .arg = group,
                     },
                 },
-                .attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH,
                 .depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)
             };
             // retention module init must be called BEFORE the hal init
@@ -175,15 +172,12 @@ static void etm_release_group_handle(etm_group_t *group)
         s_platform.groups[group_id] = NULL; // deregister from platform
         etm_hal_deinit(&group->hal);
         // disable the bus clock for the ETM registers
-        PERIPH_RCC_ATOMIC() {
+        ETM_RCC_ATOMIC() {
             etm_ll_enable_bus_clock(group_id, false);
         }
 
 #if ETM_USE_RETENTION_LINK
         sleep_retention_module_t module = soc_etm_retention_info[group_id].module;
-        if (sleep_retention_is_module_attached(module)) {
-            sleep_retention_module_detach(module);
-        }
         if (sleep_retention_is_module_created(module)) {
             sleep_retention_module_free(module);
         }
@@ -270,17 +264,6 @@ esp_err_t esp_etm_new_channel(const esp_etm_channel_config_t *config, esp_etm_ch
     int group_id = group->group_id;
     int chan_id = chan->chan_id;
 
-#if ETM_LL_SUPPORT(CLOCK_SRC)
-    // set the clock source for the ETM group
-    etm_clock_source_t clk_src = config->clk_src;
-    if (clk_src == 0) {
-        clk_src = ETM_CLK_SRC_DEFAULT;
-    }
-    ESP_GOTO_ON_ERROR(esp_clk_tree_enable_src((soc_module_clk_t)clk_src, true), err, TAG, "clock source enable failed");
-    chan->clk_src = clk_src;
-    etm_ll_set_clock_source(group_id, clk_src);
-#endif
-
     // set the initial state to INIT
     atomic_init(&chan->fsm, ETM_CHAN_FSM_INIT);
 
@@ -296,11 +279,6 @@ esp_err_t esp_etm_new_channel(const esp_etm_channel_config_t *config, esp_etm_ch
 
 err:
     if (chan) {
-#if ETM_LL_SUPPORT(CLOCK_SRC)
-        if (chan->clk_src != 0) {
-            esp_clk_tree_enable_src((soc_module_clk_t)chan->clk_src, false);
-        }
-#endif
         etm_chan_destroy(chan);
     }
     return ret;
@@ -321,11 +299,6 @@ esp_err_t esp_etm_del_channel(esp_etm_channel_handle_t chan)
     etm_ll_channel_set_task(group->hal.regs, chan_id, 0);
 
     ESP_LOGD(TAG, "del etm channel (%d,%d)", group_id, chan_id);
-#if ETM_LL_SUPPORT(CLOCK_SRC)
-    // Back to hardware default clock selection, otherwise it might get stuck when stopping the bus during sleep process.
-    etm_ll_set_clock_source(group_id, ETM_CLK_SRC_XTAL);
-    ESP_RETURN_ON_ERROR(esp_clk_tree_enable_src((soc_module_clk_t)chan->clk_src, false), TAG, "clock source disable failed");
-#endif
     // recycle memory resource
     ESP_RETURN_ON_ERROR(etm_chan_destroy(chan), TAG, "destroy etm channel failed");
     return ESP_OK;

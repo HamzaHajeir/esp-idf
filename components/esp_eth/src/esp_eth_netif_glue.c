@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,11 +33,7 @@ static esp_err_t eth_input_to_netif(esp_eth_handle_t eth_handle, uint8_t *buffer
 {
 #if CONFIG_ESP_NETIF_L2_TAP
     esp_err_t ret = ESP_OK;
-    l2tap_eth_filter_info_t l2tap_info = {
-        .l2_buffer = NULL,
-        .hw_ts = (l2tap_timestamp_t *)info, // Memory layout matches the Ethernet MAC driver type (eth_mac_time_t)
-    };
-    ret = esp_vfs_l2tap_eth_filter_frame(eth_handle, buffer, (size_t *)&length, &l2tap_info);
+    ret = esp_vfs_l2tap_eth_filter_frame(eth_handle, buffer, (size_t *)&length, info);
     if (length == 0) {
         return ret;
     }
@@ -119,7 +115,7 @@ static void eth_action_connected(void *handler_args, esp_event_base_t base, int3
     if (netif_glue->eth_driver == eth_handle) {
         eth_speed_t speed;
         esp_eth_ioctl(eth_handle, ETH_CMD_G_SPEED, &speed);
-        esp_netif_set_link_speed(netif_glue->base.netif, speed == ETH_SPEED_1000M ? 1000000000 : speed == ETH_SPEED_100M ? 100000000 : 10000000);
+        esp_netif_set_link_speed(netif_glue->base.netif, speed == ETH_SPEED_100M ? 100000000 : 10000000);
         esp_netif_action_connected(netif_glue->base.netif, base, event_id, event_data);
     }
 }

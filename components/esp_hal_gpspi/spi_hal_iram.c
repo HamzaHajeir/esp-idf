@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,30 +37,23 @@ void spi_hal_setup_device(spi_hal_context_t *hal, const spi_hal_dev_config_t *de
     spi_ll_master_set_cs_setup(hw, dev->cs_setup);
     spi_ll_master_set_cs_hold(hw, dev->cs_hold);
     spi_ll_master_select_cs(hw, dev->cs_pin_id);
-#if SOC_SPI_SUPPORT_DDR_CLOCK
-    spi_ll_enable_ddr_mode(hw, dev->timing_conf.use_ddr_clk);
-#endif
 }
 
 esp_err_t spi_hal_cal_clock_conf(const spi_hal_timing_param_t *timing_param, spi_hal_timing_conf_t *timing_conf)
 {
     spi_ll_clock_val_t reg_val;
     int dummy, miso_delay;
-    // Hardware halves the output frequency when DDR is enabled; calculate with 2x so the effective rate stays the same.
-    uint32_t expected_freq = timing_param->use_ddr_clk ? timing_param->expected_freq * 2 : timing_param->expected_freq;
-    int eff_clk_n = spi_ll_master_cal_clock(timing_param->clk_src_hz, expected_freq, timing_param->duty_cycle, &reg_val);
+    int eff_clk_n = spi_ll_master_cal_clock(timing_param->clk_src_hz, timing_param->expected_freq, timing_param->duty_cycle, &reg_val);
 
     //When the speed is too fast, we may need to use dummy cycles to compensate the reading.
     //But these don't work for full-duplex connections.
     spi_hal_cal_timing(timing_param->clk_src_hz, eff_clk_n, timing_param->use_gpio, timing_param->input_delay_ns, &dummy, &miso_delay);
 
 #if SPI_LL_SUPPORT_TIME_TUNING
+    const int freq_limit = spi_hal_get_freq_limit(timing_param->use_gpio, timing_param->input_delay_ns);
+
     if (!(timing_param->half_duplex || dummy == 0 || timing_param->no_compensate)) {
-        // Short log used as a "key" by the idf hint system (see `hints.yml`).
-        // freq_limit is consumed only by HAL_EARLY_LOGE; mark unused so
-        // -Wunused-variable stays quiet when the macro expands to empty.
-        const int freq_limit __attribute__((unused)) =
-            spi_hal_get_freq_limit(timing_param->use_gpio, timing_param->input_delay_ns);
+        // This only a short log used as a "key" of the idf hint system, see `hints.yml`
         HAL_EARLY_LOGE(SPI_HAL_TAG, "The clock_speed_hz should less than %d", freq_limit);
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -68,10 +61,8 @@ esp_err_t spi_hal_cal_clock_conf(const spi_hal_timing_param_t *timing_param, spi
 
     if (timing_conf) {
         timing_conf->clock_reg = reg_val;
-        timing_conf->use_ddr_clk = timing_param->use_ddr_clk;
         timing_conf->expect_freq = timing_param->expected_freq;
-        // eff_clk_n was calculated for 2x in DDR; report the effective data rate to the user.
-        timing_conf->real_freq = timing_param->use_ddr_clk ? eff_clk_n / 2 : eff_clk_n;
+        timing_conf->real_freq = eff_clk_n;
         timing_conf->timing_dummy = dummy;
         timing_conf->timing_miso_delay = miso_delay;
     }
@@ -273,7 +264,7 @@ void spi_hal_fetch_result(const spi_hal_context_t *hal)
     }
 }
 
-#ifdef SPI_LL_PERIPH_HAS_SCT
+#ifdef SOC_SPI_SCT_SUPPORTED
 /*------------------------------------------------------------------------------
  * Segmented-Configure-Transfer
 *----------------------------------------------------------------------------*/
@@ -303,4 +294,4 @@ void spi_hal_sct_format_conf_buffer(spi_hal_context_t *hal, const spi_hal_seg_co
 #endif
 }
 
-#endif  //#ifdef SPI_LL_PERIPH_HAS_SCT
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED

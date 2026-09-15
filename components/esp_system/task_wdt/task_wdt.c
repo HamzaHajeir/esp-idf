@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,6 @@
 #include "freertos/task.h"
 #include "freertos/freertos_debug.h"
 #include "esp_err.h"
-#include "esp_macros.h"
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -421,11 +420,11 @@ static void task_wdt_timeout_handling(int cores_fail, bool panic)
             esp_crosscore_int_send_twdt_abort(other_core);
             /* We are going to abort, on the other core, we have nothing to
              * do anymore here, just wait until we crash */
-            ESP_INFINITE_LOOP();
+            while (1) {}
         } else if (cores_fail & BIT(other_core)) {
             /* If only the other core is failing, we can tell it to abort. */
             esp_crosscore_int_send_twdt_abort(other_core);
-            ESP_INFINITE_LOOP();
+            while (1) {}
         }
 #endif // !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
         /* Current core is failing, abort right now */
@@ -597,9 +596,9 @@ esp_err_t esp_task_wdt_reconfigure(const esp_task_wdt_config_t *config)
         esp_task_wdt_impl_timer_restart(p_twdt_obj->impl_ctx);
     }
 
-err:
     portEXIT_CRITICAL(&spinlock);
-    return ret;
+err:
+    return ESP_OK;
 }
 
 esp_err_t esp_task_wdt_stop(void)

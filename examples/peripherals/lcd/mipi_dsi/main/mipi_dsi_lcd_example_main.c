@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: CC0-1.0
  */
@@ -19,11 +19,9 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_macros.h"
 #include "lvgl.h"
 #include "esp_lcd_ili9881c.h"
 #include "esp_lcd_ek79007.h"
-#include "esp_efuse.h"
 
 static const char *TAG = "example";
 
@@ -90,18 +88,6 @@ static _lock_t lvgl_api_lock;
 
 extern void example_lvgl_demo_ui(lv_display_t *disp);
 
-#if CONFIG_EXAMPLE_USE_DMA2D_COPY_FRAME
-void example_rounder_flush_area_cb(lv_event_t * event)
-{
-    // Under flash encryption, DMA2D access to PSRAM must satisfy MSPI encryption
-    // alignment (typically 16 bytes) for both the buffer address and transfer size.
-    // Round the LVGL invalidate area so the flush region width meets that requirement.
-    lv_area_t * area = lv_event_get_invalidated_area(event);
-    area->x1 = ESP_ALIGN_DOWN(area->x1, 16);
-    area->x2 = ESP_ALIGN_UP(area->x2 + 1, 16) - 1;
-}
-#endif
-
 static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
@@ -109,7 +95,7 @@ static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uin
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
-    // LVGL area coordinates are inclusive; panel draw_bitmap expects [start, end).
+    // pass the draw buffer to the driver
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
 }
 
@@ -298,39 +284,24 @@ void app_main(void)
     void *buf1 = NULL;
     void *buf2 = NULL;
     ESP_LOGI(TAG, "Allocate separate LVGL draw buffers");
-
-    size_t draw_buffer_sz = EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * sizeof(lv_color_t);
-
     // Note:
     // Keep the display buffer in **internal** RAM can speed up the UI because LVGL uses it a lot and it should have a fast access time
     // This example allocate the buffer from PSRAM mainly because we want to save the internal RAM
-    buf1 = heap_caps_aligned_calloc(16, 1, draw_buffer_sz, MALLOC_CAP_SPIRAM);
+    size_t draw_buffer_sz = EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * sizeof(lv_color_t);
+    buf1 = heap_caps_malloc(draw_buffer_sz, MALLOC_CAP_SPIRAM);
     assert(buf1);
-    buf2 = heap_caps_aligned_calloc(16, 1, draw_buffer_sz, MALLOC_CAP_SPIRAM);
+    buf2 = heap_caps_malloc(draw_buffer_sz, MALLOC_CAP_SPIRAM);
     assert(buf2);
     // initialize LVGL draw buffers
     lv_display_set_buffers(display, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     // set the callback which can copy the rendered image to an area of the display
     lv_display_set_flush_cb(display, example_lvgl_flush_cb);
 
-#if CONFIG_EXAMPLE_USE_DMA2D_COPY_FRAME
-    // If Flash Encryption/ PSRAM ECC is enabled, DMA2D requires the flush buffer address and size to be aligned.
-    // Round the LVGL invalidate area accordingly (this is an LVGL integration hook, not a panel API).
-    bool need_rounder = esp_efuse_is_flash_encryption_enabled();
-#if CONFIG_SPIRAM_ECC_ENABLE
-    need_rounder = true;
-#endif
-    if (need_rounder) {
-        ESP_LOGI(TAG, "Register event callback for LVGL flush area rounding");
-        lv_display_add_event_cb(display, example_rounder_flush_area_cb, LV_EVENT_INVALIDATE_AREA, NULL);
-    }
-#endif
-
     ESP_LOGI(TAG, "Register DPI panel event callback for LVGL flush ready notification");
     esp_lcd_dpi_panel_event_callbacks_t cbs = {
         .on_color_trans_done = example_notify_lvgl_flush_ready,
 #if CONFIG_EXAMPLE_MONITOR_REFRESH_BY_GPIO
-        .on_vsync = example_monitor_refresh_rate,
+        .on_refresh_done = example_monitor_refresh_rate,
 #endif
     };
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(mipi_dpi_panel, &cbs, display));

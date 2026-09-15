@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -16,48 +15,34 @@
 #include "services/gap/ble_svc_gap.h"
 #include "phy_prph.h"
 
-#if !(CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
 static uint8_t ext_adv_pattern_1M[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xF2, 0xAB,
-    0x0e, BLE_HS_ADV_TYPE_COMP_NAME, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', '1', 'M',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0xAB, 0xF2,
+    0x0e, 0X09, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', '1', 'M',
 };
 
 static uint8_t ext_adv_pattern_2M[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xF2, 0xAB,
-    0x0e, BLE_HS_ADV_TYPE_COMP_NAME, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', '2', 'M',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0xAB, 0xF2,
+    0x0e, 0X09, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', '2', 'M',
 };
 
 static uint8_t ext_adv_pattern_coded[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xF2, 0xAB,
-    0x11, BLE_HS_ADV_TYPE_COMP_NAME, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', 'c', 'o', 'd', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0xAB, 0xF2,
+    0x11, 0X09, 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'p', 'h', 'y', '-', 'c', 'o', 'd', 'e',
     'd',
 };
-#endif
 
 static const char *tag = "NimBLE_BLE_PHY_PRPH";
 static int bleprph_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t own_addr_type;
-static char device_name[32] = "bleprph-phy";
 
 static uint8_t s_current_phy;
 void ble_store_config_init(void);
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_ble_phy_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 /* Set default LE PHY before establishing connection */
 void set_default_le_phy(uint8_t tx_phys_mask, uint8_t rx_phys_mask)
@@ -109,24 +94,6 @@ ext_get_data(uint8_t ext_adv_pattern[], int size)
     return data;
 }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-/* Build CI advertisement data that contains only the Complete Local Name. */
-static struct os_mbuf *
-build_ci_adv_data(const char *name)
-{
-    uint8_t buf[32];
-    uint8_t name_len = (uint8_t)strlen(name);
-
-    if (name_len > sizeof(buf) - 2) {
-        name_len = sizeof(buf) - 2;
-    }
-    buf[0] = name_len + 1;
-    buf[1] = BLE_HS_ADV_TYPE_COMP_NAME;
-    memcpy(&buf[2], name, name_len);
-    return ext_get_data(buf, 2 + name_len);
-}
-#endif
-
 /**
  * Enables advertising with the following parameters:
  *     o General discoverable mode.
@@ -137,7 +104,7 @@ ext_bleprph_advertise(void)
 {
     struct ble_gap_ext_adv_params params;
     struct os_mbuf *data = NULL;
-    uint8_t instance = 0;
+    uint8_t instance = 1;
     int rc;
 
     /* use defaults for non-set params */
@@ -151,52 +118,35 @@ ext_bleprph_advertise(void)
     /*enable connectable advertising for all Phy*/
     params.connectable = 1;
 
-    /* advertise using the inferred address type */
-    params.own_addr_type = own_addr_type;
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
 
     /* Set current phy; get mbuf for scan rsp data; fill mbuf with scan rsp data */
     switch (s_current_phy) {
     case BLE_HCI_LE_PHY_1M_PREF_MASK:
         params.primary_phy = BLE_HCI_LE_PHY_1M;
         params.secondary_phy = BLE_HCI_LE_PHY_1M;
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-        data = build_ci_adv_data(device_name);
-#else
         data = ext_get_data(ext_adv_pattern_1M, sizeof(ext_adv_pattern_1M));
-#endif
         params.sid = 0;
         break;
 
     case BLE_HCI_LE_PHY_2M_PREF_MASK:
         params.primary_phy = BLE_HCI_LE_PHY_1M;
         params.secondary_phy = BLE_HCI_LE_PHY_2M;
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-        data = build_ci_adv_data(device_name);
-#else
         data = ext_get_data(ext_adv_pattern_2M, sizeof(ext_adv_pattern_2M));
-#endif
         params.sid = 1;
         break;
 
     case BLE_HCI_LE_PHY_CODED_PREF_MASK:
         params.primary_phy = BLE_HCI_LE_PHY_CODED;
         params.secondary_phy = BLE_HCI_LE_PHY_CODED;
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-        data = build_ci_adv_data(device_name);
-#else
         data = ext_get_data(ext_adv_pattern_coded, sizeof(ext_adv_pattern_coded));
-#endif
         params.sid = 2;
         break;
     }
 
-    if (s_current_phy == BLE_HCI_LE_PHY_CODED_PREF_MASK) {
-        params.itvl_min = BLE_GAP_ADV_ITVL_MS(20);
-        params.itvl_max = BLE_GAP_ADV_ITVL_MS(20);
-    }else{
-        params.itvl_min = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
-        params.itvl_max = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
-    }
+    params.itvl_min = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
+    params.itvl_max = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
 
     /* configure instance 0 */
     rc = ble_gap_ext_adv_configure(instance, &params, NULL,
@@ -284,10 +234,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "connection updated; status=%d ",
                     event->conn_update.status);
         rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
-        if (rc != 0) {
-            MODLOG_DFLT(ERROR, "ble_gap_conn_find failed; rc=%d\n", rc);
-            return 0;
-        }
+        assert(rc == 0);
         bleprph_print_conn_desc(&desc);
         MODLOG_DFLT(INFO, "\n");
         return 0;
@@ -372,13 +319,6 @@ app_main(void)
         return;
     }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(device_name, esp_ble_phy_get_example_name(), sizeof(device_name) - 1);
-    device_name[sizeof(device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
-
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = bleprph_on_reset;
     ble_hs_cfg.sync_cb = bleprph_on_sync;
@@ -407,11 +347,9 @@ app_main(void)
     assert(rc == 0);
 #endif
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
-    rc = ble_svc_gap_device_name_set(device_name);
+    rc = ble_svc_gap_device_name_set("bleprph-phy");
     assert(rc == 0);
-#endif
 
     /* XXX Need to have template for store */
     ble_store_config_init();

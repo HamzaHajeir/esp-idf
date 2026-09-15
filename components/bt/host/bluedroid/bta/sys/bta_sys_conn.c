@@ -28,8 +28,6 @@
 #include "bta_sys_int.h"
 #include "bta/utl.h"
 
-#if (CLASSIC_BT_INCLUDED == TRUE)
-
 /*******************************************************************************
 **
 ** Function         bta_sys_rm_register
@@ -663,5 +661,3 @@ BOOLEAN bta_sys_vs_hdl(UINT16 evt, void *p)
 
     return FALSE;
 }
-
-#endif // #if (CLASSIC_BT_INCLUDED == TRUE)

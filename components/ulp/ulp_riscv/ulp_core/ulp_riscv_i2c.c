@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -70,31 +70,35 @@ static void ulp_riscv_i2c_format_cmd(uint32_t cmd_idx, uint8_t op_code, uint8_t 
 static inline int32_t ulp_riscv_i2c_wait_for_interrupt(int32_t cycles_to_wait)
 {
     uint32_t status = 0;
-    uint32_t timeout_start = ulp_riscv_get_cpu_cycles();
+    uint32_t to = 0;
 
     while (1) {
         status = READ_PERI_REG(RTC_I2C_INT_ST_REG);
 
-        /* If a NAK, Timeout, or Arbitration Loss occurs, abort immediately. */
-#if CONFIG_IDF_TARGET_ESP32S2
-        if ((status & RTC_I2C_TIMEOUT_INT_ST) ||
-#elif CONFIG_IDF_TARGET_ESP32S3
-        if ((status & RTC_I2C_TIME_OUT_INT_ST) ||
-#endif // CONFIG_IDF_TARGET_ESP32S2
-                (status & RTC_I2C_ACK_ERR_INT_ST) ||
-                (status & RTC_I2C_ARBITRATION_LOST_INT_ST)) {
-            return -1;
-        }
-
-        /* Return 0 ONLY if hardware channels are error-free and data bits are latched. */
+        /* Return 0 if Tx or Rx data interrupt bits are set. */
         if ((status & RTC_I2C_TX_DATA_INT_ST) ||
                 (status & RTC_I2C_RX_DATA_INT_ST)) {
             return 0;
+            /* In case of error status, break and return -1 */
+#if CONFIG_IDF_TARGET_ESP32S2
+        } else if ((status & RTC_I2C_TIMEOUT_INT_ST) ||
+#elif CONFIG_IDF_TARGET_ESP32S3
+        } else if ((status & RTC_I2C_TIME_OUT_INT_ST) ||
+#endif // CONFIG_IDF_TARGET_ESP32S2
+                   (status & RTC_I2C_ACK_ERR_INT_ST) ||
+                   (status & RTC_I2C_ARBITRATION_LOST_INT_ST)) {
+            return -1;
         }
 
-        /* Handle CPU clock-cycle tracking */
-        if (ulp_riscv_is_timeout_elapsed(timeout_start, cycles_to_wait)) {
-            return -1;
+        if (cycles_to_wait > -1) {
+            /* If the cycles_to_wait value is not -1, keep track of cycles and
+             * break from the loop once the timeout is reached.
+             */
+            ulp_riscv_delay_cycles(1);
+            to++;
+            if (to >= cycles_to_wait) {
+                return -1;
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include "sdkconfig.h"
 #include "esp_sleep.h"
-#include "hal/uart_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,13 +30,6 @@ typedef struct {
  */
 void esp_sleep_set_sleep_context(esp_sleep_context_t *sleep_ctx);
 #endif
-
-/**
- * @brief Sleep internal runtime arguments
- */
-typedef struct {
-    uint32_t clk_flags[2];      //!< Sleep clock ICG flags.
-} esp_sleep_extra_args_t;
 
 typedef enum {
     ESP_SLEEP_RTC_USE_RC_FAST_MODE,       //!< The mode requested by RTC peripherals to keep RC_FAST clock on during sleep (both HP_SLEEP and LP_SLEEP mode). (Will override the RC_FAST domain config by esp_sleep_pd_config)
@@ -105,36 +97,14 @@ esp_err_t esp_sleep_acquire_lp_use_xtal(void);
 esp_err_t esp_sleep_release_lp_use_xtal(void);
 #endif
 
-#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP || SOC_GPIO_NEED_SOFT_ISOLATE_DURING_PD
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
 /**
- * @brief Soft-isolate valid digital IO pads (SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK) for leakage control
+ * @brief Isolate all digital IOs except those that are held during deep sleep
  *
- * Skips pads that are digitally held and pads reserved by the driver.
- * MSPI signal pads are not in this pass; use esp_sleep_isolate_mspi_gpio() after cache/MSPI idle.
- *
- * @param do_backup  If true, back up each pad's pu/pd/ie/oe/fun_sel before isolating so that
- *                   esp_sleep_restore_isolated_digital_gpio() can restore them later.
- *                   Pass false when restore is not needed (e.g. deep sleep).
+ * Reduce digital IOs current leakage during deep sleep.
  */
-void esp_sleep_isolate_digital_gpio(bool do_backup);
-
-/**
- * @brief Backup and isolate (or pull up) the five base MSPI lines (CLK/Q/D/HD/WP)
- *
- * If CONFIG_ESP_SLEEP_MSPI_NEED_ALL_IO_PU && !SOC_MSPI_HAS_INDEPENT_IOMUX, enables pull-up only;
- * otherwise full pad isolate like esp_sleep_isolate_digital_gpio. Intended after SPI bus is idle
- * (e.g. light sleep with TOP power-down).
- */
-void esp_sleep_isolate_mspi_gpio(void);
-
-/**
- * @brief Restore pu/pd/ie/oe and IOMUX fun_sel for every GPIO in the soft-isolate backup bitmap
- *
- * Reverses esp_sleep_isolate_digital_gpio / esp_sleep_isolate_mspi_gpio. Call after wake before
- * normal Flash access.
- */
-void esp_sleep_restore_isolated_digital_gpio(void);
-#endif // !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP || SOC_GPIO_NEED_SOFT_ISOLATE_DURING_PD
+void esp_sleep_isolate_digital_gpio(void);
+#endif
 
 #if SOC_PM_SUPPORT_PMU_CLK_ICG
 /**
@@ -142,26 +112,17 @@ void esp_sleep_restore_isolated_digital_gpio(void);
  */
 typedef enum {
     ESP_SLEEP_CLOCK_IOMUX,  //!< The clock ICG cell mapping of IOMUX
-    ESP_SLEEP_CLOCK_LEDC0,   //!< The clock ICG cell mapping of LEDC0
+    ESP_SLEEP_CLOCK_LEDC,   //!< The clock ICG cell mapping of LEDC
     ESP_SLEEP_CLOCK_UART0,   //!< The clock ICG cell mapping of UART0
     ESP_SLEEP_CLOCK_UART1,   //!< The clock ICG cell mapping of UART1
 #if SOC_UART_HP_NUM > 2
     ESP_SLEEP_CLOCK_UART2,   //!< The clock ICG cell mapping of UART2
-#endif
-#if SOC_UART_HP_NUM > 3
-    ESP_SLEEP_CLOCK_UART3,   //!< The clock ICG cell mapping of UART3
-#endif
-#if SOC_UART_HP_NUM > 4
-    ESP_SLEEP_CLOCK_UART4,   //!< The clock ICG cell mapping of UART4
 #endif
 #if SOC_BLE_USE_WIFI_PWR_CLK_WORKAROUND
     ESP_SLEEP_CLOCK_BT_USE_WIFI_PWR_CLK,  //!< The clock ICG cell remapping of RETENTION
 #endif
     ESP_SLEEP_CLOCK_MAX     //!< Number of ICG cells
 } esp_sleep_clock_t;
-
-// Get UART sleep clock with giving uart num (num must be a valid HP UART port)
-#define SLEEP_UART_ICG(num) ((esp_sleep_clock_t)(ESP_SLEEP_CLOCK_UART0 + (num)))
 
 /**
  * @brief Clock ICG options
@@ -211,6 +172,22 @@ esp_err_t esp_deep_sleep_register_phy_hook(esp_deep_sleep_cb_t new_dslp_cb);
 void esp_deep_sleep_deregister_phy_hook(esp_deep_sleep_cb_t old_dslp_cb);
 #endif
 
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_PM_MMU_TABLE_RETENTION_WHEN_TOP_PD
+/**
+ * @brief Backup or restore the MMU when the top domain is powered down.
+ * @param backup_or_restore decide to backup mmu or restore mmu
+ */
+void esp_sleep_mmu_retention(bool backup_or_restore);
+
+/**
+ * @brief Whether to allow the top domain to be powered off due to mmu domain requiring retention.
+ *
+ * In light sleep mode, only when the system can provide enough memory
+ * for mmu retention, the top power domain can be powered off.
+ */
+bool mmu_domain_pd_allowed(void);
+#endif
+
 /**
  * @brief Notify the sleep process that `sleep_time_overhead_out` needs to be remeasured, which must be called
  *        in the following scenarios:
@@ -219,33 +196,6 @@ void esp_deep_sleep_deregister_phy_hook(esp_deep_sleep_cb_t old_dslp_cb);
  *        3. Other events occur that affect the execution time of the CPU sleep process.
  */
 void esp_sleep_overhead_out_time_refresh(void);
-
-
-/**
- * @brief Enter the sleep configuration critical section (task context only)
- *
- * Protects sleep configuration state. Must be paired with esp_sleep_exit_critical().
- * Do not call from ISR; use esp_sleep_enter_critical_safe() instead.
- */
-void esp_sleep_enter_critical(void);
-
-/**
- * @brief Exit the sleep configuration critical section entered by esp_sleep_enter_critical()
- */
-void esp_sleep_exit_critical(void);
-
-/**
- * @brief Enter the sleep configuration critical section (safe for task or ISR context)
- *
- * Protects sleep configuration state (e.g. power domain options, sub-mode refs, clk icg refs...).
- * Must be paired with esp_sleep_exit_critical_safe().
- */
-void esp_sleep_enter_critical_safe(void);
-
-/**
- * @brief Exit the sleep configuration critical section entered by esp_sleep_enter_critical_safe()
- */
-void esp_sleep_exit_critical_safe(void);
 
 #ifdef __cplusplus
 }

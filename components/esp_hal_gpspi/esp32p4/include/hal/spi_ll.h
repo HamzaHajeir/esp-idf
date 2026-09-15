@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +28,6 @@
 extern "C" {
 #endif
 
-#define SPI_LL_GET_HW(ID) ((ID)==SPI2_HOST ? &GPSPI2 : (ID)==SPI3_HOST ? &GPSPI3 : NULL)
 /// Interrupt not used. Don't use in app.
 #define SPI_LL_UNUSED_INT_MASK  (SPI_TRANS_DONE_INT_ENA | SPI_SLV_WR_DMA_DONE_INT_ENA | SPI_SLV_RD_DMA_DONE_INT_ENA | SPI_SLV_WR_BUF_DONE_INT_ENA | SPI_SLV_RD_BUF_DONE_INT_ENA)
 /// These 2 masks together will set SPI transaction to one line mode
@@ -36,15 +35,13 @@ extern "C" {
 #define SPI_LL_ONE_LINE_USER_MASK (SPI_FWRITE_QUAD | SPI_FWRITE_DUAL)
 /// Swap the bit order to its correct place to send
 #define HAL_SPI_SWAP_DATA_TX(data, len) HAL_SWAP32((uint32_t)(data) << (32 - len))
+#define SPI_LL_GET_HW(ID) (((ID)==1) ? &GPSPI2 : (((ID)==2) ? &GPSPI3 : NULL))
 
-#define SPI_LL_PERIPH_CS_NUM(i)   (((i)==0)? 2: (((i)==1)? 6: 3))
 #define SPI_LL_DMA_MAX_BIT_LEN    SPI_MS_DATA_BITLEN
 #define SPI_LL_CPU_MAX_BIT_LEN    (16 * 32)    //Fifo len: 16 words
-#define SPI_LL_TX_MINI_EXTRA_BITS 1            //Minimum length of TX non byte aligned data in bits
-#define SPI_LL_RX_MINI_EXTRA_BITS 1            //Minimum length of RX non byte aligned data in bits
 #define SPI_LL_MAX_PRE_DIV_NUM    (16)
-#define SPI_LL_PERIPH_BITWIDTH(host)    ((host == 2) ? 4 : 8) // Supported line mode: SPI3: 1, 2, 4, SPI1/2: 1, 2, 4, 8
-#define SPI_LL_SRC_PRE_DIV_MAX    (HP_SYS_CLKRST_REG_GPSPI2_MST_CLK_DIV_NUM + 1)   //source pre divider max before peripheral
+#define SPI_LL_SUPPORT_CLK_SRC_PRE_DIV      1  //clock source have divider before peripheral
+#define SPI_LL_SRC_PRE_DIV_MAX    (HP_SYS_CLKRST_REG_GPSPI2_MST_CLK_DIV_NUM + 1)   //source pre divider max
 #define SPI_LL_PERIPH_CLK_DIV_MAX ((SPI_CLKCNT_N + 1) * (SPI_CLKDIV_PRE + 1)) //peripheral internal maxmum clock divider
 #define SPI_LL_MOSI_FREE_LEVEL    1            //Default level after bus initialized
 
@@ -934,16 +931,13 @@ static inline void spi_ll_set_mosi_delay(spi_dev_t *hw, int delay_mode, int dela
 }
 
 /**
- * Determine and unify the default level of data line when bus idle
+ * Determine and unify the default level of mosi line when bus free
  *
  * @param hw Beginning address of the peripheral registers.
  */
-static inline void spi_ll_set_data_pin_idle_level(spi_dev_t *hw, bool level)
+static inline void spi_ll_set_mosi_free_level(spi_dev_t *hw, bool level)
 {
-    hw->ctrl.d_pol = level;
-    hw->ctrl.q_pol = level;
-    hw->ctrl.wp_pol = level;
-    hw->ctrl.hold_pol = level;
+    hw->ctrl.d_pol = level;     //set default level for MOSI only on IDLE state
 }
 
 /**
@@ -1066,17 +1060,6 @@ static inline void spi_ll_set_addr_bitlen(spi_dev_t *hw, int bitlen)
 {
     hw->user1.usr_addr_bitlen = bitlen - 1;
     hw->user.usr_addr = bitlen ? 1 : 0;
-}
-
-/**
- * Set the DDR mode for the SPI.
- *
- * @param hw     Beginning address of the peripheral registers.
- * @param enable True to enable DDR mode, false to disable.
- */
-static inline void spi_ll_enable_ddr_mode(spi_dev_t *hw, bool enable)
-{
-    hw->misc.clk_data_dtr_en = enable;
 }
 
 /**
@@ -1302,6 +1285,7 @@ static inline uint32_t spi_ll_slave_hd_get_last_addr(spi_dev_t *hw)
     return hw->slave1.slv_last_addr;
 }
 
+#undef SPI_LL_RST_MASK
 #undef SPI_LL_UNUSED_INT_MASK
 
 /**

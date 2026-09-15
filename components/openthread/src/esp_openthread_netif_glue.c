@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -45,6 +45,8 @@ typedef struct {
 static esp_openthread_netif_glue_t s_openthread_netif_glue = {
     .event_fd = -1,
 };
+
+ESP_EVENT_DEFINE_BASE(OPENTHREAD_EVENT);
 
 static QueueHandle_t s_packet_queue;
 static esp_netif_t *s_openthread_netif;
@@ -150,9 +152,6 @@ static esp_err_t process_thread_transmit(otInstance *instance)
 
     int ret = read(s_openthread_netif_glue.event_fd, &event, sizeof(event));
     assert(ret == sizeof(event));
-    if (s_packet_queue == NULL) {
-        return ESP_OK;
-    }
     while (xQueueReceive(s_packet_queue, &msg, 0) == pdTRUE) {
         if (msg) {
             otError ot_error = otIp6Send(esp_openthread_get_instance(), msg);
@@ -182,29 +181,9 @@ static esp_err_t openthread_netif_transmit(void *handle, void *buffer, size_t le
 {
     esp_err_t error = ESP_OK;
     otError ot_error = OT_ERROR_NONE;
-    otMessage *message = NULL;
 
     esp_openthread_task_switching_lock_acquire(portMAX_DELAY);
-
-    if (s_packet_queue == NULL) {
-        ESP_LOGW(OT_PLAT_LOG_TAG, "Thread netif transmit after glue deinit");
-        ExitNow(error = ESP_ERR_INVALID_STATE);
-    }
-
-    otMessageSettings settings = {};
-    switch (otThreadGetDeviceRole(esp_openthread_get_instance()))
-    {
-    case OT_DEVICE_ROLE_DISABLED:
-        settings.mLinkSecurityEnabled = false;
-        settings.mPriority = OT_MESSAGE_PRIORITY_LOW;
-        break;
-    default:
-        settings.mLinkSecurityEnabled = true;
-        settings.mPriority = OT_MESSAGE_PRIORITY_NORMAL;
-        break;
-    }
-
-    message = otIp6NewMessage(esp_openthread_get_instance(), &settings);
+    otMessage *message = otIp6NewMessage(esp_openthread_get_instance(), NULL);
     if (message == NULL) {
         ESP_LOGE(OT_PLAT_LOG_TAG, "Failed to allocate OpenThread message");
         ExitNow(error = ESP_ERR_NO_MEM);
@@ -250,8 +229,10 @@ void esp_openthread_register_meshcop_e_handler(esp_event_handler_t handler, bool
 {
     if (for_publish) {
         meshcop_e_publish_handler = handler;
-    } else {
+    } else if (!for_publish) {
         meshcop_e_remove_handler = handler;
+    } else {
+        ESP_ERROR_CHECK(ESP_FAIL);
     }
 }
 
@@ -350,8 +331,6 @@ void *esp_openthread_netif_glue_init(const esp_openthread_platform_config_t *con
     s_openthread_netif_glue.event_fd = eventfd(0, 0);
     if (s_openthread_netif_glue.event_fd < 0) {
         ESP_LOGE(OT_PLAT_LOG_TAG, "Failed to create event fd for Thread netif");
-        vQueueDelete(s_packet_queue);
-        s_packet_queue = NULL;
         ExitNow(error = ESP_FAIL);
     }
     s_openthread_netif_glue.base.post_attach = openthread_netif_post_attach;
@@ -368,28 +347,22 @@ exit:
 void esp_openthread_netif_glue_deinit(void)
 {
     otInstance *instance = esp_openthread_get_instance();
-    if (s_openthread_netif) {
-        esp_netif_action_stop(s_openthread_netif, OPENTHREAD_EVENT, OPENTHREAD_EVENT_STOP, NULL);
-        s_openthread_netif = NULL;
+    otIp6SetAddressCallback(instance, NULL, NULL);
+    otIp6SetReceiveCallback(instance, NULL, NULL);
+    if (s_packet_queue) {
+        vQueueDelete(s_packet_queue);
+        s_packet_queue = NULL;
     }
-    unregister_openthread_event_handlers();
-    esp_openthread_platform_workflow_unregister(netif_glue_workflow);
     if (s_openthread_netif_glue.event_fd >= 0) {
         close(s_openthread_netif_glue.event_fd);
         s_openthread_netif_glue.event_fd = -1;
     }
-    otIp6SetReceiveCallback(instance, NULL, NULL);
-    otIp6SetAddressCallback(instance, NULL, NULL);
-    if (s_packet_queue) {
-        otMessage *msg = NULL;
-        while (xQueueReceive(s_packet_queue, &msg, 0) == pdTRUE) {
-            if (msg) {
-                otMessageFree(msg);
-            }
-        }
-        vQueueDelete(s_packet_queue);
-        s_packet_queue = NULL;
+    if (esp_event_post(OPENTHREAD_EVENT, OPENTHREAD_EVENT_STOP, NULL, 0, 0) != ESP_OK) {
+        ESP_LOGE(OT_PLAT_LOG_TAG, "Failed to stop OpenThread netif");
     }
+    s_openthread_netif = NULL;
+    unregister_openthread_event_handlers();
+    esp_openthread_platform_workflow_unregister(netif_glue_workflow);
 }
 
 void esp_openthread_netif_glue_update(esp_openthread_mainloop_context_t *mainloop)

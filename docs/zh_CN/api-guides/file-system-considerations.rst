@@ -101,7 +101,8 @@ FatFS 是最适用于常见应用的文件系统，如文件/目录访问、数�
 
 - `FatFS 源站点 <http://elm-chan.org/fsw/ff/>`_
 - 更多关于 `FAT 表大小限制 <https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#Size_limits>`_
-- :ref:`fatfs-mount-and-use`
+- :ref:`using-fatfs-with-vfs`
+- :ref:`using-fatfs-with-vfs-and-sdcards`
 - ESP-IDF FatFS 工具： :ref:`FatFS 分区生成器 <fatfs-partition-generator>` 和 :ref:`FatFS 分区分析器 <fatfs-partition-analyzer>`
 
 **示例:**

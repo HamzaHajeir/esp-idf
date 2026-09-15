@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -7,7 +7,6 @@
 /********************************************************************************
 *
 * This file is for gatt server. It can send adv data, and get connected by client.
-* Only one BLE ACL connection is supported (see sdkconfig.defaults: CONFIG_BT_ACL_CONNECTIONS=1).
 *
 *********************************************************************************/
 
@@ -66,7 +65,6 @@ typedef struct {
     int                     prepare_len;
 } prepare_type_env_t;
 
-/* This demo targets one connected client; a single prepare-write buffer is enough. */
 static prepare_type_env_t prepare_write_env;
 
 //#define CONFIG_SET_RAW_ADV_DATA
@@ -103,8 +101,8 @@ static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp        = false,
     .include_name        = true,
     .include_txpower     = true,
-    .min_interval        = ESP_BLE_GAP_CONN_ITVL_MS(40),
-    .max_interval        = ESP_BLE_GAP_CONN_ITVL_MS(80),
+    .min_interval        = 0x20,
+    .max_interval        = 0x40,
     .appearance          = 0x00,
     .manufacturer_len    = 0,    //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data = NULL, //test_manufacturer,
@@ -120,8 +118,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .set_scan_rsp        = true,
     .include_name        = true,
     .include_txpower     = true,
-    .min_interval        = ESP_BLE_GAP_CONN_ITVL_MS(40),
-    .max_interval        = ESP_BLE_GAP_CONN_ITVL_MS(80),
+    .min_interval        = 0x20,
+    .max_interval        = 0x40,
     .appearance          = 0x00,
     .manufacturer_len    = 0, //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data = NULL, //&test_manufacturer[0],
@@ -134,8 +132,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
 #endif /* CONFIG_SET_RAW_ADV_DATA */
 
 static esp_ble_adv_params_t adv_params = {
-    .adv_int_min         = ESP_BLE_GAP_ADV_ITVL_MS(40),
-    .adv_int_max         = ESP_BLE_GAP_ADV_ITVL_MS(40),
+    .adv_int_min         = 0x40,
+    .adv_int_max         = 0x40,
     .adv_type            = ADV_TYPE_IND,
     .own_addr_type       = BLE_ADDR_TYPE_PUBLIC,
     .channel_map         = ADV_CHNL_ALL,
@@ -443,11 +441,7 @@ void example_prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t 
     memcpy(prepare_write_env->prepare_buf + param->write.offset,
            param->write.value,
            param->write.len);
-    /* Extent of prepared value: max(offset+len), not sum(len) — overlaps/retries must not inflate length. */
-    uint32_t span_end = (uint32_t)param->write.offset + (uint32_t)param->write.len;
-    if (span_end > (uint32_t)prepare_write_env->prepare_len) {
-        prepare_write_env->prepare_len = (int)span_end;
-    }
+    prepare_write_env->prepare_len += param->write.len;
 
 }
 uint8_t long_write[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
@@ -568,7 +562,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
       	    break;
         case ESP_GATTS_EXEC_WRITE_EVT:
             // the length of gattc prepare write data must be less than GATTS_EXAMPLE_CHAR_VAL_LEN_MAX.
-            ESP_LOGI(EXAMPLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT, Length=%d", prepare_write_env.prepare_len);
+            ESP_LOGI(EXAMPLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT, Length=%d",  prepare_write_env.prepare_len);
             example_exec_write_event_env(&prepare_write_env, param);
             break;
         case ESP_GATTS_MTU_EVT:
@@ -587,11 +581,6 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             break;
         case ESP_GATTS_DISCONNECT_EVT:
             ESP_LOGI(EXAMPLE_TAG, "ESP_GATTS_DISCONNECT_EVT, reason = %d", param->disconnect.reason);
-            if (prepare_write_env.prepare_buf) {
-                free(prepare_write_env.prepare_buf);
-                prepare_write_env.prepare_buf = NULL;
-            }
-            prepare_write_env.prepare_len = 0;
             esp_ble_gap_start_advertising(&adv_params);
             break;
         case ESP_GATTS_CREAT_ATTR_TAB_EVT:{

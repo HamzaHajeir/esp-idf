@@ -21,10 +21,6 @@
 #include "esp_cache.h"
 #include "esp_private/sdmmc_common.h"
 #include "freertos/FreeRTOS.h"
-#include "soc/soc_caps.h"
-#if SOC_SDMMC_HOST_SUPPORTED
-#include "hal/sdmmc_ll.h"
-#endif
 
 #define SDMMC_DELAY_NUMS_MAX 10
 
@@ -120,7 +116,7 @@ esp_err_t sdmmc_init_sd_ssr(sdmmc_card_t* card)
     // read SD status register
     err = sdmmc_send_app_cmd(card, &cmd);
     if (err != ESP_OK) {
-        heap_caps_free(sd_ssr);
+        free(sd_ssr);
         ESP_LOGE(TAG, "%s: sdmmc_send_cmd returned 0x%x", __func__, err);
         return err;
     }
@@ -129,7 +125,7 @@ esp_err_t sdmmc_init_sd_ssr(sdmmc_card_t* card)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "%s: error sdmmc_decode_ssr returned 0x%x", __func__, err);
     }
-    heap_caps_free(sd_ssr);
+    free(sd_ssr);
     return err;
 }
 
@@ -154,7 +150,7 @@ esp_err_t sdmmc_init_sd_wait_data_ready(sdmmc_card_t* card)
     /* Wait for the card to be ready for data transfers */
     uint32_t status = 0;
     uint32_t count = 0;
-    uint32_t poll_period_us = SDMMC_READY_POLL_PERIOD_START_US;
+    int64_t yield_delay_us = 100 * 1000; // initially 100ms
     int64_t t0 = esp_timer_get_time();
     int64_t t1 = 0;
     while (!host_is_spi(card) && !(status & MMC_R1_READY_FOR_DATA)) {
@@ -163,7 +159,10 @@ esp_err_t sdmmc_init_sd_wait_data_ready(sdmmc_card_t* card)
             ESP_LOGE(TAG, "init wait data ready - timeout");
             return ESP_ERR_TIMEOUT;
         }
-        sdmmc_poll_delay_and_backoff(&poll_period_us);
+        if (t1 - t0 > yield_delay_us) {
+            yield_delay_us *= 2;
+            vTaskDelay(1);
+        }
         esp_err_t err = sdmmc_send_cmd_send_status(card, &status);
         if (err != ESP_OK) {
             return err;
@@ -277,9 +276,9 @@ esp_err_t sdmmc_enter_higher_speed_mode(sdmmc_card_t* card)
         err = (*card->host.set_bus_ddr_mode)(card->host.slot, true);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "%s: failed to switch bus to DDR mode (0x%x)", __func__, err);
-            goto out;
+            return err;
         }
-    } else if (card->host.max_freq_khz >= SDMMC_FREQ_SDR104) {
+    } else if (card->host.max_freq_khz == SDMMC_FREQ_SDR104) {
         //UHS-I SDR104
         ESP_LOGV(TAG, "%s: to switch to SDR104", __func__);
         if ((supported_mask & BIT(SD_ACCESS_MODE_SDR104)) == 0) {
@@ -291,7 +290,7 @@ esp_err_t sdmmc_enter_higher_speed_mode(sdmmc_card_t* card)
             ESP_LOGD(TAG, "%s: sdmmc_send_cmd_switch_func (2) returned 0x%x", __func__, err);
             goto out;
         }
-    } else if (card->host.max_freq_khz >= SDMMC_FREQ_SDR50) {
+    } else if (card->host.max_freq_khz == SDMMC_FREQ_SDR50) {
         //UHS-I SDR50
         ESP_LOGV(TAG, "%s: to switch to SDR50", __func__);
         if ((supported_mask & BIT(SD_ACCESS_MODE_SDR50)) == 0) {
@@ -317,7 +316,7 @@ esp_err_t sdmmc_enter_higher_speed_mode(sdmmc_card_t* card)
     }
 
 out:
-    heap_caps_free(response);
+    free(response);
     return err;
 }
 
@@ -397,7 +396,7 @@ static esp_err_t read_tuning_block(sdmmc_card_t *card)
 
     uint32_t status = 0;
     size_t count = 0;
-    uint32_t poll_period_us = SDMMC_READY_POLL_PERIOD_START_US;
+    int64_t yield_delay_us = 100 * 1000; // initially 100ms
     int64_t t0 = esp_timer_get_time();
     int64_t t1 = 0;
     while (!host_is_spi(card) && !(status & MMC_R1_READY_FOR_DATA)) {
@@ -406,7 +405,10 @@ static esp_err_t read_tuning_block(sdmmc_card_t *card)
             ESP_LOGW(TAG, "read sectors dma - timeout");
             return ESP_ERR_TIMEOUT;
         }
-        sdmmc_poll_delay_and_backoff(&poll_period_us);
+        if (t1 - t0 > yield_delay_us) {
+            yield_delay_us *= 2;
+            vTaskDelay(1);
+        }
         ret = sdmmc_send_cmd_send_status(card, &status);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "%s: sdmmc_send_cmd_send_status returned 0x%x", __func__, ret);
@@ -439,7 +441,7 @@ esp_err_t sdmmc_do_timing_tuning(sdmmc_card_t *card, sdmmc_delay_mode_t delay_mo
     int results[SDMMC_DELAY_NUMS_MAX] = {};
     int start_delay_item = (delay_mode == SDMMC_DELAY_MODE_PHASE) ? SDMMC_DELAY_PHASE_0 : SDMMC_DELAY_LINE_0;
     int slot = card->host.slot;
-    int delay_total_nums = 5;
+    int delay_total_nums = 4;
     if (delay_mode == SDMMC_DELAY_MODE_PHASE) {
         if (card->host.max_freq_khz == SDMMC_FREQ_SDR104) {
             delay_total_nums = SDMMC_DELAY_PHASE_AUTO;
@@ -509,7 +511,7 @@ esp_err_t sdmmc_select_driver_strength(sdmmc_card_t *card, sdmmc_driver_strength
     ESP_GOTO_ON_FALSE(supported_mask == driver_strength, ESP_ERR_INVALID_ARG, out, TAG, "fail to switch to type 0x%x", driver_strength);
 
 out:
-    heap_caps_free(response);
+    free(response);
     return ret;
 }
 
@@ -565,15 +567,9 @@ esp_err_t sdmmc_enable_hs_mode_and_check(sdmmc_card_t* card)
 
 static esp_err_t sdmmc_init_sd_uhs1_volt_sw_cb(void* arg, int voltage_mv)
 {
-    ESP_LOGV(TAG, "%s: Voltage switch callback (%umv)", __func__, voltage_mv);
-
-#if SOC_SDMMC_IO_UHS_POWER_EXTERNAL
-    sdmmc_ll_switch_io_power_control_src(SDMMC_LL_IO_POWER_CONTROL_SRC_LDO);
-    return ESP_OK;
-#else
     sdmmc_card_t* card = (sdmmc_card_t*)arg;
+    ESP_LOGV(TAG, "%s: Voltage switch callback (%umv)", __func__, voltage_mv);
     return sd_pwr_ctrl_set_io_voltage(card->host.pwr_ctrl_handle, voltage_mv);
-#endif
 }
 
 esp_err_t sdmmc_init_sd_uhs1(sdmmc_card_t* card)
@@ -616,7 +612,7 @@ esp_err_t sdmmc_select_current_limit(sdmmc_card_t *card, sdmmc_current_limit_t c
     ESP_GOTO_ON_FALSE(supported_mask == current_limit, ESP_ERR_INVALID_ARG, out, TAG, "fail to switch to type 0x%x", current_limit);
 
 out:
-    heap_caps_free(response);
+    free(response);
     return ret;
 }
 
@@ -647,11 +643,6 @@ esp_err_t sdmmc_init_spi_crc(sdmmc_card_t* card)
      */
     assert(host_is_spi(card));
     esp_err_t err = sdmmc_send_cmd_crc_on_off(card, true);
-    if (err == ESP_ERR_NOT_SUPPORTED) { // Some cards fail to enable CRC on the first try, trying again
-       ESP_LOGD(TAG, "%s: enabling CRC failed with 0x%x, trying again", __func__, err);
-       vTaskDelay(SDMMC_INIT_SPI_CRC_RETRY_DELAY_MS / portTICK_PERIOD_MS);
-       err = sdmmc_send_cmd_crc_on_off(card, true);
-    }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "%s: sdmmc_send_cmd_crc_on_off returned 0x%x", __func__, err);
         return err;

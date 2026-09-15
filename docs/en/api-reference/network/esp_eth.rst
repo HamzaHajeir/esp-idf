@@ -167,13 +167,6 @@ The Ethernet driver is composed of two parts: MAC and PHY.
 
             If the RMII clock mode is configured to :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_EXT_IN`, {IDF_TARGET_SOC_REF_CLK_IN_GPIO} can be selected as input pin for the ``REF_CLK`` signal via IO_MUX.
 
-    .. only:: esp32p4
-
-        .. warning::
-            If the RMII clock mode is configured to :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_OUT`, the EMAC derives the 50 MHz RMII reference clock from the MPLL via an integer divider. When PSRAM is also enabled, both peripherals share the MPLL, and PSRAM locks it to a frequency determined by its speed configuration. If PSRAM speed is configured to 80 MHz (:menuitem:`CONFIG_SPIRAM_SPEED`), the MPLL runs at 320 MHz, and no integer divisor of 320 MHz can produce 50 MHz within the required ±50 ppm tolerance (the closest candidate is 320 / 6 ≈ 53.33 MHz). EMAC initialization will fail in this configuration.
-
-            If you must use 80 MHz PSRAM speed, provide the ``REF_CLK`` from an external source (PHY or oscillator) and configure :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_EXT_IN` instead.
-
     .. only:: not SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
 
         .. warning::
@@ -265,9 +258,9 @@ Basic common configuration for MAC layer is described in :cpp:class:`eth_mac_con
 
     .. list::
 
-        * **Short and frequent frames dominate network traffic**: If your network traffic primarily consists of very short and frequently transmitted/received frames, you may observe issues such as lower-than-expected throughput (despite the rated 100 Mbps) and missed frames during reception. On transmission, the socket send API may return ``errno`` equal to ``ENOMEM``, accompanied by the `insufficient TX buffer size` message (if debug log level is enabled). This is because the default memory configuration is optimized for larger frames; :menuitem:`CONFIG_ETH_DMA_BUFFER_SIZE` is set to 512 bytes by default to ensure a better *data buffer* to *descriptor* size overhead ratio. The solution is to increase :menuitem:`CONFIG_ETH_DMA_RX_BUFFER_NUM` or :menuitem:`CONFIG_ETH_DMA_TX_BUFFER_NUM`. Additionally, consider decreasing :menuitem:`CONFIG_ETH_DMA_BUFFER_SIZE` to match the typical frame size in your network to maintain a reasonable memory footprint of the Ethernet driver.
+        * **Short and frequent frames dominate network traffic**: If your network traffic primarily consists of very short and frequently transmitted/received frames, you may observe issues such as lower-than-expected throughput (despite the rated 100 Mbps) and missed frames during reception. On transmission, the socket send API may return ``errno`` equal to ``ENOMEM``, accompanied by the `insufficient TX buffer size` message (if debug log level is enabled). This is because the default memory configuration is optimized for larger frames; :ref:`CONFIG_ETH_DMA_BUFFER_SIZE` is set to 512 bytes by default to ensure a better *data buffer* to *descriptor* size overhead ratio. The solution is to increase :ref:`CONFIG_ETH_DMA_RX_BUFFER_NUM` or :ref:`CONFIG_ETH_DMA_TX_BUFFER_NUM`. Additionally, consider decreasing :ref:`CONFIG_ETH_DMA_BUFFER_SIZE` to match the typical frame size in your network to maintain a reasonable memory footprint of the Ethernet driver.
 
-        * **High throughput leads to buffer exhaustion**: If the socket send API intermittently returns ``errno`` equal to ``ENOMEM``, accompanied by the `insufficient TX buffer size` message (if debug log level is enabled), and the throughput is close to the rated 100 Mbps, this likely indicates nearing hardware limitations. In such case, the hardware cannot keep up with the transmission requests. The solution is to increase :menuitem:`CONFIG_ETH_DMA_TX_BUFFER_NUM` to buffer more frames and mitigate temporary peaks in transmission requests. However, this will not help if the requested traffic consistently exceeds the rated throughput. In such situations, the only solution is to limit the bandwidth by software means at the application level.
+        * **High throughput leads to buffer exhaustion**: If the socket send API intermittently returns ``errno`` equal to ``ENOMEM``, accompanied by the `insufficient TX buffer size` message (if debug log level is enabled), and the throughput is close to the rated 100 Mbps, this likely indicates nearing hardware limitations. In such case, the hardware cannot keep up with the transmission requests. The solution is to increase :ref:`CONFIG_ETH_DMA_TX_BUFFER_NUM` to buffer more frames and mitigate temporary peaks in transmission requests. However, this will not help if the requested traffic consistently exceeds the rated throughput. In such situations, the only solution is to limit the bandwidth by software means at the application level.
 
 Configuration for PHY is described in :cpp:class:`eth_phy_config_t`, including:
 
@@ -548,36 +541,20 @@ The following functions should only be invoked after the Ethernet driver has bee
 
     ::
 
-        esp_eth_mac_t *mac;
-        esp_eth_get_mac_instance(eth_hndl, &mac);
-
         // Enable hardware time stamping
-        eth_mac_ptp_config_t ptp_cfg = ETH_MAC_ESP_PTP_DEFAULT_CONFIG();
-        esp_eth_mac_ptp_enable(mac, &ptp_cfg);
+        bool ptp_enable = true;
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_PTP_ENABLE, &ptp_enable);
 
         // Get current EMAC time
         eth_mac_time_t ptp_time;
-        esp_eth_mac_get_ptp_time(mac, &ptp_time);
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_G_PTP_TIME, &ptp_time);
 
         // Set EMAC time
         ptp_time = {
             .seconds = 42,
             .nanoseconds = 0
         };
-        esp_eth_mac_set_ptp_time(mac, &ptp_time);
-
-    The PTP module be can configured as follows:
-
-    .. list::
-        * :cpp:member:`eth_mac_ptp_config_t::clk_src`: Clock source for PTP. Select one of the clock sources offered by the :cpp:type:`soc_periph_emac_ptp_clk_src_t` enumeration.
-
-        * :cpp:member:`eth_mac_ptp_config_t::clk_src_period_ns`: Period of the clock source for PTP in nanoseconds. For example, if the clock source is 40MHz, the period is 25ns.
-
-        * :cpp:member:`eth_mac_ptp_config_t::required_accuracy_ns`: Required accuracy for PTP in nanoseconds. The required accuracy must be worse than clock source for PTP. For example, if the clock source is 40MHz (25ns period), the required accuracy is 40ns.
-
-        * :cpp:member:`eth_mac_ptp_config_t::roll_type`: Rollover mode (digital or binary) for subseconds register. The binary rollover mode is recommended as it provides a more precise time synchronization.
-
-    Time stamps for transmitted and received frames can be accessed via the last argument of the registered :cpp:member:`esp_eth_config_t::stack_input_info` function for the receive path, and via the ``ctrl`` argument of the :cpp:func:`esp_eth_transmit_ctrl_bufs` function for the transmit path. However, a more user-friendly approach to retrieve time stamp information in user space is by utilizing the L2 TAP :ref:`Extended Buffer <esp_netif_l2tap_ext_buff>` mechanism.
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_S_PTP_TIME, &ptp_time);
 
     You have an option to schedule event at precise point in time by registering callback function and configuring a target time when the event is supposed to be fired. Note that the callback function is then called from ISR context so it should be as brief as possible.
 
@@ -586,21 +563,16 @@ The following functions should only be invoked after the Ethernet driver has bee
     ::
 
         // Register the callback function
-        esp_eth_mac_set_target_time_cb(mac, ts_callback);
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_S_TARGET_CB, ts_callback);
 
         // Set time when event is triggered
         eth_mac_time_t mac_target_time = {
             .seconds = 42,
             .nanoseconds = 0
         };
-        esp_eth_mac_set_target_time(mac, &mac_target_time);
+        esp_eth_ioctl(s_eth_hndl, ETH_MAC_ESP_CMD_S_TARGET_TIME, &mac_target_time);
 
-    Alternatively, the PTP-synchronized time can be exposed via a PPS (Pulse-Per-Second) signal on a GPIO. This provides a precise hardware time reference that can be used to synchronize external devices, align independent clock domains, or drive time-critical processes outside the ESP32 chip series. As the name suggests, the PPS signal is a pulse that occurs once per second by default. However, the frequency can be adjusted by setting the PPS0 output frequency using the :cpp:func:`esp_eth_mac_set_pps_out_freq` function. The command accepts an integer value in the range of 0-16384, where 0 = 1PPS (narrow pulse), other values generate square clock signal. The clock frequency must be power of two and less than or equal to 16384 Hz. Note that due to non-linear toggling of bits in the digital rollover mode, the actual frequency is an average number (duty cycle differs from 50% in overall one second period). This behavior does not apply to the binary rollover mode and so this mode is recommended. The PPS signal can be configured to be output at a GPIO using the :cpp:func:`esp_eth_mac_set_pps_out_gpio` function.
-
-    .. only:: esp32p4
-
-        .. note::
-            The PPS signal output on GPIO pin is available starting from ESP32-P4 silicon revision 3.
+    Time stamps for transmitted and received frames can be accessed via the last argument of the registered :cpp:member:`esp_eth_config_t::stack_input_info` function for the receive path, and via the ``ctrl`` argument of the :cpp:func:`esp_eth_transmit_ctrl_vargs` function for the transmit path. However, a more user-friendly approach to retrieve time stamp information in user space is by utilizing the L2 TAP :ref:`Extended Buffer <esp_netif_l2tap_ext_buff>` mechanism.
 
 .. _flow-control:
 
@@ -682,20 +654,6 @@ The majority of PHY management functionality required by the ESP-IDF Ethernet dr
 4. Initialize parent IEEE 802.3 object and re-assign chip-specific management call-back functions.
 
 Once you finish the new custom PHY driver implementation, consider sharing it among other users via `ESP Component Registry <https://components.espressif.com/>`_.
-
-.. _ethernet-sublayer:
-
-Ethernet Sublayer
-^^^^^^^^^^^^^^^^^
-
-The Ethernet sublayer is an optional layer between one physical Ethernet driver (``esp_eth_handle_t``) and one or more ``esp_netif`` instances. It owns the driver RX input path, distributes Ethernet events to attached interfaces, and can perform mid-path frame processing such as 802.1Q VLAN multiplexing and demultiplexing.
-
-.. note::
-    The Ethernet sublayer is an **experimental** feature. Enable :menuitem:`CONFIG_IDF_EXPERIMENTAL_FEATURES` and :menuitem:`CONFIG_ETH_SUBLAYER_SUPPORT` to use it. The API is under active development and may change in future ESP-IDF releases without a deprecation period.
-
-For architecture details, configuration, and usage guidance, see :component_file:`esp_eth/src/sublayer/README.md`.
-
-A working demonstration is available in :example:`ethernet/sublayer`, which shares one Ethernet driver between an untagged ``esp_netif`` and a tagged VLAN ``esp_netif``.
 
 .. ---------------------------- API Reference ----------------------------------
 

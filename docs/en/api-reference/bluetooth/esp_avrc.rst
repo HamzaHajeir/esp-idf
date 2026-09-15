@@ -1,10 +1,10 @@
-Bluetooth® AVRCP API
-====================
+Bluetooth® AVRCP APIs
+=====================
 
 Overview
 --------
 
-AVRCP (Audio/Video Remote Control Profile) enables remote control of audio and video devices over Bluetooth, allowing users to manage playback (play, pause, next/previous track), adjust volume, and retrieve media metadata.
+Bluetooth AVRCP reference APIs.
 
 Application Examples
 --------------------

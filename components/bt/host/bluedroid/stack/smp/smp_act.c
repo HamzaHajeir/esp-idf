@@ -20,20 +20,9 @@
 #include "device/interop.h"
 #include "common/bt_target.h"
 #include "btm_int.h"
-#if (BLE_INCLUDED == TRUE && SMP_INCLUDED == TRUE && BLE_PERIPH_PSEUDO_ADDR_BOND == TRUE)
-#include "btm_ble_pseudo.h"
-#endif
 #include "stack/l2c_api.h"
 #include "smp_int.h"
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-#include "psa/crypto.h"
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-#include "tinycrypt/ecc_dh.h"
-#include "tinycrypt/ecc.h"
-#include "tinycrypt/constants.h"
-#else
 #include "p_256_ecc_pp.h"
-#endif
 //#include "utils/include/bt_utils.h"
 
 #if SMP_INCLUDED == TRUE
@@ -260,9 +249,13 @@ void smp_send_pair_req(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
     SMP_TRACE_DEBUG("%s", __func__);
 
-    /* Any existing bond is replaced only once the new pairing is authenticated,
-       see smp_check_auth_req(). */
-
+#if (BLE_INCLUDED == TRUE)
+    tBTM_SEC_DEV_REC *p_dev_rec = btm_find_dev (p_cb->pairing_bda);
+    /* erase all keys when master sends pairing req*/
+    if (p_dev_rec) {
+        btm_sec_clear_ble_keys(p_dev_rec);
+    }
+#endif  ///BLE_INCLUDED == TRUE
     /* do not manipulate the key, let app decide,
        leave out to BTM to mandate key distribution for bonding case */
     smp_send_cmd(SMP_OPCODE_PAIRING_REQ, p_cb);
@@ -405,7 +398,7 @@ void smp_send_id_info(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
     smp_send_cmd(SMP_OPCODE_ID_ADDR, p_cb);
 
 #if (BLE_INCLUDED == TRUE)
-    tBTM_LE_KEY_VALUE   le_key = {0};
+    tBTM_LE_KEY_VALUE   le_key;
     if ((p_cb->peer_auth_req & SMP_AUTH_BOND) && (p_cb->loc_auth_req & SMP_AUTH_BOND)) {
         btm_sec_save_le_key(p_cb->pairing_bda, BTM_LE_KEY_LID,
                             &le_key, TRUE);
@@ -481,13 +474,6 @@ void smp_proc_sec_req(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
             reason = SMP_PAIR_AUTH_FAIL;
             smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
         } else {
-#if (BLE_INCLUDED == TRUE && BLE_SMP_HARDENED_REPAIRING == TRUE)
-            /* Remember what the peer asked for here: peer_auth_req is overwritten by the
-               Pairing Response that follows, and smp_repairing_is_allowed() has to compare
-               the two to catch a peer that announces a high level and then downgrades. */
-            p_cb->sec_req_rcvd = TRUE;
-            p_cb->sec_req_auth_req = auth_req;
-#endif
             /* initialize local i/r key to be default keys */
             p_cb->peer_auth_req = auth_req;
             p_cb->local_r_key = p_cb->local_i_key = SMP_SEC_DEFAULT_KEY ;
@@ -528,17 +514,8 @@ void smp_proc_sec_grant(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 *******************************************************************************/
 void smp_proc_pair_fail(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
-    UINT8 reason = *(UINT8 *)p_data;
-
-    SMP_TRACE_DEBUG("%s reason=0x%02x", __func__, reason);
-    /* A peer may send a reserved or out-of-range reason code; normalize it so
-     * upper layers always receive a defined pairing failure status. */
-    if (reason == SMP_SUCCESS || reason > SMP_MAX_FAIL_RSN_PER_SPEC) {
-        SMP_TRACE_WARNING("%s invalid pairing fail reason 0x%02x", __func__, reason);
-        reason = SMP_PAIR_FAIL_UNKNOWN;
-    }
-    p_cb->status = reason;
-    p_cb->failure = reason;
+    SMP_TRACE_DEBUG("%s", __func__);
+    p_cb->status = *(UINT8 *)p_data;
 }
 
 /*******************************************************************************
@@ -577,11 +554,13 @@ void smp_proc_pair_cmd(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
     UINT8   *p = (UINT8 *)p_data;
     UINT8   reason = SMP_ENC_KEY_SIZE;
+    tBTM_SEC_DEV_REC *p_dev_rec = btm_find_dev (p_cb->pairing_bda);
 
     SMP_TRACE_DEBUG("%s", __func__);
-
-    /* Any existing bond is replaced only once the new pairing is authenticated, see
-       smp_check_auth_req(). An unauthenticated Pairing Request must not drop the bond. */
+    /* erase all keys if it is slave proc pairing req*/
+    if (p_dev_rec && (p_cb->role == HCI_ROLE_SLAVE)) {
+        btm_sec_clear_ble_keys(p_dev_rec);
+    }
 
     p_cb->flags |= SMP_PAIR_FLAG_ENC_AFTER_PAIR;
 
@@ -597,7 +576,6 @@ void smp_proc_pair_cmd(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
         smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
         return;
     }
-
     p_cb->accept_specified_sec_auth = bta_dm_co_ble_get_accept_auth_enable();
     p_cb->origin_loc_auth_req = bta_dm_co_ble_get_auth_req();
     if (p_cb->role == HCI_ROLE_SLAVE) {
@@ -627,15 +605,6 @@ void smp_proc_pair_cmd(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
                 auth |= SMP_AUTH_GEN_BOND;
             }
             p_cb->auth_mode = auth;
-#if (BLE_INCLUDED == TRUE && BLE_SMP_HARDENED_REPAIRING == TRUE)
-            if (!smp_repairing_is_allowed(p_cb, &reason)) {
-                if (BTM_IsAclConnectionUp(p_cb->pairing_bda, BT_TRANSPORT_LE)) {
-                    btm_remove_acl (p_cb->pairing_bda, BT_TRANSPORT_LE);
-                }
-                smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-                return;
-            }
-#endif
             if (p_cb->accept_specified_sec_auth) {
                 if ((auth & p_cb->origin_loc_auth_req) != p_cb->origin_loc_auth_req ) {
                     SMP_TRACE_ERROR("%s pairing failed - slave requires auth is 0x%x but peer auth is 0x%x local auth is 0x%x",
@@ -675,15 +644,6 @@ void smp_proc_pair_cmd(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
             auth |= SMP_AUTH_GEN_BOND;
         }
         p_cb->auth_mode = auth;
-#if (BLE_INCLUDED == TRUE && BLE_SMP_HARDENED_REPAIRING == TRUE)
-        if (!smp_repairing_is_allowed(p_cb, &reason)) {
-            if (BTM_IsAclConnectionUp(p_cb->pairing_bda, BT_TRANSPORT_LE)) {
-                btm_remove_acl (p_cb->pairing_bda, BT_TRANSPORT_LE);
-            }
-            smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-            return;
-        }
-#endif
         if (p_cb->accept_specified_sec_auth) {
             if ((auth & p_cb->origin_loc_auth_req) != p_cb->origin_loc_auth_req ) {
                 SMP_TRACE_ERROR("%s pairing failed - master requires auth is 0x%x but peer auth is 0x%x local auth is 0x%x",
@@ -811,78 +771,10 @@ void smp_process_pairing_public_key(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
     }
     /* In order to prevent the x and y coordinates of the public key from being modified,
        we need to check whether the x and y coordinates are on the given elliptic curve. */
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-    {
-        /*
-         * PSA Crypto validates the public key when importing.
-         * We try to import the peer's public key as a ECC public key.
-         * If import fails, the key is invalid.
-         */
-        psa_status_t status;
-        psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-        psa_key_id_t key_id = 0;
-        UINT8 pub_be[BT_OCTET32_LEN + BT_OCTET32_LEN + 1];  /* 0x04 || X (32 bytes) || Y (32 bytes) */
-
-        /* Construct peer public key in uncompressed format (0x04 || X || Y) */
-        pub_be[0] = 0x04;
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            pub_be[1 + i] = p_cb->peer_publ_key.x[BT_OCTET32_LEN - 1 - i];
-            pub_be[33 + i] = p_cb->peer_publ_key.y[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Try to import as public key - PSA will validate it's on the curve */
-        psa_set_key_type(&key_attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
-        psa_set_key_bits(&key_attributes, 256);
-        psa_set_key_usage_flags(&key_attributes, 0);  /* No usage needed, just validating */
-
-        status = psa_import_key(&key_attributes, pub_be, sizeof(pub_be), &key_id);
-        psa_reset_key_attributes(&key_attributes);
-
-        if (status != PSA_SUCCESS) {
-            SMP_TRACE_ERROR("%s, Invalid Public key. psa_import_key failed: %d\n", __func__, status);
-            reason = SMP_INVALID_PARAMETERS;
-            smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-            return;
-        }
-
-        /* Key is valid, clean up */
-        psa_destroy_key(key_id);
-    }
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-    {
-        /*
-         * TinyCrypt validates the public key using uECC_valid_public_key.
-         * TinyCrypt expects public key in format: X (32 bytes) || Y (32 bytes), no prefix.
-         */
-        UINT8 pub_be[64];  /* TinyCrypt format: X (32 bytes) || Y (32 bytes), no prefix */
-
-        /* Convert peer public key from little-endian to big-endian */
-        /* TinyCrypt format: X (32 bytes) || Y (32 bytes), no prefix */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            pub_be[i] = p_cb->peer_publ_key.x[BT_OCTET32_LEN - 1 - i];
-            pub_be[BT_OCTET32_LEN + i] = p_cb->peer_publ_key.y[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Validate public key - TinyCrypt will check if it's on the curve */
-        /* uECC_valid_public_key returns 0 if valid, negative value if invalid */
-        if (uECC_valid_public_key(pub_be, uECC_secp256r1()) < 0) {
-            SMP_TRACE_ERROR("%s, Invalid Public key. uECC_valid_public_key failed\n", __func__);
-            reason = SMP_INVALID_PARAMETERS;
-            smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-            memset(pub_be, 0, sizeof(pub_be));
-            return;
-        }
-
-        /* Clear sensitive data from stack */
-        memset(pub_be, 0, sizeof(pub_be));
-    }
-#else
     if (!ECC_CheckPointIsInElliCur_P256((Point *)&p_cb->peer_publ_key)) {
         SMP_TRACE_ERROR("%s, Invalid Public key.", __func__);
         smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-        return;
     }
-#endif /* SMP_CRYPTO_MBEDTLS */
     p_cb->flags |= SMP_PAIR_FLAG_HAVE_PEER_PUBL_KEY;
 
     smp_wait_for_both_public_keys(p_cb, NULL);
@@ -1218,28 +1110,6 @@ void smp_proc_id_addr(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
     }
 #endif  ///BLE_INCLUDED == TRUE
 
-#if (BLE_INCLUDED == TRUE && SMP_INCLUDED == TRUE && BLE_PERIPH_PSEUDO_ADDR_BOND == TRUE)
-    /* Dual-identity bond isolation: the link may have been keyed earlier from a
-     * transient RPA. Now that the peer's stable Identity Address is known,
-     * re-derive the pseudo from (local, Identity) and re-key the link so the
-     * stored bond is reproducible across the peer's future RPA rotations. Keep
-     * smp_cb.pairing_bda consistent so the in-flight pairing continues. */
-    {
-        tACL_CONN *p_acl = btm_bda_to_acl(p_cb->pairing_bda, BT_TRANSPORT_LE);
-        BLE_PSEUDO_DBG("smp PID: pairing_bda=" BLE_PSEUDO_BDA_FMT " acl=%p id_addr=" BLE_PSEUDO_BDA_FMT,
-                       BLE_PSEUDO_BDA(p_cb->pairing_bda), p_acl, BLE_PSEUDO_BDA(pid_key.static_addr));
-        if (p_acl != NULL) {
-            BD_ADDR new_pseudo;
-            if (btm_ble_pseudo_apply_identity(p_acl->hci_handle, pid_key.static_addr,
-                                              pid_key.addr_type, new_pseudo)) {
-                memcpy(p_cb->pairing_bda, new_pseudo, BD_ADDR_LEN);
-                BLE_PSEUDO_DBG("smp PID: pairing_bda updated -> " BLE_PSEUDO_BDA_FMT,
-                               BLE_PSEUDO_BDA(p_cb->pairing_bda));
-            }
-        }
-    }
-#endif
-
     smp_key_distribution_by_transport(p_cb, NULL);
 }
 
@@ -1384,22 +1254,6 @@ void smp_check_auth_req(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
                     "(i-initiator r-responder)\n",
                     __func__, enc_enable, p_cb->local_i_key, p_cb->local_r_key);
     if (enc_enable == 1) {
-#if (BLE_INCLUDED == TRUE)
-        /* The new pairing has been authenticated and the link is now encrypted with the
-           freshly generated key, so the previous bond can be dropped. Doing it here rather
-           than when the Pairing Request is exchanged keeps the old key in place for a
-           pairing that never completes. */
-        tBTM_SEC_DEV_REC *p_dev_rec = btm_find_dev(p_cb->pairing_bda);
-        if (p_dev_rec) {
-            if (p_dev_rec->ble.key_type & (BTM_LE_KEY_PENC | BTM_LE_KEY_LENC)) {
-                SMP_TRACE_DEBUG("LE replace bond after enc, BDA:0x%02X%02X%02X%02X%02X%02X",
-                                p_cb->pairing_bda[0], p_cb->pairing_bda[1], p_cb->pairing_bda[2],
-                                p_cb->pairing_bda[3], p_cb->pairing_bda[4], p_cb->pairing_bda[5]);
-            }
-            btm_sec_clear_ble_keys(p_dev_rec);
-        }
-#endif  ///BLE_INCLUDED == TRUE
-
         if (p_cb->le_secure_connections_mode_is_used) {
             /* In LE SC mode LTK is used instead of STK and has to be always saved */
             p_cb->local_i_key |= SMP_SEC_KEY_TYPE_ENC;
@@ -1490,16 +1344,12 @@ void smp_key_distribution(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
         if (smp_get_state() == SMP_STATE_BOND_PENDING) {
             if (p_cb->derive_lk) {
                 tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev(p_cb->pairing_bda);
-                if (p_dev_rec == NULL) {
-                    SMP_TRACE_WARNING("%s device record not found, skip LK derivation", __func__);
-                } else if (!(p_dev_rec->sec_flags & BTM_SEC_LE_LINK_KEY_AUTHED) &&
+                if (!(p_dev_rec->sec_flags & BTM_SEC_LE_LINK_KEY_AUTHED) &&
                     (p_dev_rec->sec_flags & BTM_SEC_LINK_KEY_AUTHED)) {
                     SMP_TRACE_DEBUG("%s BREDR key is higher security than existing LE keys, "
                                     "don't derive LK from LTK", __func__);
                 } else {
-                    if (!smp_derive_link_key_from_long_term_key(p_cb, NULL)){
-                        return;
-                    }
+                    smp_derive_link_key_from_long_term_key(p_cb, NULL);
                 }
                 p_cb->derive_lk = FALSE;
             }
@@ -1623,15 +1473,6 @@ void smp_process_io_response(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
             auth |= SMP_AUTH_GEN_BOND;
         }
         p_cb->auth_mode = auth;
-#if (BLE_INCLUDED == TRUE && BLE_SMP_HARDENED_REPAIRING == TRUE)
-        if (!smp_repairing_is_allowed(p_cb, &reason)) {
-            if (BTM_IsAclConnectionUp(p_cb->pairing_bda, BT_TRANSPORT_LE)) {
-                btm_remove_acl (p_cb->pairing_bda, BT_TRANSPORT_LE);
-            }
-            smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-            return;
-        }
-#endif
         if (p_cb->accept_specified_sec_auth) {
             if ((auth & p_cb->origin_loc_auth_req) != p_cb->origin_loc_auth_req ) {
                 SMP_TRACE_ERROR("pairing failed - slave requires auth is 0x%x but peer auth is 0x%x local auth is 0x%x",
@@ -1761,11 +1602,7 @@ void smp_both_have_public_keys(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
     SMP_TRACE_DEBUG("%s\n", __func__);
 
     /* invokes DHKey computation */
-    if (!smp_compute_dhkey(p_cb)) {
-        UINT8 reason = SMP_PAIR_INTERNAL_ERR;
-        smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-        return;
-    }
+    smp_compute_dhkey(p_cb);
 
     /* on slave side invokes sending local public key to the peer */
     if (p_cb->role == HCI_ROLE_SLAVE) {
@@ -2308,10 +2145,10 @@ void smp_set_derive_link_key(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 **
 ** Description      This function is called to derive BR/EDR LK from LTK.
 **
-** Returns          BOOLEAN
+** Returns          void
 **
 *******************************************************************************/
-BOOLEAN smp_derive_link_key_from_long_term_key(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
+void smp_derive_link_key_from_long_term_key(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
     tSMP_STATUS status = SMP_PAIR_FAIL_UNKNOWN;
 
@@ -2319,9 +2156,8 @@ BOOLEAN smp_derive_link_key_from_long_term_key(tSMP_CB *p_cb, tSMP_INT_DATA *p_d
     if (!smp_calculate_link_key_from_long_term_key(p_cb)) {
         SMP_TRACE_ERROR("%s failed\n", __FUNCTION__);
         smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &status);
-        return FALSE;
+        return;
     }
-    return TRUE;
 }
 #endif  ///BLE_INCLUDED == TRUE
 

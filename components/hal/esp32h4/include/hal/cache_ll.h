@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,6 @@
 #include "soc/cache_reg.h"
 #include "soc/cache_struct.h"
 #include "soc/ext_mem_defs.h"
-#include "hal/cache_periph.h"
 #include "hal/cache_types.h"
 #include "hal/assert.h"
 #include "rom/cache.h"
@@ -25,8 +24,8 @@ extern "C" {
 #define CACHE_LL_DEFAULT_IBUS_MASK                  CACHE_BUS_IBUS0
 #define CACHE_LL_DEFAULT_DBUS_MASK                  CACHE_BUS_DBUS0
 
-#define CACHE_LL_L1_ACCESS_EVENT_MASK               (BIT(0) | BIT(1) | BIT(4))
-#define CACHE_LL_L1_ACCESS_EVENT_CACHE_FAIL         CACHE_LL_L1_ACCESS_EVENT_MASK
+#define CACHE_LL_L1_ACCESS_EVENT_MASK               (1<<4)
+#define CACHE_LL_L1_ACCESS_EVENT_CACHE_FAIL         (1<<4)
 
 #define CACHE_LL_ID_ALL                             2   //All of the caches in a type and level, make this value greater than any ID
 #define CACHE_LL_LEVEL_INT_MEM                      0   //Cache level for accessing internal mem
@@ -34,24 +33,6 @@ extern "C" {
 #define CACHE_LL_LEVEL_ALL                          2   //All of the cache levels, make this value greater than any level
 #define CACHE_LL_LEVEL_NUMS                         1   //Number of cache levels
 #define CACHE_LL_CACHE_AUTOLOAD                     (1<<0)
-
-/**
- * @brief Preload strategy
- */
-typedef enum {
-    CACHE_LL_PRELOAD_UNTIL_FETCH_DONE = 0,
-    CACHE_LL_PRELOAD_AFTER_FETCH = 1,
-    CACHE_LL_PRELOAD_ARBITRARY = 2,
-} cache_ll_preload_strategy_t;
-
-/**
- * @brief Initialize the cache clock
- */
-__attribute__((always_inline))
-static inline void cache_ll_clk_init(void)
-{
-    //for compatibility
-}
 
 /**
  * @brief Check if L1 ICache autoload is enabled or not
@@ -578,6 +559,7 @@ static inline void cache_ll_writeback_all(uint32_t cache_level, cache_type_t typ
     }
 }
 
+
 /*------------------------------------------------------------------------------
  * Freeze
  *----------------------------------------------------------------------------*/
@@ -700,79 +682,6 @@ static inline void cache_ll_unfreeze_cache(uint32_t cache_level, cache_type_t ty
 }
 
 /*------------------------------------------------------------------------------
- * Cache Preload
- *----------------------------------------------------------------------------*/
-/**
- * @brief Set the preload strategy (no-op)
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_set_strategy(uint32_t cache_level, cache_type_t type, uint32_t cache_id, cache_ll_preload_strategy_t strategy)
-{
-    (void)cache_level;
-    (void)type;
-    (void)cache_id;
-    (void)strategy;
-}
-
-/**
- * @brief Preload cache (L1 only)
- *
- * Starts preload for the given map and does not wait. Use cache_ll_preload_wait_done() to wait for completion.
- *
- * @param cache_level  level of the cache (must be CACHE_LL_LEVEL_EXT_MEM)
- * @param type         see `cache_type_t` (selects instruction/data/all cache map)
- * @param cache_id     id of the cache (unused on H4; pass 0)
- * @param vaddr        start virtual address of the preload region
- * @param size         size of the preload region in bytes
- * @param order        preload order, see `cache_preload_order_t`
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload(uint32_t cache_level, cache_type_t type, uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    (void)cache_id;
-    HAL_ASSERT(cache_level == CACHE_LL_LEVEL_EXT_MEM);
-    uint32_t map;
-    switch (type) {
-    case CACHE_TYPE_INSTRUCTION:
-        map = CACHE_MAP_ICACHE0 | CACHE_MAP_ICACHE1;
-        break;
-    case CACHE_TYPE_DATA:
-        map = CACHE_MAP_DCACHE;
-        break;
-    case CACHE_TYPE_ALL:
-    default:
-        map = CACHE_MAP_MASK;
-        break;
-    }
-    Cache_Start_Preload(map, vaddr, size, order);
-}
-
-/**
- * @brief Wait until cache preload is done (L1 only)
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_wait_done(uint32_t cache_level, cache_type_t type, uint32_t cache_id)
-{
-    (void)cache_id;
-    HAL_ASSERT(cache_level == CACHE_LL_LEVEL_EXT_MEM);
-    uint32_t map;
-    switch (type) {
-    case CACHE_TYPE_INSTRUCTION:
-        map = CACHE_MAP_ICACHE0 | CACHE_MAP_ICACHE1;
-        break;
-    case CACHE_TYPE_DATA:
-        map = CACHE_MAP_DCACHE;
-        break;
-    case CACHE_TYPE_ALL:
-    default:
-        map = CACHE_MAP_MASK;
-        break;
-    }
-    while (Cache_Preload_Done(map) == 0) {
-    }
-}
-
-/*------------------------------------------------------------------------------
  * Cache Line Size
  *----------------------------------------------------------------------------*/
 /**
@@ -888,7 +797,7 @@ __attribute__((always_inline))
 static inline void cache_ll_l1_disable_bus(uint32_t bus_id, cache_bus_mask_t mask)
 {
     //On esp32h4, only `CACHE_BUS_IBUS0` and `CACHE_BUS_DBUS0` are supported. Use `cache_ll_l1_get_bus()` to get your bus first
-    HAL_ASSERT((mask & (CACHE_BUS_IBUS1 | CACHE_BUS_IBUS2 | CACHE_BUS_DBUS1 | CACHE_BUS_DBUS2)) == 0);
+    HAL_ASSERT((mask & (CACHE_BUS_IBUS1 | CACHE_BUS_IBUS2| CACHE_BUS_DBUS1 | CACHE_BUS_DBUS2)) == 0);
 
     uint32_t ibus_mask = 0;
     if (bus_id == 0) {
@@ -981,60 +890,6 @@ static inline void cache_ll_l1_clear_access_error_intr(uint32_t cache_id, uint32
 static inline uint32_t cache_ll_l1_get_access_error_intr_status(uint32_t cache_id, uint32_t mask)
 {
     return CACHE.l1_cache_acs_fail_int_st.val & mask;
-}
-
-/*----------------------------------------------------------------------------
-                    Cache Profile Counter Related
------------------------------------------------------------------------------*/
-#define CACHE_LL_PROFILE_CNT_ENA_MASK (CACHE_L1_IBUS0_CNT_ENA | CACHE_L1_IBUS1_CNT_ENA | \
-                                      CACHE_L1_DBUS0_CNT_ENA | CACHE_L1_DBUS1_CNT_ENA)
-#define CACHE_LL_PROFILE_CNT_CLR_MASK (CACHE_L1_IBUS0_CNT_CLR | CACHE_L1_IBUS1_CNT_CLR | \
-                                      CACHE_L1_DBUS0_CNT_CLR | CACHE_L1_DBUS1_CNT_CLR)
-
-/**
- * @brief Enable or disable the cache profile counters
- *
- * @param ena  True to enable, false to disable
- */
-__attribute__((always_inline))
-static inline void cache_ll_enable_profile_counter(bool ena)
-{
-    if (ena) {
-        REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_ENA_MASK);
-    } else {
-        REG_CLR_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_ENA_MASK);
-    }
-}
-
-/**
- * @brief Reset all cache profile counters to zero
- */
-__attribute__((always_inline))
-static inline void cache_ll_clear_profile_counter(void)
-{
-    /* clear bits are write-to-trigger and self-clearing */
-    REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_CLR_MASK);
-}
-
-/**
- * @brief Read one counter of a cache profile counter unit
- *
- * @param unit         Unit index, 0 to SOC_CACHE_CNT_UNITS_NUM - 1
- * @param counter      Counter to read
- * @param[out] value   Counter value, only written if the counter exists
- *
- * @return True if the unit has this counter, false otherwise
- */
-__attribute__((always_inline))
-static inline bool cache_ll_get_profile_counter(int unit, cache_profile_counter_t counter, uint32_t *value)
-{
-    HAL_ASSERT(unit < SOC_CACHE_CNT_UNITS_NUM);
-    uint32_t reg = cache_periph_profile_counter_units[unit].counter_reg[counter];
-    if (reg == 0) {
-        return false;
-    }
-    *value = REG_READ(reg);
-    return true;
 }
 
 #ifdef __cplusplus

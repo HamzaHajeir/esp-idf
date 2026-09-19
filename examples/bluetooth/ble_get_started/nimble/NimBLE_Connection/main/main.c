@@ -87,7 +87,6 @@ void app_main(void) {
     rc = gap_init();
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to initialize GAP service, error code: %d", rc);
-        nimble_port_deinit();
         return;
     }
 #endif

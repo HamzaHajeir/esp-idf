@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,10 +39,7 @@ void btc_ble_mesh_generic_client_arg_deep_copy(btc_msg_t *msg, void *p_dest, voi
 
     switch (msg->act) {
     case BTC_BLE_MESH_ACT_GENERIC_CLIENT_GET_STATE: {
-        dst->generic_client_get_state.params = NULL;
-        dst->generic_client_get_state.get_state = NULL;
-
-        dst->generic_client_get_state.params = (esp_ble_mesh_client_common_param_t *)bt_mesh_calloc(sizeof(esp_ble_mesh_client_common_param_t));
+        dst->generic_client_get_state.params = (esp_ble_mesh_client_common_param_t *)bt_mesh_malloc(sizeof(esp_ble_mesh_client_common_param_t));
         if (dst->generic_client_get_state.params) {
             memcpy(dst->generic_client_get_state.params, src->generic_client_get_state.params,
                    sizeof(esp_ble_mesh_client_common_param_t));
@@ -51,82 +48,57 @@ void btc_ble_mesh_generic_client_arg_deep_copy(btc_msg_t *msg, void *p_dest, voi
             break;
         }
         if (src->generic_client_get_state.get_state) {
-            dst->generic_client_get_state.get_state = (esp_ble_mesh_generic_client_get_state_t *)bt_mesh_calloc(sizeof(esp_ble_mesh_generic_client_get_state_t));
+            dst->generic_client_get_state.get_state = (esp_ble_mesh_generic_client_get_state_t *)bt_mesh_malloc(sizeof(esp_ble_mesh_generic_client_get_state_t));
             if (dst->generic_client_get_state.get_state) {
                 memcpy(dst->generic_client_get_state.get_state, src->generic_client_get_state.get_state,
-                       sizeof(esp_ble_mesh_generic_client_get_state_t));
+                    sizeof(esp_ble_mesh_generic_client_get_state_t));
             } else {
                 BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                /* Free the previously allocated resources */
-                bt_mesh_free(dst->generic_client_get_state.params);
-                dst->generic_client_get_state.params = NULL;
             }
         }
         break;
     }
     case BTC_BLE_MESH_ACT_GENERIC_CLIENT_SET_STATE: {
-        dst->generic_client_set_state.params = NULL;
-        dst->generic_client_set_state.set_state = NULL;
+        dst->generic_client_set_state.params = (esp_ble_mesh_client_common_param_t *)bt_mesh_malloc(sizeof(esp_ble_mesh_client_common_param_t));
+        dst->generic_client_set_state.set_state = (esp_ble_mesh_generic_client_set_state_t *)bt_mesh_malloc(sizeof(esp_ble_mesh_generic_client_set_state_t));
+        if (dst->generic_client_set_state.params && dst->generic_client_set_state.set_state) {
+            memcpy(dst->generic_client_set_state.params, src->generic_client_set_state.params,
+                   sizeof(esp_ble_mesh_client_common_param_t));
+            memcpy(dst->generic_client_set_state.set_state, src->generic_client_set_state.set_state,
+                   sizeof(esp_ble_mesh_generic_client_set_state_t));
 
-        dst->generic_client_set_state.params = (esp_ble_mesh_client_common_param_t *)bt_mesh_calloc(sizeof(esp_ble_mesh_client_common_param_t));
-        if (!dst->generic_client_set_state.params) {
-            BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-            break;
-        }
-
-        dst->generic_client_set_state.set_state = (esp_ble_mesh_generic_client_set_state_t *)bt_mesh_calloc(sizeof(esp_ble_mesh_generic_client_set_state_t));
-        if (!dst->generic_client_set_state.set_state) {
-            BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-            /* Free the previously allocated resources */
-            bt_mesh_free(dst->generic_client_set_state.params);
-            dst->generic_client_set_state.params = NULL;
-            break;
-        }
-
-        memcpy(dst->generic_client_set_state.params, src->generic_client_set_state.params,
-               sizeof(esp_ble_mesh_client_common_param_t));
-        memcpy(dst->generic_client_set_state.set_state, src->generic_client_set_state.set_state,
-               sizeof(esp_ble_mesh_generic_client_set_state_t));
-
-        switch (src->generic_client_set_state.params->opcode) {
-        case ESP_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_SET:
-            if (src->generic_client_set_state.set_state->user_property_set.property_value) {
-                length = src->generic_client_set_state.set_state->user_property_set.property_value->len;
-                dst->generic_client_set_state.set_state->user_property_set.property_value = bt_mesh_alloc_buf(length);
-                if (!dst->generic_client_set_state.set_state->user_property_set.property_value) {
-                    BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                    /* Free the previously allocated resources */
-                    bt_mesh_free(dst->generic_client_set_state.params);
-                    dst->generic_client_set_state.params = NULL;
-                    bt_mesh_free(dst->generic_client_set_state.set_state);
-                    dst->generic_client_set_state.set_state = NULL;
-                    return;
+            switch (src->generic_client_set_state.params->opcode) {
+            case ESP_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_SET:
+                if (src->generic_client_set_state.set_state->user_property_set.property_value) {
+                    length = src->generic_client_set_state.set_state->user_property_set.property_value->len;
+                    dst->generic_client_set_state.set_state->user_property_set.property_value = bt_mesh_alloc_buf(length);
+                    if (!dst->generic_client_set_state.set_state->user_property_set.property_value) {
+                        BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
+                        return;
+                    }
+                    net_buf_simple_add_mem(dst->generic_client_set_state.set_state->user_property_set.property_value,
+                                           src->generic_client_set_state.set_state->user_property_set.property_value->data,
+                                           src->generic_client_set_state.set_state->user_property_set.property_value->len);
                 }
-                net_buf_simple_add_mem(dst->generic_client_set_state.set_state->user_property_set.property_value,
-                                       src->generic_client_set_state.set_state->user_property_set.property_value->data,
-                                       src->generic_client_set_state.set_state->user_property_set.property_value->len);
-            }
-            break;
-        case ESP_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_SET:
-            if (src->generic_client_set_state.set_state->admin_property_set.property_value) {
-                length = src->generic_client_set_state.set_state->admin_property_set.property_value->len;
-                dst->generic_client_set_state.set_state->admin_property_set.property_value = bt_mesh_alloc_buf(length);
-                if (!dst->generic_client_set_state.set_state->admin_property_set.property_value) {
-                    BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                    /* Free the previously allocated resources */
-                    bt_mesh_free(dst->generic_client_set_state.params);
-                    dst->generic_client_set_state.params = NULL;
-                    bt_mesh_free(dst->generic_client_set_state.set_state);
-                    dst->generic_client_set_state.set_state = NULL;
-                    return;
+                break;
+            case ESP_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_SET:
+                if (src->generic_client_set_state.set_state->admin_property_set.property_value) {
+                    length = src->generic_client_set_state.set_state->admin_property_set.property_value->len;
+                    dst->generic_client_set_state.set_state->admin_property_set.property_value = bt_mesh_alloc_buf(length);
+                    if (!dst->generic_client_set_state.set_state->admin_property_set.property_value) {
+                        BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
+                        return;
+                    }
+                    net_buf_simple_add_mem(dst->generic_client_set_state.set_state->admin_property_set.property_value,
+                                           src->generic_client_set_state.set_state->admin_property_set.property_value->data,
+                                           src->generic_client_set_state.set_state->admin_property_set.property_value->len);
                 }
-                net_buf_simple_add_mem(dst->generic_client_set_state.set_state->admin_property_set.property_value,
-                                       src->generic_client_set_state.set_state->admin_property_set.property_value->data,
-                                       src->generic_client_set_state.set_state->admin_property_set.property_value->len);
+                break;
+            default:
+                break;
             }
-            break;
-        default:
-            break;
+        } else {
+            BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
         }
         break;
     }
@@ -146,11 +118,6 @@ void btc_ble_mesh_generic_client_arg_deep_free(btc_msg_t *msg)
     }
 
     arg = (btc_ble_mesh_generic_client_args_t *)(msg->arg);
-    /**
-     * msg->arg is guaranteed to be non-NULL by btc_transfer_context
-    */
-    ESP_ASSUME_NONNULL(arg);
-
 
     switch (msg->act) {
     case BTC_BLE_MESH_ACT_GENERIC_CLIENT_GET_STATE:
@@ -198,7 +165,7 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
     }
 
     if (p_src_data->params) {
-        p_dest_data->params = bt_mesh_calloc(sizeof(esp_ble_mesh_client_common_param_t));
+        p_dest_data->params = bt_mesh_malloc(sizeof(esp_ble_mesh_client_common_param_t));
         if (!p_dest_data->params) {
             BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
             return;
@@ -220,9 +187,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.user_properties_status.property_ids = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.user_properties_status.property_ids) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.user_properties_status.property_ids,
@@ -238,9 +202,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.user_property_status.property_value = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.user_property_status.property_value) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.user_property_status.property_value,
@@ -255,9 +216,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.admin_properties_status.property_ids = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.admin_properties_status.property_ids) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.admin_properties_status.property_ids,
@@ -273,9 +231,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.admin_property_status.property_value = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.admin_property_status.property_value) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.admin_property_status.property_value,
@@ -290,9 +245,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.manufacturer_properties_status.property_ids = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.manufacturer_properties_status.property_ids) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.manufacturer_properties_status.property_ids,
@@ -308,9 +260,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.manufacturer_property_status.property_value = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.manufacturer_property_status.property_value) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.manufacturer_property_status.property_value,
@@ -325,9 +274,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                     p_dest_data->status_cb.client_properties_status.property_ids = bt_mesh_alloc_buf(length);
                     if (!p_dest_data->status_cb.client_properties_status.property_ids) {
                         BT_ERR("%s, Out of memory, act %d", __func__, msg->act);
-                        /* Free the previously allocated resources */
-                        bt_mesh_free(p_dest_data->params);
-                        p_dest_data->params = NULL;
                         return;
                     }
                     net_buf_simple_add_mem(p_dest_data->status_cb.client_properties_status.property_ids,
@@ -339,7 +285,6 @@ static void btc_ble_mesh_generic_client_copy_req_data(btc_msg_t *msg, void *p_de
                 break;
             }
         }
-        __attribute__((fallthrough));
     case ESP_BLE_MESH_GENERIC_CLIENT_TIMEOUT_EVT:
         break;
     default:
@@ -399,7 +344,6 @@ static void btc_ble_mesh_generic_client_free_req_data(btc_msg_t *msg)
                 break;
             }
         }
-        __attribute__((fallthrough));
     case ESP_BLE_MESH_GENERIC_CLIENT_TIMEOUT_EVT:
         if (arg->params) {
             bt_mesh_free(arg->params);

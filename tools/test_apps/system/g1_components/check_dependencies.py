@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Unlicense OR CC0-1.0
 import argparse
 import glob
@@ -20,8 +20,8 @@ g1_g0_components_base = [
     'esp_system',
     'xtensa',
     'riscv',
+    'spi_flash',
     'esp_mm',
-    'esp_mspi',
 ]
 
 
@@ -53,27 +53,22 @@ g1_g0_components = g1_g0_components_base + get_all_esp_hal_components()
 
 # Global expected dependency violations that apply to all targets
 expected_dep_violations = {
-    'esp_system': ['esp_timer', 'bootloader_support', 'esp_pm'],
+    'esp_system': ['esp_timer', 'bootloader_support', 'esp_pm', 'esp_usb_cdc_rom_console'],
+    'spi_flash': ['bootloader_support', 'esp_blockdev'],
     'esp_hw_support': ['efuse', 'bootloader_support', 'esp_driver_gpio', 'esp_timer', 'esp_pm'],
-    # efuse: esp_mspi_align queries the flash encryption state to derive MSPI buffer alignment
-    'esp_mspi': ['bootloader_support', 'efuse'],
     'cxx': ['pthread'],
 }
 
-if os.environ.get('IDF_BUILD_V2'):
-    expected_dep_violations['esp_system'].append('esp_app_format')
-else:
-    # Requirements are resolved before Kconfig under build system v1, so esp_system
-    # depends on the ROM CDC console unconditionally. Under v2 the dependency is
-    # only added when the console is set to USB CDC.
-    expected_dep_violations['esp_system'].append('esp_usb_cdc_rom_console')
-
 # Target-specific expected dependency violations
-target_specific_expected_dep_violations: dict[str, dict[str, list[str]]] = {
+target_specific_expected_dep_violations = {
     # 'target': {
     # Add target-specific violations for target here
     # 'component_name': ['dependency1', 'dependency2'],
     # },
+    'esp32s2': {
+        # ESP32-S2 uses the crypto DMA lock for encrypted writes, thus, spi_flash needs to depend on esp_security
+        'spi_flash': ['esp_security'],
+    },
 }
 
 

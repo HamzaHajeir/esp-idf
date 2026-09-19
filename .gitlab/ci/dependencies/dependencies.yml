@@ -53,30 +53,6 @@
   patterns:
     - host_test
 
-"test:host_test_ldgen":
-  labels:
-    - host_test
-  patterns:
-    - host_test_ldgen
-
-"test:host_test_ulp_linker":
-  labels:
-    - host_test
-  patterns:
-    - host_test_ulp_linker
-
-"test:host_test_cli_installer":
-  labels:
-    - host_test
-  patterns:
-    - host_test_cli_installer
-
-"test:host_test_tools":
-  labels:
-    - host_test
-  patterns:
-    - host_test_tools
-
 "test:submodule":
   labels:
     - submodule

@@ -38,6 +38,9 @@
 #define BTA_HH_KB_CAPS_LOCK      0x39           /* caps lock */
 #define BTA_HH_KB_NUM_LOCK       0x53           /* num lock */
 
+
+#define BTA_HH_MAX_RPT_CHARS    8
+
 static const UINT8 bta_hh_mod_key_mask[BTA_HH_MOD_MAX_KEY] = {
     BTA_HH_KB_CTRL_MASK,
     BTA_HH_KB_SHIFT_MASK,
@@ -60,14 +63,11 @@ UINT8  bta_hh_find_cb(BD_ADDR bda)
 {
     UINT8 xx;
 
-    if (!bdcmp(bda, bd_addr_null)) {
-        return BTA_HH_IDX_INVALID;
-    }
-
     /* See how many active devices there are. */
     for (xx = 0; xx < BTA_HH_MAX_DEVICE; xx++) {
         /* check if any active/known devices is a match */
-        if (!bdcmp (bda, bta_hh_cb.kdev[xx].addr)) {
+        if ((!bdcmp (bda, bta_hh_cb.kdev[xx].addr) &&
+                bdcmp(bda, bd_addr_null) != 0) ) {
 #if BTA_HH_DEBUG
             APPL_TRACE_DEBUG("found kdev_cb[%d] hid_handle = %d ", xx,
                              bta_hh_cb.kdev[xx].hid_handle)
@@ -118,10 +118,6 @@ UINT8  bta_hh_find_cb(BD_ADDR bda)
 void bta_hh_clean_up_kdev(tBTA_HH_DEV_CB *p_cb)
 {
     UINT8 index;
-
-    if (!p_cb) {
-        return;
-    }
 
     if (p_cb->hid_handle != BTA_HH_INVALID_HANDLE ) {
 #if BTA_HH_LE_INCLUDED == TRUE
@@ -204,9 +200,8 @@ void bta_hh_add_device_to_list(tBTA_HH_DEV_CB *p_cb, UINT8 handle,
     p_cb->dscp_info.ssr_min_tout    = ssr_min_tout;
 
     /* store report descriptor info */
-    if (p_dscp_info) {
+    if ( p_dscp_info) {
         utl_freebuf((void **)&p_cb->dscp_info.descriptor.dsc_list);
-        p_cb->dscp_info.descriptor.dl_len = 0;
 
         if (p_dscp_info->dl_len &&
                 (p_cb->dscp_info.descriptor.dsc_list =
@@ -292,6 +287,10 @@ void bta_hh_parse_keybd_rpt(tBTA_HH_BOOT_RPT *p_kb_data, UINT8 *p_report,
     ctl_shift = *p_report++;
     report_len--;
 
+    if (report_len > BTA_HH_MAX_RPT_CHARS) {
+        report_len = BTA_HH_MAX_RPT_CHARS;
+    }
+
     memset (this_report, 0, BTA_HH_MAX_RPT_CHARS);
     memset (p_data, 0, sizeof(tBTA_HH_KEYBD_RPT));
     memcpy (this_report, p_report, report_len);
@@ -333,15 +332,15 @@ void bta_hh_parse_keybd_rpt(tBTA_HH_BOOT_RPT *p_kb_data, UINT8 *p_report,
             p_kb->caps_lock = p_kb->caps_lock ? FALSE : TRUE;
         } else if (this_report[xx] == BTA_HH_KB_NUM_LOCK) {
             p_kb->num_lock = p_kb->num_lock ? FALSE : TRUE;
-        } else if (key_idx < BTA_HH_KB_VKEY_LEN) {
+        } else {
             p_data->this_char[key_idx ++] = this_char;
         }
 
 #if BTA_HH_DEBUG
         APPL_TRACE_DEBUG("found keycode %02x ",  this_report[xx]);
 #endif
-        p_data->caps_lock = p_kb->caps_lock;
-        p_data->num_lock  = p_kb->num_lock;
+        p_data->caps_lock   = p_kb->caps_lock;
+        p_data->num_lock      = p_kb->num_lock;
     }
 
     memset (p_kb->last_report, 0, BTA_HH_MAX_RPT_CHARS);
@@ -366,10 +365,11 @@ void bta_hh_parse_mice_rpt(tBTA_HH_BOOT_RPT *p_mice_data, UINT8 *p_report,
 #if BTA_HH_DEBUG
     UINT8       xx;
 
-    APPL_TRACE_DEBUG("bta_hh_parse_mice_rpt: (report=%p, report_len=%d) called", p_report, report_len);
+    APPL_TRACE_DEBUG("bta_hh_parse_mice_rpt:  bta_keybd_rpt_rcvd(report=%p, \
+                report_len=%d) called", p_report, report_len);
 #endif
 
-    if ((report_len < 3) || (p_report == NULL)) {
+    if (report_len < 3) {
         return;
     }
 
@@ -416,9 +416,8 @@ tBTA_HH_STATUS bta_hh_read_ssr_param(BD_ADDR bd_addr, UINT16 *p_max_ssr_lat, UIN
     tBTA_HH_STATUS  status = BTA_HH_ERR;
     tBTA_HH_CB  *p_cb = &bta_hh_cb;
     UINT8       i;
-    UINT16      ssr_max_latency = 0;
-
-    for (i = 0; i < BTA_HH_MAX_DEVICE; i ++) {
+    UINT16      ssr_max_latency;
+    for (i = 0; i < BTA_HH_MAX_KNOWN; i ++) {
         if (memcmp(p_cb->kdev[i].addr, bd_addr, BD_ADDR_LEN) == 0) {
 
             /* if remote device does not have HIDSSRHostMaxLatency attribute in SDP,
@@ -435,26 +434,19 @@ tBTA_HH_STATUS bta_hh_read_ssr_param(BD_ADDR bd_addr, UINT16 *p_max_ssr_lat, UIN
                     ssr_max_latency = BTA_HH_SSR_MAX_LATENCY_DEF;
                 }
 
-                if (p_max_ssr_lat) {
-                    *p_max_ssr_lat  = ssr_max_latency;
-                }
+                * p_max_ssr_lat  = ssr_max_latency;
             } else {
-                if (p_max_ssr_lat) {
-                    *p_max_ssr_lat  = p_cb->kdev[i].dscp_info.ssr_max_latency;
-                }
+                * p_max_ssr_lat  = p_cb->kdev[i].dscp_info.ssr_max_latency;
             }
 
             if (p_cb->kdev[i].dscp_info.ssr_min_tout == HID_SSR_PARAM_INVALID) {
-                if (p_min_ssr_tout) {
-                    *p_min_ssr_tout = BTA_HH_SSR_MIN_TOUT_DEF;
-                }
+                * p_min_ssr_tout = BTA_HH_SSR_MIN_TOUT_DEF;
             } else {
-                if (p_min_ssr_tout) {
-                    *p_min_ssr_tout = p_cb->kdev[i].dscp_info.ssr_min_tout;
-                }
+                * p_min_ssr_tout = p_cb->kdev[i].dscp_info.ssr_min_tout;
             }
 
-            status = BTA_HH_OK;
+            status           = BTA_HH_OK;
+
             break;
         }
     }
@@ -481,12 +473,8 @@ void bta_hh_cleanup_disable(tBTA_HH_STATUS status)
     }
     utl_freebuf((void **)&bta_hh_cb.p_disc_db);
 
-    bta_sys_deregister(BTA_ID_HH);
-
     if (bta_hh_cb.p_cback) {
-        tBTA_HH data = {0};
-        data.status = status;
-        (*bta_hh_cb.p_cback)(BTA_HH_DISABLE_EVT, &data);
+        (*bta_hh_cb.p_cback)(BTA_HH_DISABLE_EVT, (tBTA_HH*)&status);
         /* all connections are down, no waiting for disconnect */
         memset(&bta_hh_cb, 0, sizeof(tBTA_HH_CB));
     }
@@ -505,10 +493,6 @@ void bta_hh_cleanup_disable(tBTA_HH_STATUS status)
 UINT8 bta_hh_dev_handle_to_cb_idx(UINT8 dev_handle)
 {
     UINT8 index = BTA_HH_IDX_INVALID;
-
-    if (dev_handle == BTA_HH_INVALID_HANDLE) {
-        return BTA_HH_IDX_INVALID;
-    }
 
 #if BTA_HH_LE_INCLUDED == TRUE
     if (BTA_HH_IS_LE_DEV_HDL(dev_handle)) {
@@ -556,4 +540,4 @@ void bta_hh_trace_dev_db(void)
     APPL_TRACE_DEBUG("*********************************************************");
 }
 #endif
-#endif /* BTA_HH_INCLUDED */
+#endif /* HL_INCLUDED */

@@ -19,10 +19,6 @@ FS Registration
 
 To register an FS driver, an application needs to define an instance of the :cpp:type:`esp_vfs_fs_ops_t` structure and populate it with function pointers to FS APIs:
 
-.. warning::
-
-    The API version without a context pointer is deprecated, and will be removed in the future. See :ref:`context_api` for details.
-
 .. highlight:: c
 
 ::
@@ -69,7 +65,6 @@ The recommended approach for registering filesystem is to use statically allocat
         ESP_ERROR_CHECK(esp_vfs_register_fs("/data", &myfs, ESP_VFS_FLAG_DEFAULT, NULL));
     }
 
-.. _context_api:
 
 Context Aware Filesystem
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -168,11 +163,11 @@ A socket VFS driver needs to be registered with the following functions defined:
 
 :cpp:func:`stop_socket_select_isr` has the same functionality as :cpp:func:`stop_socket_select` but it can be used from ISR.
 
-Please see :component_file:`lwip/port/vfs_lwip.c` for a reference socket driver implementation using LWIP.
+Please see :component_file:`lwip/port/esp32xx/vfs_lwip.c` for a reference socket driver implementation using LWIP.
 
 .. note::
 
-    If you use :cpp:func:`select` for socket file descriptors only then you can disable the :menuitem:`CONFIG_VFS_SUPPORT_SELECT` option to reduce the code size and improve performance.
+    If you use :cpp:func:`select` for socket file descriptors only then you can disable the :ref:`CONFIG_VFS_SUPPORT_SELECT` option to reduce the code size and improve performance.
 
     You should not change the socket driver during an active :cpp:func:`select` call or you might experience some undefined behavior.
 
@@ -232,8 +227,8 @@ Well Known VFS Devices
 IDF defines several VFS devices that can be used by applications. These devices are, among others:
 
 * ``/dev/uart/<UART NUMBER>`` - file mapping to an UART opened with the VFS driver. The UART number is the number of the UART peripheral.
-* ``/dev/null`` - file that discards all data written to it and returns EOF when read. It is automatically created if :menuitem:`CONFIG_VFS_INITIALIZE_DEV_NULL` is enabled.
-* ``/dev/console`` - file that is connected to the primary and secondary outputs specified in the menuconfig by :menuitem:`CONFIG_ESP_CONSOLE_UART` and :menuitem:`CONFIG_ESP_CONSOLE_SECONDARY` respectively. More information can be found here :doc:`../../api-guides/stdio`.
+* ``/dev/null`` - file that discards all data written to it and returns EOF when read. It is automatically created if :ref:`CONFIG_VFS_INITIALIZE_DEV_NULL` is enabled.
+* ``/dev/console`` - file that is connected to the primary and secondary outputs specified in the menuconfig by :ref:`CONFIG_ESP_CONSOLE_UART` and :ref:`CONFIG_ESP_CONSOLE_SECONDARY` respectively. More information can be found here :doc:`../../api-guides/stdio`.
 
 
 Application Examples

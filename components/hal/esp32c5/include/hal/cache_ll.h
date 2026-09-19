@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +13,6 @@
 #include "soc/cache_struct.h"
 #include "soc/ext_mem_defs.h"
 #include "rom/cache.h"
-#include "hal/cache_periph.h"
 #include "hal/cache_types.h"
 #include "hal/assert.h"
 #include "esp32c5/rom/cache.h"
@@ -35,23 +34,6 @@ extern "C" {
 
 #define CACHE_LL_L1_ACCESS_EVENT_MASK               (0x1f)
 
-/**
- * @brief Preload strategy
- */
-typedef enum {
-    CACHE_LL_PRELOAD_UNTIL_FETCH_DONE = 0,
-    CACHE_LL_PRELOAD_AFTER_FETCH = 1,
-    CACHE_LL_PRELOAD_ARBITRARY = 2,
-} cache_ll_preload_strategy_t;
-
-/**
- * @brief Initialize the cache clock
- */
-__attribute__((always_inline))
-static inline void cache_ll_clk_init(void)
-{
-    //for compatibility
-}
 
 /**
  * @brief Check if Cache auto preload is enabled or not.
@@ -201,53 +183,6 @@ __attribute__((always_inline))
 static inline void cache_ll_unfreeze_cache(uint32_t cache_level, cache_type_t type, uint32_t cache_id)
 {
     Cache_Freeze_Disable();
-}
-
-/**
- * @brief Set the preload strategy (L1 unified)
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_set_strategy(uint32_t cache_level, cache_type_t type, uint32_t cache_id, cache_ll_preload_strategy_t strategy)
-{
-    (void)cache_id;
-    (void)type;
-    if (cache_level == CACHE_LL_LEVEL_EXT_MEM || cache_level == CACHE_LL_LEVEL_ALL) {
-        CACHE.l1_icache_ctrl.l1_icache_undef_op = strategy;
-    }
-}
-
-/**
- * @brief Preload cache (L1 unified)
- *
- * Starts preload and does not wait. Use cache_ll_preload_wait_done() to wait for completion.
- *
- * @param cache_level  level of the cache (CACHE_LL_LEVEL_EXT_MEM or CACHE_LL_LEVEL_ALL)
- * @param type         see `cache_type_t`
- * @param cache_id     id of the cache (unused; pass 0)
- * @param vaddr        start virtual address of the preload region
- * @param size         size of the preload region in bytes
- * @param order        preload order, see `cache_preload_order_t`
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload(uint32_t cache_level, cache_type_t type, uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    (void)cache_id;
-    (void)type;
-    HAL_ASSERT(cache_level == CACHE_LL_LEVEL_EXT_MEM);
-    Cache_Start_Preload(vaddr, size, order);
-}
-
-/**
- * @brief Wait until cache preload is done (L1 only)
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_wait_done(uint32_t cache_level, cache_type_t type, uint32_t cache_id)
-{
-    (void)cache_id;
-    (void)type;
-    HAL_ASSERT(cache_level == CACHE_LL_LEVEL_EXT_MEM);
-    while (Cache_Preload_Done() == 0) {
-    }
 }
 
 /**
@@ -413,58 +348,6 @@ static inline void cache_ll_l1_clear_access_error_intr(uint32_t cache_id, uint32
 static inline uint32_t cache_ll_l1_get_access_error_intr_status(uint32_t cache_id, uint32_t mask)
 {
     return CACHE.l1_cache_acs_fail_int_st.val & mask;
-}
-
-/*----------------------------------------------------------------------------
-                    Cache Profile Counter Related
------------------------------------------------------------------------------*/
-#define CACHE_LL_PROFILE_CNT_ENA_MASK (CACHE_L1_BUS0_CNT_ENA | CACHE_L1_BUS1_CNT_ENA)
-#define CACHE_LL_PROFILE_CNT_CLR_MASK (CACHE_L1_BUS0_CNT_CLR | CACHE_L1_BUS1_CNT_CLR)
-
-/**
- * @brief Enable or disable the cache profile counters
- *
- * @param ena  True to enable, false to disable
- */
-__attribute__((always_inline))
-static inline void cache_ll_enable_profile_counter(bool ena)
-{
-    if (ena) {
-        REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_ENA_MASK);
-    } else {
-        REG_CLR_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_ENA_MASK);
-    }
-}
-
-/**
- * @brief Reset all cache profile counters to zero
- */
-__attribute__((always_inline))
-static inline void cache_ll_clear_profile_counter(void)
-{
-    /* clear bits are write-to-trigger and self-clearing */
-    REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_CLR_MASK);
-}
-
-/**
- * @brief Read one counter of a cache profile counter unit
- *
- * @param unit         Unit index, 0 to SOC_CACHE_CNT_UNITS_NUM - 1
- * @param counter      Counter to read
- * @param[out] value   Counter value, only written if the counter exists
- *
- * @return True if the unit has this counter, false otherwise
- */
-__attribute__((always_inline))
-static inline bool cache_ll_get_profile_counter(int unit, cache_profile_counter_t counter, uint32_t *value)
-{
-    HAL_ASSERT(unit < SOC_CACHE_CNT_UNITS_NUM);
-    uint32_t reg = cache_periph_profile_counter_units[unit].counter_reg[counter];
-    if (reg == 0) {
-        return false;
-    }
-    *value = REG_READ(reg);
-    return true;
 }
 
 #ifdef __cplusplus

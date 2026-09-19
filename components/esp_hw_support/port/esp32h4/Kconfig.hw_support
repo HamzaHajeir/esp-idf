@@ -1,6 +1,17 @@
+comment "NOTE! Support of ESP32-H4 MP is mutually exclusive"
+comment "Read the help text of the option below for explanation"
+
+config ESP32H4_SELECTS_REV_MP
+    bool "Select ESP32-H4 MP version"
+    default y
+    help
+        Enable this option to select ESP32-H4 MP revision.
+        MP revisions have some hardware differences with Beta revision.
+        MP revisions is not compatible with Beta revision.
+
 choice ESP32H4_REV_MIN
     prompt "Minimum Supported ESP32-H4 Revision"
-    default ESP32H4_REV_MIN_2
+    default ESP32H4_REV_MIN_0
     help
         Required minimum chip revision. ESP-IDF will check for it and
         reject to boot if the chip revision fails the check.
@@ -9,13 +20,13 @@ choice ESP32H4_REV_MIN
         The complied binary will only support chips above this revision,
         this will also help to reduce binary size.
 
-    config ESP32H4_REV_MIN_2
-        bool "Rev v0.2"
+    config ESP32H4_REV_MIN_0
+        bool "Rev v0.0"
 endchoice
 
 config ESP32H4_REV_MIN_FULL
     int
-    default 2 if ESP32H4_REV_MIN_2
+    default 0 if ESP32H4_REV_MIN_0
 
 config ESP_REV_MIN_FULL
     int

@@ -1,5 +1,4 @@
 idf_component_register(SRCS "main.c"
-                    PRIV_REQUIRES app_update
                     INCLUDE_DIRS ".")
 
 # Import the library, specifying a target name and the library path.

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,9 +12,7 @@
 #include "soc/cache_reg.h"
 #include "soc/cache_struct.h"
 #include "soc/ext_mem_defs.h"
-#include "hal/cache_periph.h"
 #include "hal/cache_types.h"
-#include "hal/config.h"
 #include "hal/assert.h"
 #include "esp32p4/rom/cache.h"
 
@@ -26,13 +24,13 @@ extern "C" {
  * @brief Given a L2MEM cached address, get the corresponding non-cacheable address
  * @example 0x4FF0_0000 => 0x8FF0_0000
  */
-#define CACHE_LL_L2MEM_NON_CACHE_ADDR(addr) ((uintptr_t)(addr) + SOC_NON_CACHEABLE_OFFSET_SRAM)
+#define CACHE_LL_L2MEM_NON_CACHE_ADDR(addr) ((uintptr_t)(addr) + SOC_NON_CACHEABLE_OFFSET)
 
 /**
  * @brief Given a non-cacheable address, get the corresponding L2MEM cached address
  * @example 0x8FF0_0000 => 0x4FF0_0000
  */
-#define CACHE_LL_L2MEM_CACHE_ADDR(non_cache_addr) ((uintptr_t)(non_cache_addr) - SOC_NON_CACHEABLE_OFFSET_SRAM)
+#define CACHE_LL_L2MEM_CACHE_ADDR(non_cache_addr) ((uintptr_t)(non_cache_addr) - SOC_NON_CACHEABLE_OFFSET)
 
 /**
  * Cache capabilities
@@ -54,24 +52,6 @@ extern "C" {
 #define CACHE_LL_L2_ACCESS_EVENT_MASK               (1<<6)
 #define CACHE_LL_L1_CORE0_EVENT_MASK                (1<<0)
 #define CACHE_LL_L1_CORE1_EVENT_MASK                (1<<1)
-
-/**
- * @brief Preload strategy
- */
-typedef enum {
-    CACHE_LL_PRELOAD_UNTIL_FETCH_DONE = 0,
-    CACHE_LL_PRELOAD_AFTER_FETCH = 1,
-    CACHE_LL_PRELOAD_ARBITRARY = 2,
-} cache_ll_preload_strategy_t;
-
-/**
- * @brief Initialize the cache clock
- */
-__attribute__((always_inline))
-static inline void cache_ll_clk_init(void)
-{
-    //for compatibility
-}
 
 /*------------------------------------------------------------------------------
  * Autoload
@@ -919,220 +899,6 @@ static inline void cache_ll_unfreeze_cache(uint32_t cache_level, cache_type_t ty
 }
 
 /*------------------------------------------------------------------------------
- * Preload (L1 / L2)
- *----------------------------------------------------------------------------*/
-/**
- * @brief Start L1 ICache manual preload
- *
- * Starts preload for the given region and does not wait. Use
- * cache_ll_l1_icache_preload_wait_done() to wait for completion.
- *
- * @param cache_id   id of the cache in this type and level (0: Core0, 1: Core1, CACHE_LL_ID_ALL: both)
- * @param vaddr      start virtual address of the preload region
- * @param size       size of the preload region in bytes
- * @param order      preload order
- */
-__attribute__((always_inline))
-static inline void cache_ll_l1_icache_preload(uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    if (cache_id == 0) {
-        Cache_Start_L1_CORE0_ICache_Preload(vaddr, size, order);
-    } else if (cache_id == 1) {
-        Cache_Start_L1_CORE1_ICache_Preload(vaddr, size, order);
-    } else if (cache_id == CACHE_LL_ID_ALL) {
-        Cache_Start_L1_CORE0_ICache_Preload(vaddr, size, order);
-        Cache_Start_L1_CORE1_ICache_Preload(vaddr, size, order);
-    }
-}
-
-/**
- * @brief Wait until L1 ICache manual preload is done
- *
- * @param cache_id  id of the cache in this type and level (0: Core0, 1: Core1, CACHE_LL_ID_ALL: both)
- */
-__attribute__((always_inline))
-static inline void cache_ll_l1_icache_preload_wait_done(uint32_t cache_id)
-{
-    if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        while (Cache_L1_CORE0_ICache_Preload_Done() == 0) {
-        }
-    }
-    if (cache_id == 1 || cache_id == CACHE_LL_ID_ALL) {
-        while (Cache_L1_CORE1_ICache_Preload_Done() == 0) {
-        }
-    }
-}
-
-/**
- * @brief Start L1 DCache manual preload
- *
- * Starts preload for the given region and does not wait. Use
- * cache_ll_l1_dcache_preload_wait_done() to wait for completion.
- *
- * @param cache_id   id of the cache in this type and level (0 or CACHE_LL_ID_ALL)
- * @param vaddr      start virtual address of the preload region
- * @param size       size of the preload region in bytes
- * @param order      preload order
- */
-__attribute__((always_inline))
-static inline void cache_ll_l1_dcache_preload(uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Start_L1_DCache_Preload(vaddr, size, order);
-    }
-}
-
-/**
- * @brief Wait until L1 DCache manual preload is done
- *
- * @param cache_id  id of the cache in this type and level (0 or CACHE_LL_ID_ALL)
- */
-__attribute__((always_inline))
-static inline void cache_ll_l1_dcache_preload_wait_done(uint32_t cache_id)
-{
-    if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        while (Cache_L1_DCache_Preload_Done() == 0) {
-        }
-    }
-}
-
-/**
- * @brief Start L2 Cache manual preload
- *
- * Starts preload for the given region and does not wait. Use
- * cache_ll_l2_preload_wait_done() to wait for completion.
- *
- * @param cache_id   id of the cache in this type and level (0 or CACHE_LL_ID_ALL)
- * @param vaddr      start virtual address of the preload region
- * @param size       size of the preload region in bytes
- * @param order      preload order
- */
-__attribute__((always_inline))
-static inline void cache_ll_l2_preload(uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Start_L2_Cache_Preload(vaddr, size, order);
-    }
-}
-
-/**
- * @brief Wait until L2 Cache manual preload is done
- *
- * @param cache_id  id of the cache in this type and level (0 or CACHE_LL_ID_ALL)
- */
-__attribute__((always_inline))
-static inline void cache_ll_l2_preload_wait_done(uint32_t cache_id)
-{
-    if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        while (Cache_L2_Cache_Preload_Done() == 0) {
-        }
-    }
-}
-
-/*------------------------------------------------------------------------------
- * Cache Preload
- *----------------------------------------------------------------------------*/
-/**
- * @brief Set the preload strategy
- *
- * @param cache_level  level of the cache
- * @param type         see `cache_type_t`
- * @param cache_id     id of the cache in this type and level
- * @param strategy     the preload strategy
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_set_strategy(uint32_t cache_level, cache_type_t type, uint32_t cache_id, cache_ll_preload_strategy_t strategy)
-{
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-    if (cache_level == 2 || cache_level == CACHE_LL_LEVEL_ALL) {
-        CACHE.l2_cache_ctrl.l2_cache_undef_op = strategy;
-    }
-    if (cache_level == 1 || cache_level == CACHE_LL_LEVEL_ALL) {
-        switch (type) {
-        case CACHE_TYPE_INSTRUCTION:
-            CACHE.l1_icache_ctrl.l1_icache_undef_op = strategy;
-            break;
-        case CACHE_TYPE_DATA:
-            CACHE.l1_dcache_ctrl.l1_dcache_undef_op = strategy;
-            break;
-        case CACHE_TYPE_ALL:
-        default:
-            CACHE.l1_icache_ctrl.l1_icache_undef_op = strategy;
-            CACHE.l1_dcache_ctrl.l1_dcache_undef_op = strategy;
-            break;
-        }
-    }
-#endif
-}
-
-/**
- * @brief Preload cache (L1 and/or L2)
- *
- * Starts preload for the given level/type and does not wait. Use
- * cache_ll_preload_wait_done() to wait for completion.
- *
- * @param cache_level  level of the cache (1: L1, 2: L2, or CACHE_LL_LEVEL_ALL)
- * @param type         see `cache_type_t` (INSTRUCTION, DATA, or ALL)
- * @param cache_id     id of the cache in this type and level (0, 1, or CACHE_LL_ID_ALL)
- * @param vaddr        start virtual address of the preload region
- * @param size         size of the preload region in bytes
- * @param order        preload order, see `cache_preload_order_t`
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload(uint32_t cache_level, cache_type_t type, uint32_t cache_id, uint32_t vaddr, uint32_t size, cache_preload_order_t order)
-{
-    if (cache_level == 2 || cache_level == CACHE_LL_LEVEL_ALL) {
-        cache_ll_l2_preload(cache_id, vaddr, size, order);
-    }
-    if (cache_level == 1 || cache_level == CACHE_LL_LEVEL_ALL) {
-        switch (type) {
-        case CACHE_TYPE_INSTRUCTION:
-            cache_ll_l1_icache_preload(cache_id, vaddr, size, order);
-            break;
-        case CACHE_TYPE_DATA:
-            cache_ll_l1_dcache_preload(cache_id, vaddr, size, order);
-            break;
-        case CACHE_TYPE_ALL:
-        default:
-            cache_ll_l1_icache_preload(cache_id, vaddr, size, order);
-            cache_ll_l1_dcache_preload(cache_id, vaddr, size, order);
-            break;
-        }
-    }
-}
-
-/**
- * @brief Wait until cache preload is done
- *
- * @param cache_level  level of the cache (1: L1, 2: L2)
- * @param type         see `cache_type_t` (INSTRUCTION, DATA, or ALL)
- * @param cache_id     id of the cache in this type and level (0, 1, or CACHE_LL_ID_ALL)
- */
-__attribute__((always_inline))
-static inline void cache_ll_preload_wait_done(uint32_t cache_level, cache_type_t type, uint32_t cache_id)
-{
-    if (cache_level == 2 || cache_level == CACHE_LL_LEVEL_ALL) {
-        cache_ll_l2_preload_wait_done(cache_id);
-    }
-
-    if (cache_level == 1 || cache_level == CACHE_LL_LEVEL_ALL) {
-        switch (type) {
-        case CACHE_TYPE_INSTRUCTION:
-            cache_ll_l1_icache_preload_wait_done(cache_id);
-            break;
-        case CACHE_TYPE_DATA:
-            cache_ll_l1_dcache_preload_wait_done(cache_id);
-            break;
-        case CACHE_TYPE_ALL:
-        default:
-            cache_ll_l1_icache_preload_wait_done(cache_id);
-            cache_ll_l1_dcache_preload_wait_done(cache_id);
-            break;
-        }
-    }
-}
-
-/*------------------------------------------------------------------------------
  * Cache Line Size
  *----------------------------------------------------------------------------*/
 /**
@@ -1396,67 +1162,6 @@ static inline void cache_ll_l2_clear_access_error_intr(uint32_t cache_id, uint32
 static inline uint32_t cache_ll_l2_get_access_error_intr_status(uint32_t cache_id, uint32_t mask)
 {
     return CACHE.l2_cache_acs_fail_int_st.val & mask;
-}
-
-/*----------------------------------------------------------------------------
-                    Cache Profile Counter Related
------------------------------------------------------------------------------*/
-#define CACHE_LL_PROFILE_CNT_L1_ENA_MASK (CACHE_L1_IBUS0_CNT_ENA | CACHE_L1_IBUS1_CNT_ENA | \
-                                         CACHE_L1_DBUS0_CNT_ENA | CACHE_L1_DBUS1_CNT_ENA)
-#define CACHE_LL_PROFILE_CNT_L1_CLR_MASK (CACHE_L1_IBUS0_CNT_CLR | CACHE_L1_IBUS1_CNT_CLR | \
-                                         CACHE_L1_DBUS0_CNT_CLR | CACHE_L1_DBUS1_CNT_CLR)
-#define CACHE_LL_PROFILE_CNT_L2_ENA_MASK (CACHE_L2_IBUS0_CNT_ENA | CACHE_L2_IBUS1_CNT_ENA | \
-                                         CACHE_L2_DBUS0_CNT_ENA | CACHE_L2_DBUS1_CNT_ENA)
-#define CACHE_LL_PROFILE_CNT_L2_CLR_MASK (CACHE_L2_IBUS0_CNT_CLR | CACHE_L2_IBUS1_CNT_CLR | \
-                                         CACHE_L2_DBUS0_CNT_CLR | CACHE_L2_DBUS1_CNT_CLR)
-
-/**
- * @brief Enable or disable the cache profile counters
- *
- * @param ena  True to enable, false to disable
- */
-__attribute__((always_inline))
-static inline void cache_ll_enable_profile_counter(bool ena)
-{
-    if (ena) {
-        REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L1_ENA_MASK);
-        REG_SET_BIT(CACHE_L2_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L2_ENA_MASK);
-    } else {
-        REG_CLR_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L1_ENA_MASK);
-        REG_CLR_BIT(CACHE_L2_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L2_ENA_MASK);
-    }
-}
-
-/**
- * @brief Reset all cache profile counters to zero
- */
-__attribute__((always_inline))
-static inline void cache_ll_clear_profile_counter(void)
-{
-    /* clear bits are write-to-trigger and self-clearing */
-    REG_SET_BIT(CACHE_L1_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L1_CLR_MASK);
-    REG_SET_BIT(CACHE_L2_CACHE_ACS_CNT_CTRL_REG, CACHE_LL_PROFILE_CNT_L2_CLR_MASK);
-}
-
-/**
- * @brief Read one counter of a cache profile counter unit
- *
- * @param unit         Unit index, 0 to SOC_CACHE_CNT_UNITS_NUM - 1
- * @param counter      Counter to read
- * @param[out] value   Counter value, only written if the counter exists
- *
- * @return True if the unit has this counter, false otherwise
- */
-__attribute__((always_inline))
-static inline bool cache_ll_get_profile_counter(int unit, cache_profile_counter_t counter, uint32_t *value)
-{
-    HAL_ASSERT(unit < SOC_CACHE_CNT_UNITS_NUM);
-    uint32_t reg = cache_periph_profile_counter_units[unit].counter_reg[counter];
-    if (reg == 0) {
-        return false;
-    }
-    *value = REG_READ(reg);
-    return true;
 }
 
 #ifdef __cplusplus

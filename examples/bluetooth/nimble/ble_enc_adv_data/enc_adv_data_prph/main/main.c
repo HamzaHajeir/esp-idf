@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -20,14 +20,6 @@
 static const char *tag = "ENC_ADV_DATA_PRPH";
 static int enc_adv_data_prph_gap_event(struct ble_gap_event *event, void *arg);
 const uint8_t device_name[3] = {'k', 'e', 'y'};
-
-#if MYNEWT_VAL(BLE_EXT_ADV)
-static uint8_t ext_adv_pattern[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x2C, 0x01,
-};
-#endif
 
 static uint8_t unencrypted_adv_pattern[] = {
     0x05, 0X09, 'p', 'r', 'p', 'h'
@@ -76,8 +68,8 @@ enc_adv_data_prph_print_conn_desc(struct ble_gap_conn_desc *desc)
                 desc->sec_state.bonded);
 }
 
-static int
-enc_adv_data_prph_encrypt_set(uint8_t *out_encrypted_adv_data,
+static void
+enc_adv_data_prph_encrypt_set(uint8_t * out_encrypted_adv_data,
                               const unsigned encrypted_adv_data_len)
 {
     int rc;
@@ -93,13 +85,13 @@ enc_adv_data_prph_encrypt_set(uint8_t *out_encrypted_adv_data,
     print_bytes(unencrypted_adv_data, unencrypted_adv_data_len);
     MODLOG_DFLT(INFO, "\n");
 
-    rc = ble_ead_encrypt(km.session_key, km.iv, unencrypted_adv_data,
-                         unencrypted_adv_data_len, encrypted_adv_data);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Encryption of adv data failed; rc=%d", rc);
-        return rc;
+    rc = ble_ead_encrypt(km.session_key, km.iv, unencrypted_adv_data, unencrypted_adv_data_len, encrypted_adv_data);
+    if (rc == 0) {
+        MODLOG_DFLT(INFO, "Encryption of adv data done successfully");
+    } else {
+        MODLOG_DFLT(INFO, "Encryption of adv data failed");
+        return;
     }
-    MODLOG_DFLT(INFO, "Encryption of adv data done successfully");
 
     MODLOG_DFLT(INFO, "Data after encryption:");
     print_bytes(encrypted_adv_data, encrypted_adv_data_len);
@@ -107,85 +99,8 @@ enc_adv_data_prph_encrypt_set(uint8_t *out_encrypted_adv_data,
 
     /** Contains Randomiser ## Encrypted Advertising Data ## MIC */
     memcpy(out_encrypted_adv_data, encrypted_adv_data, encrypted_adv_data_len);
-    return 0;
 }
 
-#if MYNEWT_VAL(BLE_EXT_ADV)
-/**
- * Enables advertising with the following parameters:
- *     o General discoverable mode.
- *     o Undirected connectable mode.
- */
-static void
-enc_adv_data_prph_ext_advertise(void)
-{
-    struct ble_gap_ext_adv_params params;
-    struct os_mbuf *data;
-    uint8_t * temp;
-    uint8_t instance = 0;
-    int rc;
-
-    const unsigned encrypted_adv_data_len = BLE_EAD_ENCRYPTED_PAYLOAD_SIZE(sizeof(unencrypted_adv_pattern));
-    uint8_t encrypted_adv_data[encrypted_adv_data_len];
-    memset(encrypted_adv_data, 0, encrypted_adv_data_len);
-
-    /* First check if any instance is already active */
-    if(ble_gap_ext_adv_active(instance)) {
-        return;
-    }
-
-    /* use defaults for non-set params */
-    memset (&params, 0, sizeof(params));
-
-    /* enable connectable advertising */
-    params.connectable = 1;
-
-    /* advertise using configured addr */
-    params.own_addr_type = own_addr_type;
-
-    params.primary_phy = BLE_HCI_LE_PHY_1M;
-    params.secondary_phy = BLE_HCI_LE_PHY_2M;
-    params.tx_power = 127;
-    params.sid = 1;
-
-    params.itvl_min = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
-    params.itvl_max = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
-
-    /* configure instance 0 */
-    rc = ble_gap_ext_adv_configure(instance, &params, NULL,
-                                   enc_adv_data_prph_gap_event, NULL);
-    assert (rc == 0);
-
-    rc = enc_adv_data_prph_encrypt_set(encrypted_adv_data, encrypted_adv_data_len);
-    if (rc != 0) {
-        return;
-    }
-
-    /* get mbuf with adv data */
-    temp = malloc(sizeof(ext_adv_pattern) + 2 + encrypted_adv_data_len);
-    if (temp == NULL) {
-        MODLOG_DFLT(ERROR, "Failed to allocate temp buffer for ext adv data");
-        return;
-    }
-    memcpy(temp, ext_adv_pattern, sizeof(ext_adv_pattern));
-    temp[sizeof(ext_adv_pattern)] = 1 + encrypted_adv_data_len;
-    temp[sizeof(ext_adv_pattern) + 1] = BLE_GAP_ENC_ADV_DATA;
-    memcpy(temp + sizeof(ext_adv_pattern) + 2, encrypted_adv_data, encrypted_adv_data_len);
-
-    data = ble_hs_mbuf_from_flat(temp, sizeof(ext_adv_pattern) + 2 + encrypted_adv_data_len);
-    assert(data);
-
-    free(temp);
-    temp = NULL;
-
-    rc = ble_gap_ext_adv_set_data(instance, data);
-    assert (rc == 0);
-
-    /* start advertising */
-    rc = ble_gap_ext_adv_start(instance, 0, 0);
-    assert (rc == 0);
-}
-#else
 /**
  * Enables advertising with the following parameters:
  *     o General discoverable mode.
@@ -196,13 +111,11 @@ enc_adv_data_prph_advertise(void)
 {
     struct ble_gap_adv_params params;
     struct ble_hs_adv_fields fields;
+    uint8_t own_addr_type;
     int rc;
 
-    static const ble_uuid16_t adv_uuids16[] = {
-        BLE_UUID16_INIT(0x2C01) /** For the central to recognise this device */
-    };
-    static uint8_t encrypted_adv_data[BLE_EAD_ENCRYPTED_PAYLOAD_SIZE(sizeof(unencrypted_adv_pattern))];
-    const unsigned encrypted_adv_data_len = sizeof(encrypted_adv_data);
+    const unsigned encrypted_adv_data_len = BLE_EAD_ENCRYPTED_PAYLOAD_SIZE(sizeof(unencrypted_adv_pattern));
+    uint8_t encrypted_adv_data[encrypted_adv_data_len];
     memset(encrypted_adv_data, 0, encrypted_adv_data_len);
 
     /* First check if any instance is already active */
@@ -213,6 +126,8 @@ enc_adv_data_prph_advertise(void)
     /* use defaults for non-set params */
     memset (&params, 0, sizeof(params));
     memset (&fields, 0, sizeof(fields));
+
+    own_addr_type = BLE_OWN_ADDR_PUBLIC;
 
     /* enable connectable advertising */
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -227,15 +142,14 @@ enc_adv_data_prph_advertise(void)
     fields.name_len = 3;
     fields.name_is_complete = 1;
 
-    fields.uuids16 = adv_uuids16;
+    fields.uuids16 = (ble_uuid16_t[]) {
+        BLE_UUID16_INIT(0x2C01) /** For the central to recognise this device */
+    };
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
     /** Getting the encrypted advertising data */
-    rc = enc_adv_data_prph_encrypt_set(encrypted_adv_data, encrypted_adv_data_len);
-    if (rc != 0) {
-        return;
-    }
+    enc_adv_data_prph_encrypt_set(encrypted_adv_data, encrypted_adv_data_len);
 
     fields.enc_adv_data = encrypted_adv_data;
     fields.enc_adv_data_len = encrypted_adv_data_len;
@@ -248,7 +162,6 @@ enc_adv_data_prph_advertise(void)
                            &params, enc_adv_data_prph_gap_event, NULL);
     assert (rc == 0);
 }
-#endif
 
 /**
  * The nimble host executes this callback when a GAP event occurs.  The
@@ -286,11 +199,7 @@ enc_adv_data_prph_gap_event(struct ble_gap_event *event, void *arg)
 
         if (event->connect.status != 0) {
             /* Connection failed; resume advertising. */
-#if MYNEWT_VAL(BLE_EXT_ADV)
-            enc_adv_data_prph_ext_advertise();
-#else
             enc_adv_data_prph_advertise();
-#endif
         }
 
         return 0;
@@ -301,11 +210,7 @@ enc_adv_data_prph_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "\n");
 
         /* Connection terminated; resume advertising. */
-#if MYNEWT_VAL(BLE_EXT_ADV)
-        enc_adv_data_prph_ext_advertise();
-#else
         enc_adv_data_prph_advertise();
-#endif
         return 0;
 
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -339,8 +244,6 @@ enc_adv_data_prph_gap_event(struct ble_gap_event *event, void *arg)
         /** For now only BLE_SM_IOACT_DISP is handled */
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
             pkey.action = event->passkey.params.action;
-            /* WARNING: Hardcoded passkey for demonstration only.
-             * In production, generate a random passkey per pairing. */
             pkey.passkey = 123456;
             ESP_LOGI(tag, "Enter passkey %" PRIu32 " on the peer side", pkey.passkey);
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
@@ -400,22 +303,17 @@ enc_adv_data_prph_on_reset(int reason)
 static void
 ble_app_set_addr(void)
 {
-    ble_addr_t addr = {0};
+    ble_addr_t addr;
     int rc;
 
     /* generate new non-resolvable private address */
     rc = ble_hs_id_gen_rnd(0, &addr);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Failed to generate random address; rc=%d\n", rc);
-        return;
-    }
+    assert(rc == 0);
 
     /* set generated address */
     rc = ble_hs_id_set_rnd(addr.val);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Failed to set random address; rc=%d\n", rc);
-        return;
-    }
+
+    assert(rc == 0);
 }
 #endif
 
@@ -453,11 +351,7 @@ enc_adv_data_prph_on_sync(void)
     MODLOG_DFLT(INFO, "\n");
 
     /* Begin advertising. */
-#if MYNEWT_VAL(BLE_EXT_ADV)
-    enc_adv_data_prph_ext_advertise();
-#else
     enc_adv_data_prph_advertise();
-#endif
 }
 
 void enc_adv_data_prph_host_task(void *param)
@@ -523,11 +417,9 @@ app_main(void)
     rc = gatt_svr_init();
     assert(rc == 0);
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("enc_adv_data_prph");
     assert(rc == 0);
-#endif
 #endif
 
     /* Set the session key and initialization vector */

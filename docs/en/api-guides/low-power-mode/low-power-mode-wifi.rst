@@ -6,9 +6,8 @@ Introduction to Low Power Mode in Wi-Fi Scenarios
 After the previous introduction to low power mode from a systemic perspective, this section delves into low power mode in Wi-Fi scenarios. Due to the complexity of Wi-Fi scenarios, basic principles of Wi-Fi power saving will be introduced before specific low power mode. This section is focused on station mode.
 
 .. todo - add sleep-current/esp32c61_summary.inc
-.. todo - add sleep-current/esp32s31_summary.inc
 
-.. only:: not esp32c61 and not esp32s31
+.. only:: not esp32c61
 
   Choosing Low Power Mode in Wi-Fi Scenarios
   ---------------------------------------------
@@ -52,7 +51,7 @@ Second, the time from powering up to powering down Wi-Fi related modules in a st
   - Time offset caused by clock accuracy. The main reason is that clocks may deviate from ideal time to some extent, and the deviation can be positive or negative.
   - Time spent processing missed beacon frames, such as the duration of continuous listening after a missed beacon, the maximum allowable number of missed beacons, etc. The existence and duration of this period are uncertain but can be configured within a range.
   - Active time added to ensure the reception of burst data packets, which can be determined by configuration.
-  - IDLE time is required for specific power-saving modes to meet entry conditions. Therefore, reducing the working time can improve power performance while meeting communication requirements.
+  - ILDE time is required for specific power-saving modes to meet entry conditions. Therefore, reducing the working time can improve power performance while meeting communication requirements.
 
 .. code-block:: text
 
@@ -274,24 +273,24 @@ Common Configuration Options
 
 - Power consumption related:
 
-  - Max Wi-Fi TX power (dBm) (:menuitem:`CONFIG_ESP_PHY_MAX_WIFI_TX_POWER`)
+  - Max Wi-Fi TX power (dBm) (:ref:`CONFIG_ESP_PHY_MAX_WIFI_TX_POWER`)
 
 - Speed optimization related:
 
-  - Wi-Fi IRAM speed optimization (:menuitem:`CONFIG_ESP_WIFI_IRAM_OPT`)
-  - Wi-Fi RX IRAM speed optimization (:menuitem:`CONFIG_ESP_WIFI_RX_IRAM_OPT`)
-  - Wi-Fi Sleep IRAM speed optimization (:menuitem:`CONFIG_ESP_WIFI_SLP_IRAM_OPT`)
+  - Wi-Fi IRAM speed optimization (:ref:`CONFIG_ESP_WIFI_IRAM_OPT`)
+  - Wi-Fi RX IRAM speed optimization (:ref:`CONFIG_ESP_WIFI_RX_IRAM_OPT`)
+  - Wi-Fi Sleep IRAM speed optimization (:ref:`CONFIG_ESP_WIFI_SLP_IRAM_OPT`)
 
 
 - Wi-Fi Protocol related:
 
-  - Minimum active time (:menuitem:`CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME`)
+  - Minimum active time (:ref:`CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME`)
 
-  - Maximum keep alive time (:menuitem:`CONFIG_ESP_WIFI_SLP_DEFAULT_MAX_ACTIVE_TIME`)
+  - Maximum keep alive time (:ref:`CONFIG_ESP_WIFI_SLP_DEFAULT_MAX_ACTIVE_TIME`)
 
-  - Send gratuitous ARP periodically (:menuitem:`CONFIG_LWIP_ESP_GRATUITOUS_ARP`)
+  - Send gratuitous ARP periodically (:ref:`CONFIG_LWIP_ESP_GRATUITOUS_ARP`)
 
-  - Wi-Fi sleep optimize when beacon lost (:menuitem:`CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT`)
+  - Wi-Fi sleep optimize when beacon lost (:ref:`CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT`)
 
 
 .. _Modem-sleep Mode Configuration:
@@ -365,9 +364,8 @@ Modem-sleep Mode Configuration
           - false
 
     .. todo - add sleep-current/esp32c61_modem_sleep.inc
-    .. todo - add sleep-current/esp32s31_modem_sleep.inc
 
-    .. only:: not esp32c61 and not esp32s31
+    .. only:: not esp32c61
 
       - Configuration Performance
 
@@ -380,9 +378,8 @@ Auto Light-sleep Mode + Wi-Fi Scenario Configuration
 Auto Light-sleep mode in Wi-Fi scenarios does not require wake-up source configuration compared with a pure system. But the remaining part of configuration is basically the same in the two operation scenarios. Therefore, detailed introduction of configurable options, configuration steps, and recommended configurations can be found in the previous section :ref:`Deep-sleep Mode`, with the Wi-Fi-related configurations set to default.
 
 .. todo - add eep-current/esp32c61_light_sleep.inc
-.. todo - add sleep-current/esp32s31_light_sleep.inc
 
-.. only:: not esp32c61 and not esp32s31
+.. only:: not esp32c61
 
   - Configuration Performance
 

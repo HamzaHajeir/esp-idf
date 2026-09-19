@@ -6,8 +6,8 @@ endif()
 
 set(includes "include")
 
-# Note: requires esp_mspi for cache_utils
-set(priv_requires heap esp_hal_dma esp_mspi)
+# Note: requires spi_flash for cache_utils, will be refactored
+set(priv_requires heap spi_flash)
 
 set(srcs)
 
@@ -25,6 +25,8 @@ else()
         list(APPEND srcs "esp_cache_msync.c")
     endif()
 endif()
+
+list(APPEND srcs "heap_align_hw.c")
 
 idf_component_register(SRCS ${srcs}
                        INCLUDE_DIRS ${includes}

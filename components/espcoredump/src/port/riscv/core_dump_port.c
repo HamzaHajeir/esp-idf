@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,9 +28,8 @@ const static char TAG[] __attribute__((unused)) = "esp_core_dump_port";
 #define COREDUMP_EM_RISCV                   0xF3
 
 #define COREDUMP_INVALID_CAUSE_VALUE        0xFFFF
-// Fake stack range is outside of DRAM and EXTRAM regions
-#define COREDUMP_FAKE_STACK_START           0x70000000U
-#define COREDUMP_FAKE_STACK_LIMIT           0x80000000U
+#define COREDUMP_FAKE_STACK_START           0x20000000U
+#define COREDUMP_FAKE_STACK_LIMIT           0x30000000U
 
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define max(a,b) ((a) < (b) ? (b) : (a))
@@ -229,9 +228,6 @@ static inline bool esp_core_dump_task_stack_end_is_sane(uint32_t sp)
 #if CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP
            || esp_ptr_in_rtc_dram_fast((void*) sp)
 #endif
-#if SOC_MEM_SPM_SUPPORTED
-           || esp_ptr_in_spm((void *)sp)
-#endif
            ;
 }
 
@@ -315,11 +311,7 @@ bool esp_core_dump_mem_seg_is_sane(uint32_t addr, uint32_t sz)
            || (esp_ptr_in_rtc_slow((void *)addr) && esp_ptr_in_rtc_slow((void *)(addr + sz - 1)))
            || (esp_ptr_in_rtc_dram_fast((void *)addr) && esp_ptr_in_rtc_dram_fast((void *)(addr + sz - 1)))
            || (esp_ptr_external_ram((void *)addr) && esp_ptr_external_ram((void *)(addr + sz - 1)))
-           || (esp_ptr_in_iram((void *)addr) && esp_ptr_in_iram((void *)(addr + sz - 1)))
-#if SOC_MEM_SPM_SUPPORTED
-           || (esp_ptr_in_spm((void *)addr) && esp_ptr_in_spm((void *)(addr + sz - 1)))
-#endif
-           ;
+           || (esp_ptr_in_iram((void *)addr) && esp_ptr_in_iram((void *)(addr + sz - 1)));
 }
 
 /**

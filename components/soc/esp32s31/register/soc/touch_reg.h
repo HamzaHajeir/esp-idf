@@ -1,10 +1,11 @@
 /**
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  *  SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
@@ -13,7 +14,7 @@ extern "C" {
 /** TOUCH_INT_RAW_REG register
  *  need_des
  */
-#define TOUCH_INT_RAW_REG (DR_REG_TOUCH_SENS_BASE + 0x0)
+#define TOUCH_INT_RAW_REG (DR_REG_TOUCH_BASE + 0x0)
 /** TOUCH_SCAN_DONE_INT_RAW : R/WTC/SS; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -67,7 +68,7 @@ extern "C" {
 /** TOUCH_INT_ST_REG register
  *  need_des
  */
-#define TOUCH_INT_ST_REG (DR_REG_TOUCH_SENS_BASE + 0x4)
+#define TOUCH_INT_ST_REG (DR_REG_TOUCH_BASE + 0x4)
 /** TOUCH_SCAN_DONE_INT_ST : RO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -121,7 +122,7 @@ extern "C" {
 /** TOUCH_INT_ENA_REG register
  *  need_des
  */
-#define TOUCH_INT_ENA_REG (DR_REG_TOUCH_SENS_BASE + 0x8)
+#define TOUCH_INT_ENA_REG (DR_REG_TOUCH_BASE + 0x8)
 /** TOUCH_SCAN_DONE_INT_ENA : R/W; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -175,7 +176,7 @@ extern "C" {
 /** TOUCH_INT_CLR_REG register
  *  need_des
  */
-#define TOUCH_INT_CLR_REG (DR_REG_TOUCH_SENS_BASE + 0xc)
+#define TOUCH_INT_CLR_REG (DR_REG_TOUCH_BASE + 0xc)
 /** TOUCH_SCAN_DONE_INT_CLR : WT; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -229,7 +230,7 @@ extern "C" {
 /** TOUCH_CHN_STATUS_REG register
  *  need_des
  */
-#define TOUCH_CHN_STATUS_REG (DR_REG_TOUCH_SENS_BASE + 0x10)
+#define TOUCH_CHN_STATUS_REG (DR_REG_TOUCH_BASE + 0x10)
 /** TOUCH_PAD_ACTIVE : RO; bitpos: [14:0]; default: 0;
  *  need_des
  */
@@ -255,7 +256,7 @@ extern "C" {
 /** TOUCH_STATUS_0_REG register
  *  need_des
  */
-#define TOUCH_STATUS_0_REG (DR_REG_TOUCH_SENS_BASE + 0x14)
+#define TOUCH_STATUS_0_REG (DR_REG_TOUCH_BASE + 0x14)
 /** TOUCH_PAD0_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -281,7 +282,7 @@ extern "C" {
 /** TOUCH_STATUS_1_REG register
  *  need_des
  */
-#define TOUCH_STATUS_1_REG (DR_REG_TOUCH_SENS_BASE + 0x18)
+#define TOUCH_STATUS_1_REG (DR_REG_TOUCH_BASE + 0x18)
 /** TOUCH_PAD1_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -307,7 +308,7 @@ extern "C" {
 /** TOUCH_STATUS_2_REG register
  *  need_des
  */
-#define TOUCH_STATUS_2_REG (DR_REG_TOUCH_SENS_BASE + 0x1c)
+#define TOUCH_STATUS_2_REG (DR_REG_TOUCH_BASE + 0x1c)
 /** TOUCH_PAD2_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -333,7 +334,7 @@ extern "C" {
 /** TOUCH_STATUS_3_REG register
  *  need_des
  */
-#define TOUCH_STATUS_3_REG (DR_REG_TOUCH_SENS_BASE + 0x20)
+#define TOUCH_STATUS_3_REG (DR_REG_TOUCH_BASE + 0x20)
 /** TOUCH_PAD3_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -359,7 +360,7 @@ extern "C" {
 /** TOUCH_STATUS_4_REG register
  *  need_des
  */
-#define TOUCH_STATUS_4_REG (DR_REG_TOUCH_SENS_BASE + 0x24)
+#define TOUCH_STATUS_4_REG (DR_REG_TOUCH_BASE + 0x24)
 /** TOUCH_PAD4_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -385,7 +386,7 @@ extern "C" {
 /** TOUCH_STATUS_5_REG register
  *  need_des
  */
-#define TOUCH_STATUS_5_REG (DR_REG_TOUCH_SENS_BASE + 0x28)
+#define TOUCH_STATUS_5_REG (DR_REG_TOUCH_BASE + 0x28)
 /** TOUCH_PAD5_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -411,7 +412,7 @@ extern "C" {
 /** TOUCH_STATUS_6_REG register
  *  need_des
  */
-#define TOUCH_STATUS_6_REG (DR_REG_TOUCH_SENS_BASE + 0x2c)
+#define TOUCH_STATUS_6_REG (DR_REG_TOUCH_BASE + 0x2c)
 /** TOUCH_PAD6_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -437,7 +438,7 @@ extern "C" {
 /** TOUCH_STATUS_7_REG register
  *  need_des
  */
-#define TOUCH_STATUS_7_REG (DR_REG_TOUCH_SENS_BASE + 0x30)
+#define TOUCH_STATUS_7_REG (DR_REG_TOUCH_BASE + 0x30)
 /** TOUCH_PAD7_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -463,7 +464,7 @@ extern "C" {
 /** TOUCH_STATUS_8_REG register
  *  need_des
  */
-#define TOUCH_STATUS_8_REG (DR_REG_TOUCH_SENS_BASE + 0x34)
+#define TOUCH_STATUS_8_REG (DR_REG_TOUCH_BASE + 0x34)
 /** TOUCH_PAD8_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -489,7 +490,7 @@ extern "C" {
 /** TOUCH_STATUS_9_REG register
  *  need_des
  */
-#define TOUCH_STATUS_9_REG (DR_REG_TOUCH_SENS_BASE + 0x38)
+#define TOUCH_STATUS_9_REG (DR_REG_TOUCH_BASE + 0x38)
 /** TOUCH_PAD9_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -515,7 +516,7 @@ extern "C" {
 /** TOUCH_STATUS_10_REG register
  *  need_des
  */
-#define TOUCH_STATUS_10_REG (DR_REG_TOUCH_SENS_BASE + 0x3c)
+#define TOUCH_STATUS_10_REG (DR_REG_TOUCH_BASE + 0x3c)
 /** TOUCH_PAD10_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -541,7 +542,7 @@ extern "C" {
 /** TOUCH_STATUS_11_REG register
  *  need_des
  */
-#define TOUCH_STATUS_11_REG (DR_REG_TOUCH_SENS_BASE + 0x40)
+#define TOUCH_STATUS_11_REG (DR_REG_TOUCH_BASE + 0x40)
 /** TOUCH_PAD11_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -567,7 +568,7 @@ extern "C" {
 /** TOUCH_STATUS_12_REG register
  *  need_des
  */
-#define TOUCH_STATUS_12_REG (DR_REG_TOUCH_SENS_BASE + 0x44)
+#define TOUCH_STATUS_12_REG (DR_REG_TOUCH_BASE + 0x44)
 /** TOUCH_PAD12_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -593,7 +594,7 @@ extern "C" {
 /** TOUCH_STATUS_13_REG register
  *  need_des
  */
-#define TOUCH_STATUS_13_REG (DR_REG_TOUCH_SENS_BASE + 0x48)
+#define TOUCH_STATUS_13_REG (DR_REG_TOUCH_BASE + 0x48)
 /** TOUCH_PAD13_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -619,7 +620,7 @@ extern "C" {
 /** TOUCH_STATUS_14_REG register
  *  need_des
  */
-#define TOUCH_STATUS_14_REG (DR_REG_TOUCH_SENS_BASE + 0x4c)
+#define TOUCH_STATUS_14_REG (DR_REG_TOUCH_BASE + 0x4c)
 /** TOUCH_PAD14_DATA : RO; bitpos: [15:0]; default: 0;
  *  need_des
  */
@@ -645,7 +646,7 @@ extern "C" {
 /** TOUCH_STATUS_15_REG register
  *  need_des
  */
-#define TOUCH_STATUS_15_REG (DR_REG_TOUCH_SENS_BASE + 0x50)
+#define TOUCH_STATUS_15_REG (DR_REG_TOUCH_BASE + 0x50)
 /** TOUCH_SLP_DATA : RO; bitpos: [15:0]; default: 65535;
  *  need_des
  */
@@ -671,7 +672,7 @@ extern "C" {
 /** TOUCH_STATUS_16_REG register
  *  need_des
  */
-#define TOUCH_STATUS_16_REG (DR_REG_TOUCH_SENS_BASE + 0x54)
+#define TOUCH_STATUS_16_REG (DR_REG_TOUCH_BASE + 0x54)
 /** TOUCH_APPROACH_PAD2_CNT : RO; bitpos: [7:0]; default: 0;
  *  need_des
  */
@@ -704,7 +705,7 @@ extern "C" {
 /** TOUCH_STATUS_17_REG register
  *  need_des
  */
-#define TOUCH_STATUS_17_REG (DR_REG_TOUCH_SENS_BASE + 0x58)
+#define TOUCH_STATUS_17_REG (DR_REG_TOUCH_BASE + 0x58)
 /** TOUCH_DCAP_LPF : RO; bitpos: [6:0]; default: 0;
  *  Reserved
  */
@@ -751,7 +752,7 @@ extern "C" {
 /** TOUCH_CHN_TMP_STATUS_REG register
  *  need_des
  */
-#define TOUCH_CHN_TMP_STATUS_REG (DR_REG_TOUCH_SENS_BASE + 0x5c)
+#define TOUCH_CHN_TMP_STATUS_REG (DR_REG_TOUCH_BASE + 0x5c)
 /** TOUCH_PAD_INACTIVE_STATUS : RO; bitpos: [14:0]; default: 0;
  *  need_des
  */
@@ -770,7 +771,7 @@ extern "C" {
 /** TOUCH_DATE_REG register
  *  need_des
  */
-#define TOUCH_DATE_REG (DR_REG_TOUCH_SENS_BASE + 0x100)
+#define TOUCH_DATE_REG (DR_REG_TOUCH_BASE + 0x100)
 /** TOUCH_CLK_EN : R/W; bitpos: [31]; default: 0;
  *  need_des
  */

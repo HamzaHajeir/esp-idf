@@ -1,3 +1,3 @@
-idf_component_register(SRCS "esp_h264_enc_dec.c" "video_pattern.c"
+idf_component_register(SRC_DIRS "./"
                        INCLUDE_DIRS "./"
                        PRIV_REQUIRES esp_psram)

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,13 +13,6 @@
 #include "btc_av.h"
 
 #if BTC_AV_INCLUDED
-
-// indicate the first time to call the register SEP function (for sink)
-static bool s_a2dp_sink_first_call_reg_sep[ESP_A2D_MAX_SEPS] = { [0 ... (ESP_A2D_MAX_SEPS - 1)] = true };
-// indicate the first time to call the register SEP function (for source)
-static bool s_a2dp_src_first_call_reg_sep[ESP_A2D_MAX_SEPS] = { [0 ... (ESP_A2D_MAX_SEPS - 1)] = true };
-// indicate the first time to call the get delay value function
-static bool s_a2dp_first_call_get_delay = true;
 
 esp_a2d_audio_buff_t *esp_a2d_audio_buff_alloc(uint16_t size)
 {
@@ -80,19 +73,12 @@ esp_err_t esp_a2d_sink_register_stream_endpoint(uint8_t seid, const esp_a2d_mcc_
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (mcc == NULL || seid >= ESP_A2D_MAX_SEPS) {
-        return ESP_ERR_INVALID_ARG;
+    if (g_a2dp_on_deinit || g_a2dp_sink_ongoing_deinit) {
+        return ESP_ERR_INVALID_STATE;
     }
 
-    /* To be compatible with the legacy usage methods,
-       use a flag indicating whether this is the first time the function has been called. */
-    if (s_a2dp_sink_first_call_reg_sep[seid]) {
-        s_a2dp_sink_first_call_reg_sep[seid] = false;
-        if (g_a2dp_sink_ongoing_deinit) {
-            return ESP_ERR_INVALID_STATE;
-        }
-    } else if (g_a2dp_on_deinit || g_a2dp_sink_ongoing_deinit) {
-        return ESP_ERR_INVALID_STATE;
+    if (seid >= ESP_A2D_MAX_SEPS) {
+        return ESP_ERR_INVALID_ARG;
     }
 
     btc_msg_t msg;
@@ -128,15 +114,7 @@ esp_err_t esp_a2d_sink_deinit(void)
 
     /* Switch to BTC context */
     bt_status_t stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
-    if (stat == BT_STATUS_SUCCESS) {
-        for (int i = 0; i < ESP_A2D_MAX_SEPS; i++) {
-            s_a2dp_sink_first_call_reg_sep[i] = false;
-        }
-        s_a2dp_first_call_get_delay = false;
-        return ESP_OK;
-    } else {
-        return ESP_FAIL;
-    }
+    return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t esp_a2d_sink_register_data_callback(esp_a2d_sink_data_cb_t callback)
@@ -231,7 +209,6 @@ esp_err_t esp_a2d_sink_disconnect(esp_bd_addr_t remote_bda)
     msg.pid = BTC_PID_A2DP;
     msg.act = BTC_AV_SINK_API_DISCONNECT_EVT;
 
-    memset(&arg, 0, sizeof(btc_av_args_t));
     /* Switch to BTC context */
     memcpy(&(arg.disconn), remote_bda, sizeof(bt_bdaddr_t));
     stat = btc_transfer_context(&msg, &arg, sizeof(btc_av_args_t), NULL, NULL);
@@ -270,14 +247,7 @@ esp_err_t esp_a2d_sink_get_delay_value(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* To be compatible with the legacy usage methods,
-       use a flag indicating whether this is the first time the function has been called. */
-    if (s_a2dp_first_call_get_delay) {
-        s_a2dp_first_call_get_delay = false;
-        if (g_a2dp_sink_ongoing_deinit) {
-            return ESP_ERR_INVALID_STATE;
-        }
-    } else if (g_a2dp_on_deinit || g_a2dp_sink_ongoing_deinit) {
+    if (g_a2dp_on_deinit || g_a2dp_sink_ongoing_deinit) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -322,7 +292,7 @@ esp_err_t esp_a2d_media_ctrl(esp_a2d_media_ctrl_t ctrl)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (ctrl <= ESP_A2D_MEDIA_CTRL_NONE || ctrl > ESP_A2D_MEDIA_CTRL_SUSPEND) {
+    if (ctrl > ESP_A2D_MEDIA_CTRL_SUSPEND) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -379,7 +349,7 @@ esp_err_t esp_a2d_source_init(void)
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t esp_a2d_source_set_pref_mcc(esp_a2d_conn_hdl_t conn_hdl, const esp_a2d_mcc_t *pref_mcc)
+esp_err_t esp_a2d_source_register_stream_endpoint(uint8_t seid, const esp_a2d_mcc_t *mcc)
 {
     if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
         return ESP_ERR_INVALID_STATE;
@@ -389,44 +359,8 @@ esp_err_t esp_a2d_source_set_pref_mcc(esp_a2d_conn_hdl_t conn_hdl, const esp_a2d
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (conn_hdl == 0 || pref_mcc == NULL) {
+    if (seid >= ESP_A2D_MAX_SEPS) {
         return ESP_ERR_INVALID_ARG;
-    }
-
-    btc_msg_t msg;
-    msg.sig = BTC_SIG_API_CALL;
-    msg.pid = BTC_PID_A2DP;
-    msg.act = BTC_AV_SRC_API_SET_PREF_MCC_EVT;
-
-    btc_av_args_t arg;
-    memset(&arg, 0, sizeof(btc_av_args_t));
-    arg.set_pref_mcc.conn_hdl = conn_hdl;
-    memcpy(&arg.set_pref_mcc.pref_mcc, pref_mcc, sizeof(esp_a2d_mcc_t));
-
-    /* Switch to BTC context */
-    bt_status_t stat = btc_transfer_context(&msg, &arg, sizeof(btc_av_args_t), NULL, NULL);
-    return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
-}
-
-esp_err_t esp_a2d_source_register_stream_endpoint(uint8_t seid, const esp_a2d_mcc_t *mcc)
-{
-    if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (mcc == NULL || seid >= ESP_A2D_MAX_SEPS) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    /* To be compatible with the legacy usage methods,
-       use a flag indicating whether this is the first time the function has been called. */
-    if (s_a2dp_src_first_call_reg_sep[seid]) {
-        s_a2dp_src_first_call_reg_sep[seid] = false;
-        if (g_a2dp_source_ongoing_deinit) {
-            return ESP_ERR_INVALID_STATE;
-        }
-    } else if (g_a2dp_on_deinit || g_a2dp_source_ongoing_deinit) {
-        return ESP_ERR_INVALID_STATE;
     }
 
     btc_msg_t msg;
@@ -462,14 +396,7 @@ esp_err_t esp_a2d_source_deinit(void)
 
     /* Switch to BTC context */
     bt_status_t stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
-    if (stat == BT_STATUS_SUCCESS) {
-        for (int i = 0; i < ESP_A2D_MAX_SEPS; i++) {
-            s_a2dp_src_first_call_reg_sep[i] = false;
-        }
-        return ESP_OK;
-    } else {
-        return ESP_FAIL;
-    }
+    return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t esp_a2d_source_connect(esp_bd_addr_t remote_bda)
@@ -550,11 +477,7 @@ esp_err_t esp_a2d_source_register_data_callback(esp_a2d_source_data_cb_t callbac
 
 esp_err_t esp_a2d_source_audio_data_send(esp_a2d_conn_hdl_t conn_hdl, esp_a2d_audio_buff_t *audio_buf)
 {
-    if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (g_a2dp_on_deinit || g_a2dp_source_ongoing_deinit || !btc_av_is_started()) {
+    if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED || !btc_av_is_started()) {
         return ESP_ERR_INVALID_STATE;
     }
 

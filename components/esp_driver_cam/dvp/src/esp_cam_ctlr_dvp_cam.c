@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,7 +11,6 @@
 #include "hal/color_hal.h"
 #include "driver/gpio.h"
 #include "esp_cache.h"
-#include "esp_macros.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_cache_private.h"
 #include "esp_private/gpio.h"
@@ -38,6 +37,12 @@
 #define DVP_CAM_BK_BUFFER_ALLOC_CAPS        (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)
 #endif
 
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define DVP_CAM_CLK_ATOMIC()                PERIPH_RCC_ATOMIC()
+#else
+#define DVP_CAM_CLK_ATOMIC()
+#endif
+
 #if CAM_LL_DATA_WIDTH_MAX
 #define CAP_DVP_PERIPH_NUM      CAM_LL_PERIPH_NUM           /*!< DVP port number */
 #define CAM_DVP_DATA_SIG_NUM    CAM_LL_DATA_WIDTH_MAX       /*!< DVP data bus width of CAM */
@@ -45,6 +50,8 @@
 #define CAP_DVP_PERIPH_NUM      0                           /*!< Default value */
 #define CAM_DVP_DATA_SIG_NUM    0                           /*!< Default value */
 #endif
+
+#define ALIGN_UP_BY(num, align) ((align) == 0 ? (num) : (((num) + ((align) - 1)) & ~((align) - 1)))
 
 #define DVP_CAM_CONFIG_INPUT_PIN(pin, sig, inv)                     \
 {                                                                   \
@@ -65,7 +72,6 @@ typedef struct dvp_platform {
 
 static dvp_platform_t s_platform;
 static const char *TAG = "dvp_cam";
-static soc_module_clk_t s_dvp_clk_src[CAP_DVP_PERIPH_NUM];
 
 /**
  * @brief Claim DVP controller
@@ -178,9 +184,6 @@ static IRAM_ATTR esp_err_t esp_cam_ctlr_dvp_start_trans(esp_cam_ctlr_dvp_cam_t *
         assert(false && "no new buffer, and no driver internal buffer");
     }
 
-    ESP_RETURN_ON_ERROR(esp_cache_msync((void *)(trans.buffer), trans.buflen, ESP_CACHE_MSYNC_FLAG_DIR_M2C),
-                        TAG, "failed to sync(M2C) trans buffer");
-
     ESP_RETURN_ON_ERROR_ISR(esp_cam_ctlr_dvp_dma_reset(&ctlr->dma), TAG, "failed to reset DMA");
     ESP_RETURN_ON_ERROR_ISR(esp_cam_ctlr_dvp_dma_start(&ctlr->dma, trans.buffer, ctlr->fb_size_in_bytes), TAG, "failed to start DMA");
 
@@ -230,7 +233,7 @@ static uint32_t IRAM_ATTR esp_cam_ctlr_dvp_get_recved_size(esp_cam_ctlr_dvp_cam_
     uint32_t recv_buffer_size;
 
     if (ctlr->pic_format_jpeg) {
-        recv_buffer_size = ESP_ALIGN_UP(MIN(dma_recv_size, ctlr->fb_size_in_bytes), 64);
+        recv_buffer_size = ALIGN_UP_BY(MIN(dma_recv_size, ctlr->fb_size_in_bytes), 64);
     } else {
         recv_buffer_size = ctlr->fb_size_in_bytes;
     }
@@ -266,7 +269,10 @@ static esp_err_t esp_cam_ctlr_dvp_cam_get_frame_size(const esp_cam_ctlr_dvp_conf
     if (config->pic_format_jpeg) {
         *p_size = config->h_res * config->v_res;
     } else {
-        uint32_t depth = color_hal_pixel_format_fourcc_get_bit_depth(config->input_data_color_type);
+        color_space_pixel_format_t pixel_format = {
+            .color_type_id = config->input_data_color_type
+        };
+        uint32_t depth = color_hal_pixel_format_get_bit_depth(pixel_format);
         if (!depth) {
             return ESP_ERR_INVALID_ARG;
         }
@@ -346,24 +352,15 @@ esp_err_t esp_cam_ctlr_dvp_init(int ctlr_id, cam_clock_source_t clk_src, const e
         esp_rom_gpio_connect_out_signal(pin->xclk_io, cam_periph_signals.buses[ctlr_id].clk_sig, false, false);
     }
 
-#if CONFIG_IDF_TARGET_ESP32S31
-    ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)CAM_CORE_CLK_SRC_DEFAULT, true));
-#endif
-
     PERIPH_RCC_ACQUIRE_ATOMIC(cam_periph_signals.buses[ctlr_id].module, ref_count) {
         if (ref_count == 0) {
             cam_ll_enable_bus_clock(ctlr_id, true);
             cam_ll_reset_register(ctlr_id);
-#if CONFIG_IDF_TARGET_ESP32S31
-            cam_ll_select_core_clk_src(ctlr_id, CAM_CORE_CLK_SRC_DEFAULT);
-            cam_ll_set_core_clock_divider(ctlr_id, 2, 0, 0);
-#endif
         }
     }
 
     ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)clk_src, true));
-    s_dvp_clk_src[ctlr_id] = (soc_module_clk_t)clk_src;
-    PERIPH_RCC_ATOMIC() {
+    DVP_CAM_CLK_ATOMIC() {
         cam_ll_enable_clk(ctlr_id, true);
         cam_ll_select_clk_src(ctlr_id, clk_src);
     };
@@ -394,7 +391,7 @@ esp_err_t esp_cam_ctlr_dvp_output_clock(int ctlr_id, cam_clock_source_t clk_src,
     ESP_LOGD(TAG, "DVP clock source frequency %" PRIu32 "Hz", src_clk_hz);
 
     if ((src_clk_hz % xclk_freq) == 0) {
-        PERIPH_RCC_ATOMIC() {
+        DVP_CAM_CLK_ATOMIC() {
             // The camera sensors require precision without frequency and duty cycle jitter,
             // so the fractional divisor can't be used.
             cam_ll_set_group_clock_coeff(ctlr_id, src_clk_hz / xclk_freq, 0, 0);
@@ -456,7 +453,7 @@ esp_err_t esp_cam_ctlr_dvp_deinit(int ctlr_id)
 {
     ESP_RETURN_ON_FALSE(ctlr_id < CAP_DVP_PERIPH_NUM, ESP_ERR_INVALID_ARG, TAG, "invalid argument: ctlr_id >= %d", CAP_DVP_PERIPH_NUM);
 
-    PERIPH_RCC_ATOMIC() {
+    DVP_CAM_CLK_ATOMIC() {
         cam_ll_enable_clk(ctlr_id, false);
     };
 
@@ -466,15 +463,6 @@ esp_err_t esp_cam_ctlr_dvp_deinit(int ctlr_id)
             cam_ll_enable_bus_clock(ctlr_id, false);
         }
     }
-
-    if (s_dvp_clk_src[ctlr_id]) {
-        esp_clk_tree_enable_src(s_dvp_clk_src[ctlr_id], false);
-        s_dvp_clk_src[ctlr_id] = 0;
-    }
-
-#if CONFIG_IDF_TARGET_ESP32S31
-    esp_clk_tree_enable_src((soc_module_clk_t)CAM_CORE_CLK_SRC_DEFAULT, false);
-#endif
 
     return ESP_OK;
 }
@@ -824,13 +812,7 @@ esp_err_t esp_cam_ctlr_dvp_format_conversion(esp_cam_ctlr_handle_t cam_handle,
     esp_cam_ctlr_dvp_cam_t *ctlr = (esp_cam_ctlr_dvp_cam_t *)cam_handle;
 
     ESP_LOGD(TAG, "Configure format conversion: %d -> %d", config->src_format, config->dst_format);
-    if (config->src_format == config->dst_format) {
-        return ESP_OK;
-    }
 
-#if !SOC_LCDCAM_CAM_SUPPORT_RGB_YUV_CONV
-    return ESP_ERR_NOT_SUPPORTED;
-#else
 #if !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
     if (config->src_format == CAM_CTLR_COLOR_YUV420) {
         ESP_LOGE(TAG, "YUV420 is not allowed for source format");
@@ -841,7 +823,6 @@ esp_err_t esp_cam_ctlr_dvp_format_conversion(esp_cam_ctlr_handle_t cam_handle,
     cam_hal_color_format_convert(&ctlr->hal, config);
 
     return ESP_OK;
-#endif
 }
 
 /**
@@ -879,9 +860,7 @@ esp_err_t esp_cam_new_dvp_ctlr(const esp_cam_ctlr_dvp_config_t *config, esp_cam_
     ESP_GOTO_ON_ERROR(s_dvp_claim_ctlr(config->ctlr_id, ctlr), fail1, TAG, "no available DVP controller");
 
     ESP_LOGD(TAG, "alignment: 0x%x\n", alignment_size);
-    if (alignment_size) {
-        fb_size_in_bytes = ESP_ALIGN_UP(fb_size_in_bytes, alignment_size);
-    }
+    fb_size_in_bytes = ALIGN_UP_BY(fb_size_in_bytes, alignment_size);
     if (!config->bk_buffer_dis) {
         ctlr->backup_buffer = heap_caps_aligned_alloc(alignment_size, fb_size_in_bytes, DVP_CAM_BK_BUFFER_ALLOC_CAPS);
         ESP_GOTO_ON_FALSE(ctlr->backup_buffer, ESP_ERR_NO_MEM, fail2, TAG, "no mem for DVP backup buffer");
@@ -929,16 +908,6 @@ esp_err_t esp_cam_new_dvp_ctlr(const esp_cam_ctlr_dvp_config_t *config, esp_cam_
     }
 
     cam_hal_init(&ctlr->hal, &cam_hal_config);
-
-    cam_ctlr_format_conv_config_t format_conv_config = {
-        .src_format = config->input_data_color_type,
-        .dst_format = config->output_data_color_type,
-        .conv_std = config->conv_std,
-        .data_width = config->cam_data_width == 0 ? 8 : config->cam_data_width,
-        .input_range = config->input_range,
-        .output_range = config->output_range,
-    };
-    ESP_GOTO_ON_ERROR(esp_cam_ctlr_dvp_format_conversion(&(ctlr->base), &format_conv_config), fail5, TAG, "failed to configure format conversion");
 
     ctlr->ctlr_id = config->ctlr_id;
     ctlr->fb_size_in_bytes = fb_size_in_bytes;

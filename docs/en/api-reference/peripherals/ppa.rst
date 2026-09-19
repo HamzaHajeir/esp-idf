@@ -44,7 +44,6 @@ The following sections detail the design of the PPA driver:
 - :ref:`ppa-client-registration` - Covers how to register a PPA client to perform any PPA operations.
 - :ref:`ppa-register-callback` - Covers how to hook user specific code to PPA driver event callback function.
 - :ref:`ppa-perform-operation` - Covers how to perform a PPA operation.
-- :ref:`ppa-buffer-alignment` - Covers the buffer alignment requirements for PPA input and output buffers.
 - :ref:`ppa-thread-safety` - Covers the usage of the PPA operation APIs in thread safety aspect.
 - :ref:`ppa-performance-overview` - Covers the performance of PPA operations.
 
@@ -130,28 +129,6 @@ Call :cpp:func:`ppa_do_fill` to fill a target block inside a picture.
 
 :cpp:type:`ppa_trans_mode_t` is a field configurable to all the PPA operation APIs. It decides whether you want the call to the PPA operation API to block until the transaction finishes or to return immediately after the transaction is pushed to the internal queue.
 
-.. _ppa-buffer-alignment:
-
-Buffer Alignment
-^^^^^^^^^^^^^^^^
-
-The PPA requires certain buffer alignment rules to ensure memory access correctness:
-
-- Cache line alignment (output buffer only):
-
-    - The ``out.buffer`` address and ``out.buffer_size`` must be aligned to the cache line size, if the buffer is located in a memory region that is cacheable.
-
-- Flash encryption alignment (when flash encryption is enabled and the buffers are located in external memory):
-
-    - The byte width of the block must be aligned to {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} bytes.
-    - The starting address of each row of the block must be aligned to {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} bytes.
-
-    Additionally, when accessing encrypted external memory, the PPA's DMA data burst length must be greater than or equal to {IDF_TARGET_SOC_MEMSPI_ENCRYPTION_ALIGNMENT} bytes. If a smaller burst length is configured, the driver will automatically increase it to meet this requirement.
-
-    .. warning::
-
-        SRM engine processes the picture by macro blocks, where the alignment of the macro blocks is uncontrollable, thus if the buffer is in external memory, SRM operation is unable to work with flash encrypted.
-
 .. _ppa-thread-safety:
 
 Thread Safety
@@ -175,9 +152,7 @@ The PPA operations are acted on the target block of an input picture. Therefore,
 Application Examples
 ^^^^^^^^^^^^^^^^^^^^
 
-* :example:`peripherals/ppa/ppa_transform` - PPA transform image processing example. The embedded RGB565 image is transformed by SRM, framed with fill, and emitted as base64 for host-side PPM reconstruction and golden-image comparison.
-* :example:`peripherals/ppa/ppa_color_key` - PPA blend color-keying example. The example generates a centered RGB888 glow foreground in software, then demonstrates two blend effects on the embedded RGB565 image: replacing the keyed red `ESP32` text with the glow, and preserving the keyed text while blending the glow into the non-key area. Both results are emitted as base64 for host-side PPM reconstruction and golden-image comparison.
-* :example:`peripherals/ppa/ppa_freetype` - PPA FreeType icon compositing example. The example uses the `espressif/freetype` component to rasterize Font Awesome icon code points (two rows of three) into small per-glyph A8 alpha masks, then uses the PPA blend engine to composite each glyph over a software-generated gradient with a fixed icon color. The final composited RGB565 frame is emitted as base64 for host-side PPM reconstruction and golden-image comparison.
+* :example:`peripherals/ppa/ppa_dsi` - PPA with DSI display example. The image used in this example will be first scaled up, rotated at counter-clockwise direction and rotated back, mirrored and mirror back, and scaled down. Then the image will be blended with a whole red image with less transparency. Next the `ESP32` word will be color-keyed out. Lastly a frame will be filled around the `ESP32`.
 
 API Reference
 -------------

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -15,7 +15,6 @@
 ****************************************************************************/
 
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -58,8 +57,8 @@ static esp_ble_scan_params_t ble_scan_params = {
     .scan_type              = BLE_SCAN_TYPE_ACTIVE,
     .own_addr_type          = BLE_ADDR_TYPE_RPA_PUBLIC,
     .scan_filter_policy     = BLE_SCAN_FILTER_ALLOW_ALL,
-    .scan_interval          = ESP_BLE_GAP_SCAN_ITVL_MS(50),
-    .scan_window            = ESP_BLE_GAP_SCAN_WIN_MS(30),
+    .scan_interval          = 0x50,
+    .scan_window            = 0x30,
     .scan_duplicate         = BLE_SCAN_DUPLICATE_DISABLE
 };
 
@@ -178,7 +177,6 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
     case ESP_GATTC_OPEN_EVT:
         if (param->open.status != ESP_GATT_OK){
             ESP_LOGE(GATTC_TAG, "Open failed, status %x", p_data->open.status);
-            connect = false;
             break;
         }
         ESP_LOGI(GATTC_TAG, "Open successfully, MTU %d", p_data->open.mtu);
@@ -456,6 +454,8 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                                                 scan_result->scan_rst.adv_data_len + scan_result->scan_rst.scan_rsp_len,
                                                 ESP_BLE_AD_TYPE_NAME_CMPL,
                                                 &adv_name_len);
+            ESP_LOGI(GATTC_TAG, "Scan result, device "ESP_BD_ADDR_STR", name len %u", ESP_BD_ADDR_HEX(scan_result->scan_rst.bda), adv_name_len);
+            ESP_LOG_BUFFER_CHAR(GATTC_TAG, adv_name, adv_name_len);
             if (adv_name != NULL) {
                 if (strlen(remote_device_name) == adv_name_len && strncmp((char *)adv_name, remote_device_name, adv_name_len) == 0) {
                     // Note: If there are multiple devices with the same device name, the device may connect to an unintended one.
@@ -542,9 +542,6 @@ void app_main(void)
 
     #if CONFIG_EXAMPLE_CI_PIPELINE_ID
     memcpy(remote_device_name, esp_bluedroid_get_example_name(), sizeof(remote_device_name));
-    ble_scan_params.scan_interval = ESP_BLE_GAP_SCAN_ITVL_MS(50);
-    ble_scan_params.scan_window = ESP_BLE_GAP_SCAN_WIN_MS(50);
-    ble_scan_params.scan_duplicate = BLE_SCAN_DUPLICATE_ENABLE;
     #endif
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));

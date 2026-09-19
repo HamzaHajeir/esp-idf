@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-S31 |
-| ----------------- | ----- | --------- |
+| Supported Targets | ESP32 |
+| ----------------- | ----- |
 
 AVRCP-ABSOLUTE-VOLUME EXAMPLE
 ======================

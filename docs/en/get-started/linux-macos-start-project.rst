@@ -2,8 +2,6 @@
 Start a Project on Linux and macOS from Command Line
 ****************************************************
 
-:link_to_translation:`zh_CN:[中文]`
-
 This guide helps you to start a new project on the {IDF_TARGET_NAME} and build, flash, and monitor the device output on Linux and macOS.
 
 
@@ -116,7 +114,7 @@ You are using this menu to set up project specific variables, e.g., Wi-Fi networ
 
     .. attention::
 
-        If you use ESP32-DevKitC board with the **ESP32-SOLO-1** module, or ESP32-DevKitM-1 board with the **ESP32-MIN1-1/1U** module, please enable single core mode (:menuitem:`CONFIG_FREERTOS_UNICORE`) in menuconfig before flashing examples.
+        If you use ESP32-DevKitC board with the **ESP32-SOLO-1** module, or ESP32-DevKitM-1 board with the **ESP32-MIN1-1/1U** module, please enable single core mode (:ref:`CONFIG_FREERTOS_UNICORE`) in menuconfig before flashing examples.
 
 .. note::
 
@@ -133,8 +131,14 @@ You are using this menu to set up project specific variables, e.g., Wi-Fi networ
 
     If you are using the USB for flashing the {IDF_TARGET_NAME}, you need to change the channel for the console output from UART (default) to USB.
 
-    1. Set :menuitem:`CONFIG_ESP_CONSOLE_UART` to ``USB CDC`` (the default is always UART).
+    1. Navigate to the option ``Channel for console output``.
 
-    2. Save the new configuration and exit the ``menuconfig`` screen.
+        ``Component config`` > ``ESP System Settings`` > ``Channel for console output``
+
+    2. Change to the option (the default is always UART):
+
+        ``USB CDC``
+
+    3. Save the new configuration and exit the ``menuconfig`` screen.
 
 .. include:: start-project.rst

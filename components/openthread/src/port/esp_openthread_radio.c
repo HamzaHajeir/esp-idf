@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,6 +10,7 @@
 #include "sdkconfig.h"
 #include "esp_check.h"
 #include "esp_ieee802154.h"
+#include "esp_ieee802154_types.h"
 #include "esp_mac.h"
 #include "esp_openthread_common.h"
 #include "esp_openthread_common_macro.h"
@@ -30,12 +31,12 @@
 #include "openthread/platform/time.h"
 #include "utils/link_metrics.h"
 #include "utils/mac_frame.h"
-#include "psa/crypto.h"
 
 #if (CONFIG_ESP_COEX_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE)
 #include "esp_coex_i154.h"
 #endif
 
+#define ESP_RECEIVE_SENSITIVITY -120
 #define ESP_OPENTHREAD_XTAL_ACCURACY CONFIG_OPENTHREAD_XTAL_ACCURACY
 #define ESP_OPENTHREAD_CSL_ACCURACY CONFIG_OPENTHREAD_CSL_ACCURACY
 #define ESP_OPENTHREAD_CSL_UNCERTAIN CONFIG_OPENTHREAD_CSL_UNCERTAIN
@@ -79,38 +80,14 @@ static uint32_t s_csl_sample_time;
 #if OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2
 static uint32_t s_mac_frame_counter;
 static uint8_t s_key_id;
-static struct otMacKeyMaterial s_previous_key;
+static struct otMacKeyMaterial s_pervious_key;
 static struct otMacKeyMaterial s_current_key;
 static struct otMacKeyMaterial s_next_key;
-#if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
-static uint8_t s_pervious_key_bytes[16];
-static uint8_t s_current_key_bytes[16];
-static uint8_t s_next_key_bytes[16];
-#endif
 static bool s_with_security_enh_ack = false;
 static uint32_t s_ack_frame_counter;
 static uint8_t s_ack_key_id;
 static uint8_t s_security_key[16];
 static uint8_t s_security_addr[8];
-
-static void ot_set_security_key_from_key_material(struct otMacKeyMaterial a_key_material)
-{
-#if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
-    /* Key bytes are pre-exported in task context (otPlatRadioSetMacKey).
-     * Identify which cached buffer to use by comparing the key reference.
-     * Jira TZ-2472 */
-    if (a_key_material.mKeyMaterial.mKeyRef == s_previous_key.mKeyMaterial.mKeyRef) {
-        memcpy(s_security_key, s_pervious_key_bytes, 16);
-    } else if (a_key_material.mKeyMaterial.mKeyRef == s_next_key.mKeyMaterial.mKeyRef) {
-        memcpy(s_security_key, s_next_key_bytes, 16);
-    } else {
-        memcpy(s_security_key, s_current_key_bytes, 16);
-    }
-#else
-    memcpy(s_security_key, a_key_material.mKeyMaterial.mKey.m8, sizeof(a_key_material.mKeyMaterial.mKey.m8));
-#endif
-}
-
 #endif // OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2
 
 static esp_openthread_circular_queue_info_t s_recv_queue = {.head = 0, .tail = 0, .used = 0};
@@ -133,32 +110,10 @@ static inline bool get_event(uint8_t event)
     return s_txrx_events & event;
 }
 
-static void ot_radio_receive_done(uint8_t *data, esp_ieee802154_frame_info_t *frame_info);
-static void ot_radio_receive_sfd_done(void);
-static void ot_radio_transmit_done(const uint8_t *frame, const uint8_t *ack,
-                                        esp_ieee802154_frame_info_t *ack_frame_info);
-static void ot_radio_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error);
-static void ot_radio_transmit_sfd_done(uint8_t *frame);
-static void ot_radio_energy_detect_done(int8_t power);
-static esp_err_t ot_radio_enh_ack_generator(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
-                                                 uint8_t *enhack_frame);
-
 esp_err_t esp_openthread_radio_init(const esp_openthread_platform_config_t *config)
 {
     ESP_RETURN_ON_FALSE(s_radio_event_fd == -1, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG,
                         "Radio was initialized already!");
-
-    esp_ieee802154_event_cb_list_t cb_list = {
-        .rx_done_cb = ot_radio_receive_done,
-        .rx_sfd_done_cb = ot_radio_receive_sfd_done,
-        .tx_done_cb = ot_radio_transmit_done,
-        .tx_failed_cb = ot_radio_transmit_failed,
-        .tx_sfd_done_cb = ot_radio_transmit_sfd_done,
-        .ed_done_cb = ot_radio_energy_detect_done,
-        .enh_ack_generator_cb = ot_radio_enh_ack_generator,
-    };
-    ESP_RETURN_ON_ERROR(esp_ieee802154_event_callback_list_register(cb_list), OT_PLAT_LOG_TAG,
-                        "Failed to register ieee802154 event callbacks");
 
     s_radio_event_fd = eventfd(0, EFD_SUPPORT_ISR);
 
@@ -185,13 +140,12 @@ esp_err_t esp_openthread_radio_init(const esp_openthread_platform_config_t *conf
 
 void esp_openthread_radio_deinit(void)
 {
-    if (s_radio_event_fd != -1) {
+    if (s_radio_event_fd > 0) {
         close(s_radio_event_fd);
         s_radio_event_fd = -1;
     }
 
     esp_ieee802154_disable();
-    esp_ieee802154_event_callback_list_unregister();
     esp_openthread_platform_workflow_unregister(s_radio_workflow);
 }
 
@@ -351,7 +305,7 @@ otError otPlatRadioTransmit(otInstance *aInstance, otRadioFrame *aFrame)
             }
             esp_ieee802154_get_extended_address(s_security_addr);
         }
-        ot_set_security_key_from_key_material(s_current_key);
+        memcpy(s_security_key, s_current_key.mKeyMaterial.mKey.m8, sizeof(s_current_key.mKeyMaterial.mKey.m8));
         esp_ieee802154_set_transmit_security(&aFrame->mPsdu[-1], s_security_key, s_security_addr);
     }
 
@@ -447,7 +401,7 @@ void otPlatRadioClearSrcMatchExtEntries(otInstance *aInstance)
 otError otPlatRadioEnergyScan(otInstance *aInstance, uint8_t aScanChannel, uint16_t aScanDuration)
 {
     esp_ieee802154_set_channel(aScanChannel);
-    esp_ieee802154_energy_detect(aScanDuration * US_PER_MS / US_PER_SYMBOL);
+    esp_ieee802154_energy_detect(aScanDuration * US_PER_MS / US_PER_SYMBLE);
 
     return OT_ERROR_NONE;
 }
@@ -482,7 +436,7 @@ otError otPlatRadioSetCcaEnergyDetectThreshold(otInstance *aInstance, int8_t aTh
 
 int8_t otPlatRadioGetReceiveSensitivity(otInstance *aInstance)
 {
-    return esp_ieee802154_get_receive_sensitivity();
+    return ESP_RECEIVE_SENSITIVITY;
 }
 
 #if CONFIG_OPENTHREAD_DIAG
@@ -534,25 +488,13 @@ void otPlatRadioSetMacKey(otInstance *aInstance, uint8_t aKeyIdMode, uint8_t aKe
 {
     OT_UNUSED_VARIABLE(aInstance);
     OT_UNUSED_VARIABLE(aKeyIdMode);
-#if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
-    assert(aKeyType == OT_KEY_TYPE_KEY_REF);
-#else
     assert(aKeyType == OT_KEY_TYPE_LITERAL_KEY);
-#endif // OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
     assert(aPrevKey != NULL && aCurrKey != NULL && aNextKey != NULL);
 
     s_key_id = aKeyId;
-    s_previous_key = *aPrevKey;
-    s_current_key  = *aCurrKey;
-    s_next_key     = *aNextKey;
-#if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
-    /* Pre-export raw key bytes in task context to avoid calling psa_export_key()
-     * from ISR context (enh_ack_generator), which would attempt to take a mutex. */
-    size_t keyLength = 0;
-    psa_export_key(aPrevKey->mKeyMaterial.mKeyRef, s_pervious_key_bytes, 16, &keyLength);
-    psa_export_key(aCurrKey->mKeyMaterial.mKeyRef, s_current_key_bytes,  16, &keyLength);
-    psa_export_key(aNextKey->mKeyMaterial.mKeyRef, s_next_key_bytes,     16, &keyLength);
-#endif
+    s_pervious_key = *aPrevKey;
+    s_current_key = *aCurrKey;
+    s_next_key = *aNextKey;
 }
 
 void otPlatRadioSetMacFrameCounter(otInstance *aInstance, uint32_t aMacFrameCounter)
@@ -634,8 +576,8 @@ uint8_t otPlatRadioGetCslUncertainty(otInstance *aInstance)
 }
 
 // events
-static void IRAM_ATTR ot_radio_transmit_done(const uint8_t *frame, const uint8_t *ack,
-                                                  esp_ieee802154_frame_info_t *ack_frame_info)
+void IRAM_ATTR esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
+                                            esp_ieee802154_frame_info_t *ack_frame_info)
 {
     ETS_ASSERT(frame == (uint8_t *)&s_transmit_psdu);
 
@@ -677,7 +619,7 @@ static esp_err_t IRAM_ATTR enh_ack_set_security_addr_and_key(otRadioFrame *ack_f
     if (key_id == s_key_id) {
         key = &s_current_key;
     } else if (key_id == s_key_id - 1) {
-        key = &s_previous_key;
+        key = &s_pervious_key;
     } else if (key_id == s_key_id + 1) {
         key = &s_next_key;
     } else {
@@ -688,15 +630,15 @@ static esp_err_t IRAM_ATTR enh_ack_set_security_addr_and_key(otRadioFrame *ack_f
     s_with_security_enh_ack = true;
     if (otMacFrameIsKeyIdMode1(ack_frame)) {
         esp_ieee802154_get_extended_address(s_security_addr);
-        ot_set_security_key_from_key_material(*key);
+        memcpy(s_security_key, (*key).mKeyMaterial.mKey.m8, OT_MAC_KEY_SIZE);
     }
 
     esp_ieee802154_set_transmit_security(&ack_frame->mPsdu[-1], s_security_key, s_security_addr);
     return ESP_OK;
 }
 
-static esp_err_t IRAM_ATTR ot_radio_enh_ack_generator(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
-                                                           uint8_t *enhack_frame)
+esp_err_t IRAM_ATTR esp_ieee802154_enh_ack_generator(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info,
+                                                uint8_t *enhack_frame)
 {
     otRadioFrame ack_frame;
     otRadioFrame ot_frame;
@@ -743,14 +685,13 @@ static esp_err_t IRAM_ATTR ot_radio_enh_ack_generator(uint8_t *frame, esp_ieee80
     return ESP_OK;
 }
 
-static void IRAM_ATTR ot_radio_receive_done(uint8_t *data, esp_ieee802154_frame_info_t *frame_info)
+void IRAM_ATTR esp_ieee802154_receive_done(uint8_t *data, esp_ieee802154_frame_info_t *frame_info)
 {
     otRadioFrame ot_frame;
     ot_frame.mPsdu = data + 1;
 
     if (atomic_load(&s_recv_queue.used) == CONFIG_IEEE802154_RX_BUFFER_SIZE) {
         ESP_EARLY_LOGE(OT_PLAT_LOG_TAG, "radio receive buffer full!");
-        esp_ieee802154_receive_handle_done(data);
         return;
     }
 
@@ -771,7 +712,7 @@ static void IRAM_ATTR ot_radio_receive_done(uint8_t *data, esp_ieee802154_frame_
     set_event(EVENT_RX_DONE);
 }
 
-static void IRAM_ATTR ot_radio_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error)
+void IRAM_ATTR esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error)
 {
     ETS_ASSERT(frame == (uint8_t *)&s_transmit_psdu);
 
@@ -780,11 +721,11 @@ static void IRAM_ATTR ot_radio_transmit_failed(const uint8_t *frame, esp_ieee802
     set_event(EVENT_TX_FAILED);
 }
 
-static void IRAM_ATTR ot_radio_receive_sfd_done(void)
+void IRAM_ATTR esp_ieee802154_receive_sfd_done(void)
 {
 }
 
-static void IRAM_ATTR ot_radio_transmit_sfd_done(uint8_t *frame)
+void IRAM_ATTR esp_ieee802154_transmit_sfd_done(uint8_t *frame)
 {
     assert(frame == (uint8_t *)&s_transmit_psdu || frame == s_enhack);
 
@@ -816,11 +757,15 @@ static void IRAM_ATTR ot_radio_transmit_sfd_done(uint8_t *frame)
 #endif // OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
 }
 
-static void IRAM_ATTR ot_radio_energy_detect_done(int8_t power)
+void IRAM_ATTR esp_ieee802154_energy_detect_done(int8_t power)
 {
     s_ed_power = power;
 
     set_event(EVENT_ENERGY_DETECT_DONE);
+}
+
+void IRAM_ATTR esp_ieee802154_cca_done(bool channel_free)
+{
 }
 
 otError otPlatEntropyGet(uint8_t *aOutput, uint16_t aOutputLength)

@@ -1,11 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -16,25 +14,9 @@
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "ble_prox_cent.h"
-#if MYNEWT_VAL(BLE_GATT_CACHING)
-#include "host/ble_esp_gattc_cache.h"
-#endif
-
-#define EXAMPLE_ADV_NAME_LEN_MAX  29
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *get_example_name(void)
-{
-    static char example_name[EXAMPLE_ADV_NAME_LEN_MAX];
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X", CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF, CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 static const char *tag = "NimBLE_PROX_CENT";
-static char remote_device_name[EXAMPLE_ADV_NAME_LEN_MAX];
+static uint8_t link_supervision_timeout;
 static int8_t tx_pwr_lvl;
 static struct ble_prox_cent_conn_peer conn_peer[MYNEWT_VAL(BLE_MAX_CONNECTIONS) + 1];
 static struct ble_prox_cent_link_lost_peer disconn_peer[MYNEWT_VAL(BLE_MAX_CONNECTIONS) + 1];
@@ -64,11 +46,7 @@ ble_prox_cent_on_read(uint16_t conn_handle,
     if (error->status == 0) {
         MODLOG_DFLT(INFO, " attr_handle=%d value=", attr->handle);
         print_mbuf(attr->om);
-        if (attr->om->om_len != sizeof(tx_pwr_lvl)) {
-            MODLOG_DFLT(ERROR, "Unexpected TX power level length: %d\n", attr->om->om_len);
-            return 0;
-        }
-        os_mbuf_copydata(attr->om, 0, sizeof(tx_pwr_lvl), &tx_pwr_lvl);
+        os_mbuf_copydata(attr->om, 0, attr->om->om_len, &tx_pwr_lvl);
         conn_peer[conn_handle].calc_path_loss = true;
     }
 
@@ -92,10 +70,7 @@ ble_prox_cent_on_write(uint16_t conn_handle,
     const struct peer_chr *chr;
     int rc;
     const struct peer *peer = peer_find(conn_handle);
-    if (peer == NULL) {
-        MODLOG_DFLT(ERROR, "Error: peer not found for conn_handle=%d", conn_handle);
-        return 0;
-    }
+
     chr = peer_chr_find_uuid(peer,
                              BLE_UUID16_DECLARE(BLE_SVC_TX_POWER_UUID16),
                              BLE_UUID16_DECLARE(BLE_SVC_PROX_CHR_UUID16_TX_PWR_LVL));
@@ -156,10 +131,8 @@ ble_prox_cent_read_write_subscribe(const struct peer *peer)
         goto err;
     }
 
-    /* Alert Level: 0=No Alert, 1=Mild Alert, 2=High Alert (BLE SIG LLS spec) */
-    static const uint8_t alert_level = 1;
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
-                              &alert_level, sizeof(alert_level),
+                              &link_supervision_timeout, sizeof(link_supervision_timeout),
                               ble_prox_cent_on_write, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error: Failed to write characteristic; rc=%d\n",
@@ -236,12 +209,6 @@ ble_prox_cent_scan(void)
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    /* Full scan improves discovery reliability in multi-board CI environments. */
-    disc_params.itvl = BLE_GAP_SCAN_ITVL_MS(50);
-    disc_params.window = BLE_GAP_SCAN_ITVL_MS(50);
-#endif
-
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
                       ble_prox_cent_gap_event, NULL);
     if (rc != 0) {
@@ -262,68 +229,54 @@ ext_ble_prox_cent_should_connect(const struct ble_gap_ext_disc_desc *disc)
 {
     int offset = 0;
     int ad_struct_len = 0;
-    int link_loss_uuid_found = 0;
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    char dev_name[EXAMPLE_ADV_NAME_LEN_MAX];
-    int name_matched = 0;
-#endif
-    if (!(disc->props & BLE_HCI_ADV_CONN_MASK)) {
+    uint8_t test_addr[6];
+    uint32_t peer_addr[6];
+
+    memset(peer_addr, 0x0, sizeof peer_addr);
+
+    if (disc->legacy_event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
+            disc->legacy_event_type != BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
         return 0;
     }
-#if !(CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
-    {
-        uint8_t test_addr[6];
-        if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
-            ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
-            peer_addr_parse(CONFIG_EXAMPLE_PEER_ADDR, test_addr);
-            if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
-                return 0;
-            }
+    if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen    ("ADDR_ANY")) != 0)) {
+        ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
+        /* Convert string to address */
+        sscanf(CONFIG_EXAMPLE_PEER_ADDR, "%lx:%lx:%lx:%lx:%lx:%lx",
+               &peer_addr[5], &peer_addr[4], &peer_addr[3],
+               &peer_addr[2], &peer_addr[1], &peer_addr[0]);
+
+	/* Conversion */
+        for (int i=0; i<6; i++) {
+            test_addr[i] = (uint8_t )peer_addr[i];
+        }
+
+        if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
+            return 0;
         }
     }
-#endif
 
     /* The device has to advertise support for Proximity sensor (link loss)
     * service (0x1803).
     */
-    while (offset < disc->length_data) {
+    do {
         ad_struct_len = disc->data[offset];
 
-        if (ad_struct_len == 0 || offset + ad_struct_len + 1 > disc->length_data) {
+        if (!ad_struct_len) {
             break;
         }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-        if (disc->data[offset + 1] == BLE_HS_ADV_TYPE_COMP_NAME ||
-                disc->data[offset + 1] == BLE_HS_ADV_TYPE_INCOMP_NAME) {
-            int name_len = ad_struct_len - 1;
-            if (name_len == (int)strlen(remote_device_name) &&
-                    memcmp(&disc->data[offset + 2], remote_device_name, name_len) == 0) {
-                name_matched = 1;
-                memcpy(dev_name, remote_device_name, name_len + 1);
-            }
-        }
-#endif
-        /* UUID 0x1803 little-endian [0x03, 0x18] */
+        /* Search if Proximity Sensor (Link loss) UUID is advertised */
         if (disc->data[offset] == 0x03 && disc->data[offset + 1] == 0x03) {
-            if (disc->data[offset + 2] == 0x03 && disc->data[offset + 3] == 0x18) {
-                link_loss_uuid_found = 1;
+            if ( disc->data[offset + 2] == 0x18 && disc->data[offset + 3] == 0x03 ) {
+                return 1;
             }
         }
-        offset += ad_struct_len + 1;
-    }
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    if (name_matched && link_loss_uuid_found) {
-        ESP_LOGI(tag, "Found device: addr: %02x:%02x:%02x:%02x:%02x:%02x, name: %s",
-                 disc->addr.val[5], disc->addr.val[4], disc->addr.val[3],
-                 disc->addr.val[2], disc->addr.val[1], disc->addr.val[0], dev_name);
-        return 1;
-    }
+        offset += ad_struct_len + 1;
+
+    } while ( offset < disc->length_data );
+
     return 0;
-#else
-    return link_loss_uuid_found;
-#endif
 }
 #else
 
@@ -333,6 +286,10 @@ ble_prox_cent_should_connect(const struct ble_gap_disc_desc *disc)
     struct ble_hs_adv_fields fields;
     int rc;
     int i;
+    uint8_t test_addr[6];
+    uint32_t peer_addr[6];
+
+    memset(peer_addr, 0x0, sizeof peer_addr);
 
     /* The device has to be advertising connectability. */
     if (disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
@@ -346,38 +303,26 @@ ble_prox_cent_should_connect(const struct ble_gap_disc_desc *disc)
         return rc;
     }
 
-#if !(CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
-    {
-        uint8_t test_addr[6];
-        if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
-            ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
-            peer_addr_parse(CONFIG_EXAMPLE_PEER_ADDR, test_addr);
-            if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
-                return 0;
-            }
+    if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
+        ESP_LOGI(tag, "Peer address from menuconfig: %s", CONFIG_EXAMPLE_PEER_ADDR);
+        /* Convert string to address */
+        sscanf(CONFIG_EXAMPLE_PEER_ADDR, "%lx:%lx:%lx:%lx:%lx:%lx",
+               &peer_addr[5], &peer_addr[4], &peer_addr[3],
+               &peer_addr[2], &peer_addr[1], &peer_addr[0]);
+
+	/* Conversion */
+        for (int i=0; i<6; i++) {
+            test_addr[i] = (uint8_t )peer_addr[i];
+        }
+
+        if (memcmp(test_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
+            return 0;
         }
     }
-#endif
 
     /* The device has to advertise support for the Proximity sensor (link loss)
      * service (0x1803).
      */
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    if (fields.name != NULL &&
-            fields.name_len == strlen(remote_device_name) &&
-            memcmp(fields.name, remote_device_name, fields.name_len) == 0) {
-        for (i = 0; i < fields.num_uuids16; i++) {
-            if (ble_uuid_u16(&fields.uuids16[i].u) == BLE_SVC_LINK_LOSS_UUID16) {
-                ESP_LOGI(tag, "Found device: addr: %02x:%02x:%02x:%02x:%02x:%02x, name: %s",
-                         disc->addr.val[5], disc->addr.val[4], disc->addr.val[3],
-                         disc->addr.val[2], disc->addr.val[1], disc->addr.val[0],
-                         remote_device_name);
-                return 1;
-            }
-        }
-    }
-    return 0;
-#else
     for (i = 0; i < fields.num_uuids16; i++) {
         if (ble_uuid_u16(&fields.uuids16[i].u) == BLE_SVC_LINK_LOSS_UUID16) {
             return 1;
@@ -385,7 +330,6 @@ ble_prox_cent_should_connect(const struct ble_gap_disc_desc *disc)
     }
 
     return 0;
-#endif
 }
 #endif
 
@@ -425,9 +369,6 @@ ble_prox_cent_connect_if_interesting(void *disc)
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_prox_cent_scan();
-#endif
         return;
     }
 
@@ -445,9 +386,6 @@ ble_prox_cent_connect_if_interesting(void *disc)
         MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
                     "addr=%s; rc=%d\n",
                     addr->type, addr_str(addr->val), rc);
-#if !(MYNEWT_VAL(BLE_HOST_ALLOW_CONNECT_WITH_SCAN))
-        ble_prox_cent_scan();
-#endif
         return;
     }
 }
@@ -499,6 +437,8 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
             print_conn_desc(&desc);
             MODLOG_DFLT(INFO, "\n");
 
+            link_supervision_timeout = 8 * desc.conn_itvl;
+
             /* Remember peer. */
             rc = peer_add(event->connect.conn_handle);
             if (rc != 0) {
@@ -509,7 +449,7 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
             /* Check if this device is reconnected */
             for (int i = 0; i <= MYNEWT_VAL(BLE_MAX_CONNECTIONS); i++) {
                 if (disconn_peer[i].addr != NULL) {
-                    if (memcmp(disconn_peer[i].addr, &desc.peer_id_addr.val, BLE_ADDR_LEN) == 0) {
+                    if (memcmp(disconn_peer[i].addr, &desc.peer_id_addr.val, BLE_ADDR_LEN)) {
                         /* Peer reconnected. Stop alert for this peer */
                         free(disconn_peer[i].addr);
                         disconn_peer[i].addr = NULL;
@@ -581,10 +521,8 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
             }
         }
         /* Stop calculating path loss, restart once connection is established again */
-        if (event->disconnect.conn.conn_handle <= MYNEWT_VAL(BLE_MAX_CONNECTIONS)) {
-            conn_peer[event->disconnect.conn.conn_handle].calc_path_loss = false;
-            conn_peer[event->disconnect.conn.conn_handle].val_handle = 0;
-        }
+        conn_peer[event->disconnect.conn.conn_handle].calc_path_loss = false;
+        conn_peer[event->disconnect.conn.conn_handle].val_handle = 0;
 
         /* Forget about peer. */
         peer_delete(event->disconnect.conn.conn_handle);
@@ -615,7 +553,7 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
 #else
 #if MYNEWT_VAL(BLE_GATTC)
         /*** Go for service discovery after encryption has been successfully enabled ***/
-        rc = peer_disc_all(event->enc_change.conn_handle,
+        rc = peer_disc_all(event->connect.conn_handle,
                            ble_prox_cent_on_disc_complete, NULL);
         if (rc != 0) {
             MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
@@ -635,7 +573,7 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
                       (event->cache_assoc.cache_state == 0) ? "INVALID" : "LOADED");
           /* Perform service discovery */
           rc = peer_disc_all(event->connect.conn_handle,
-                             ble_prox_cent_on_disc_complete, NULL);
+                             blecent_on_disc_complete, NULL);
           if(rc != 0) {
                 MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
                 return 0;
@@ -698,7 +636,7 @@ ble_prox_cent_gap_event(struct ble_gap_event *event, void *arg)
 void
 ble_prox_cent_path_loss_task(void *pvParameters)
 {
-    int8_t rssi = 0;
+    int8_t rssi;
     int rc;
     int path_loss;
 
@@ -725,10 +663,8 @@ ble_prox_cent_path_loss_task(void *pvParameters)
                     }
 
 #if MYNEWT_VAL(BLE_GATTC)
-                    /* Alert Level is a single-octet characteristic (UUID 0x2A06). */
-                    uint8_t path_loss_val = (uint8_t)path_loss;
                     rc = ble_gattc_write_no_rsp_flat(i, conn_peer[i].val_handle,
-                                                     &path_loss_val, sizeof(path_loss_val));
+                                                     &path_loss, sizeof(path_loss));
                     if (rc != 0) {
                         MODLOG_DFLT(ERROR, "Error: Failed to write characteristic; rc=%d\n",
                                     rc);
@@ -749,10 +685,7 @@ ble_prox_cent_link_loss_task(void *pvParameters)
     while (1) {
         for (int i = 0; i <= MYNEWT_VAL(BLE_MAX_CONNECTIONS); i++) {
             if (disconn_peer[i].link_lost && disconn_peer[i].addr != NULL) {
-                MODLOG_DFLT(INFO, "Link lost for peer %02x:%02x:%02x:%02x:%02x:%02x, slot %d",
-                           disconn_peer[i].addr[5], disconn_peer[i].addr[4],
-                           disconn_peer[i].addr[3], disconn_peer[i].addr[2],
-                           disconn_peer[i].addr[1], disconn_peer[i].addr[0], i);
+                MODLOG_DFLT(INFO, "Link lost for device with conn_handle %d", i);
             }
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -816,12 +749,12 @@ app_main(void)
         return;
     }
 
+    /* Initialize a task to keep checking path loss of the link */
+    ble_prox_cent_init();
     for (int i = 0; i <= MYNEWT_VAL(BLE_MAX_CONNECTIONS); i++) {
         disconn_peer[i].addr = NULL;
-        disconn_peer[i].link_lost = false;
+        disconn_peer[i].link_lost = true;
     }
-    /* Initialize tasks after disconn_peer array is ready */
-    ble_prox_cent_init();
 
     /* Configure the host. */
     ble_hs_cfg.reset_cb = ble_prox_cent_on_reset;
@@ -840,14 +773,6 @@ app_main(void)
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("nimble-prox-cent");
     assert(rc == 0);
-#endif
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(remote_device_name, get_example_name(), sizeof(remote_device_name) - 1);
-    remote_device_name[sizeof(remote_device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             remote_device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID,
-             CONFIG_IDF_FIRMWARE_CHIP_ID);
 #endif
 
     /* XXX Need to have template for store */

@@ -13,7 +13,7 @@
 #include "sdkconfig.h"
 #if CONFIG_LCD_ENABLE_DEBUG_LOG
 // The local log level must be defined before including esp_log.h
-// Set the maximum log level for i80 lcd driver
+// Set the maximum log level for gptimer driver
 #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #endif
 #include "soc/soc_caps.h"
@@ -42,26 +42,12 @@
 #include "hal/lcd_periph.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_sig_map.h"
-#if SOC_HAS(PAU)
-#include "soc/regdma.h"
-#include "soc/retention_periph_defs.h"
-#endif
 
 ///!< Logging settings
 #define TAG "lcd.i80"
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#if SOC_HAS(PAU)
-typedef struct {
-    const periph_retention_module_t retention_module;
-    const regdma_entries_config_t *regdma_entry_array;
-    uint32_t array_size;
-} lcd_i80_reg_retention_info_t;
-
-extern const lcd_i80_reg_retention_info_t lcd_i80_reg_retention_info[LCD_LL_GET(I80_BUS_NUM)];
 #endif
 
 #ifdef __cplusplus

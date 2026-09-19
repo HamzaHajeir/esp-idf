@@ -107,8 +107,6 @@ UART 驱动程序函数通过 :cpp:type:`uart_port_t` 识别不同的 UART 控�
 
     此外，置位 :cpp:member:`uart_config_t::allow_pd` 会使能在进入睡眠模式前备份 UART 配置寄存器并在退出睡眠后恢复这些寄存器。这个功能使 UART 能够在系统唤醒后继续正常工作，即使其电源域在睡眠过程中被完全关闭。此选项需要用户在功耗和内存使用之间取得平衡。如果功耗不是一个问题，可以禁用这个选项来节省内存。
 
-如果 RX 信号可能出现抖动，可以设置 :cpp:member:`uart_config_t::rx_glitch_filt_thresh` 来过滤抖动以确保接收到正确的数据（注意：该功能在 ESP32 和 ESP32-S2 上不支持）。:cpp:member:`uart_config_t::rx_glitch_filt_thresh` 的单位是纳秒。默认值为 0，即表示不进行过滤。
-
 分步依次配置每个参数
 """""""""""""""""""""""""""""""
 
@@ -150,9 +148,6 @@ UART 驱动程序函数通过 :cpp:type:`uart_port_t` 识别不同的 UART 控�
   // Set UART pins(TX: IO4, RX: IO5, RTS: IO18, CTS: IO19, DTR: UNUSED, DSR: UNUSED)
   ESP_ERROR_CHECK(uart_set_pin({IDF_TARGET_UART_EXAMPLE_PORT}, 4, 5, 18, 19, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-.. note::
-
-    上方管脚编号仅为示例。许多开发板的板载 USB 至 UART 桥接到 UART0 的默认 TX/RX 管脚。若需要通过其他端口或其他管脚与 PC 通信，则需在这些管脚上另接 USB 至 UART 桥。
 
 .. _uart-api-running-uart-communication:
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,14 +10,8 @@
 #include "driver/parlio_tx.h"
 #include "parlio_priv.h"
 
-#define PARLIO_ALIGN_DOWN(num, align) ((num) & ~((align) - 1))
-#define PARLIO_DMA_BUFFER_MAX_SIZE(alignment) \
-    ((alignment) > 1 ? PARLIO_ALIGN_DOWN(PARLIO_DMA_DESCRIPTOR_BUFFER_MAX_SIZE, (alignment)) : PARLIO_DMA_DESCRIPTOR_BUFFER_MAX_SIZE)
-#define PARLIO_DMA_BUFFER_SPLIT_SIZE(size, alignment) \
-    ((alignment) > 1 ? PARLIO_ALIGN_DOWN((size) / 2, (alignment)) : (size) / 2)
-
 #if SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
-static bool parlio_tx_gdma_buffer_switched_callback(gdma_channel_handle_t dma_chan, gdma_event_data_t *event_data, void *user_data);
+static bool parlio_tx_gdma_eof_callback(gdma_channel_handle_t dma_chan, gdma_event_data_t *event_data, void *user_data);
 #endif
 static void parlio_tx_default_isr(void *args);
 
@@ -144,11 +138,12 @@ static esp_err_t parlio_tx_unit_configure_gpio(parlio_tx_unit_t *tx_unit, const 
 static esp_err_t parlio_tx_unit_init_dma(parlio_tx_unit_t *tx_unit, const parlio_tx_unit_config_t *config)
 {
     gdma_channel_alloc_config_t dma_chan_config = {
+        .direction = GDMA_CHANNEL_DIRECTION_TX,
 #if CONFIG_PARLIO_TX_ISR_CACHE_SAFE
         .flags.isr_cache_safe = true,
 #endif
     };
-    ESP_RETURN_ON_ERROR(PARLIO_GDMA_NEW_CHANNEL(&dma_chan_config, &tx_unit->dma_chan, NULL), TAG, "allocate TX DMA channel failed");
+    ESP_RETURN_ON_ERROR(PARLIO_GDMA_NEW_CHANNEL(&dma_chan_config, &tx_unit->dma_chan), TAG, "allocate TX DMA channel failed");
     gdma_connect(tx_unit->dma_chan, GDMA_MAKE_TRIGGER(GDMA_TRIG_PERIPH_PARLIO, 0));
     gdma_strategy_config_t gdma_strategy_conf = {
         .auto_update_desc = false, // for loop transmission, we have no chance to change the owner
@@ -163,16 +158,11 @@ static esp_err_t parlio_tx_unit_init_dma(parlio_tx_unit_t *tx_unit, const parlio
         .access_ext_mem = true, // support transmit PSRAM buffer
     };
     ESP_RETURN_ON_ERROR(gdma_config_transfer(tx_unit->dma_chan, &trans_cfg), TAG, "config DMA transfer failed");
-    gdma_channel_alignment_info_t align_info;
-    gdma_get_channel_alignment_constraints(tx_unit->dma_chan, &align_info);
-    tx_unit->int_mem_align = align_info.int_mem_alignment;
-    tx_unit->ext_mem_align = align_info.ext_enc_mem_alignment;
+    gdma_get_alignment_constraints(tx_unit->dma_chan, &tx_unit->int_mem_align, &tx_unit->ext_mem_align);
 
     // create DMA link list
     size_t buffer_alignment = MAX(tx_unit->int_mem_align, tx_unit->ext_mem_align);
     size_t num_dma_nodes = esp_dma_calculate_node_count(config->max_transfer_size, buffer_alignment, PARLIO_DMA_DESCRIPTOR_BUFFER_MAX_SIZE);
-    // link switch event requires at least 2 nodes
-    num_dma_nodes = MAX(num_dma_nodes, 2);
     gdma_link_list_config_t dma_link_config = {
         .item_alignment = PARLIO_DMA_DESC_ALIGNMENT,
         .num_items = num_dma_nodes,
@@ -243,7 +233,7 @@ static esp_err_t parlio_select_periph_clock(parlio_tx_unit_t *tx_unit, const par
 #else
     tx_unit->out_clk_freq_hz = hal_utils_calc_clk_div_integer(&clk_info, &clk_div.integer);
 #endif
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         // turn on the tx module clock to sync the clock divider configuration because of the CDC (Cross Domain Crossing)
         parlio_ll_tx_enable_clock(hal->regs, true);
         parlio_ll_tx_set_clock_source(hal->regs, clk_src);
@@ -315,11 +305,11 @@ esp_err_t parlio_new_tx_unit(const parlio_tx_unit_config_t *config, parlio_tx_un
     ESP_GOTO_ON_ERROR(parlio_tx_unit_init_dma(unit, config), err, TAG, "install tx DMA failed");
 
     // reset fifo and core clock domain
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_RCC_ATOMIC() {
         parlio_ll_tx_reset_clock(hal->regs);
     }
     parlio_ll_tx_reset_fifo(hal->regs);
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         // stop output clock
         parlio_ll_tx_enable_clock(hal->regs, false);
     }
@@ -351,8 +341,8 @@ esp_err_t parlio_new_tx_unit(const parlio_tx_unit_config_t *config, parlio_tx_un
     if (data_width < 8) {
         parlio_ll_tx_set_bit_pack_order(hal->regs, config->bit_pack_order);
     }
-
-    parlio_ll_tx_set_shift_clock_edge(hal->regs, config->shift_edge);
+    // set sample clock edge
+    parlio_ll_tx_set_sample_clock_edge(hal->regs, config->sample_edge);
 
     // clear any pending interrupt
     parlio_ll_clear_interrupt_status(hal->regs, PARLIO_LL_EVENT_TX_MASK);
@@ -441,21 +431,16 @@ esp_err_t parlio_tx_unit_register_event_callbacks(parlio_tx_unit_handle_t tx_uni
 
     if (cbs->on_buffer_switched) {
 #if SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
-#if !PARLIO_USE_GDMA_LINK_SWITCH_EVENT
         // workaround for DIG-559
         ESP_RETURN_ON_FALSE(tx_unit->data_width > 1, ESP_ERR_NOT_SUPPORTED, TAG, "on_buffer_switched callback is not supported for 1-bit data width");
+
         gdma_tx_event_callbacks_t gdma_cbs = {
-            .on_trans_eof = parlio_tx_gdma_buffer_switched_callback,
+            .on_trans_eof = parlio_tx_gdma_eof_callback,
         };
-#else // !PARLIO_USE_GDMA_LINK_SWITCH_EVENT
-        gdma_tx_event_callbacks_t gdma_cbs = {
-            .on_link_switch = parlio_tx_gdma_buffer_switched_callback,
-        };
-#endif // !PARLIO_USE_GDMA_LINK_SWITCH_EVENT
         ESP_RETURN_ON_ERROR(gdma_register_tx_event_callbacks(tx_unit->dma_chan, &gdma_cbs, tx_unit), TAG, "install DMA callback failed");
-#else // SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
+#else
         ESP_RETURN_ON_FALSE(false, ESP_ERR_NOT_SUPPORTED, TAG, "on_buffer_switched callback is not supported");
-#endif // SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
+#endif
     }
 
     tx_unit->on_trans_done = cbs->on_trans_done;
@@ -466,13 +451,12 @@ esp_err_t parlio_tx_unit_register_event_callbacks(parlio_tx_unit_handle_t tx_uni
 
 static void parlio_mount_buffer(parlio_tx_unit_t *tx_unit, parlio_tx_trans_desc_t *t)
 {
-    size_t buffer_alignment = gdma_get_buffer_alignment_constraint(tx_unit->dma_chan, t->payload);
+    size_t buffer_alignment = esp_ptr_internal(t->payload) ? tx_unit->int_mem_align : tx_unit->ext_mem_align;
     // DMA transfer data based on bytes not bits, so convert the bit length to bytes, round up
-    size_t payload_bytes = (t->payload_bits + 7) / 8;
     gdma_buffer_mount_config_t mount_config = {
         .buffer = (void *)t->payload,
         .buffer_alignment = buffer_alignment,
-        .length = payload_bytes,
+        .length = (t->payload_bits + 7) / 8,
         .flags = {
             // if transmission is loop, we don't need to generate the EOF for 1-bit data width, DIG-559
             .mark_eof = tx_unit->data_width == 1 ? !t->flags.loop_transmission : true,
@@ -481,30 +465,7 @@ static void parlio_mount_buffer(parlio_tx_unit_t *tx_unit, parlio_tx_trans_desc_
     };
 
     int next_link_idx = t->flags.loop_transmission ? 1 - t->dma_link_idx : t->dma_link_idx;
-    size_t max_mount_size = PARLIO_DMA_BUFFER_MAX_SIZE(buffer_alignment);
-    if (t->flags.loop_transmission && payload_bytes <= max_mount_size) {
-        // split the payload into two DMA descriptors to trigger the buffer switch event
-        size_t split_bytes = PARLIO_DMA_BUFFER_SPLIT_SIZE(payload_bytes, buffer_alignment);
-        gdma_buffer_mount_config_t mount_configs[2] = {
-            {
-                .buffer = (void *)t->payload,
-                .buffer_alignment = buffer_alignment,
-                .length = split_bytes,
-            },
-            {
-                .buffer = (void *)((uint8_t *)t->payload + split_bytes),
-                .buffer_alignment = buffer_alignment,
-                .length = payload_bytes - split_bytes,
-                .flags = {
-                    .mark_eof = tx_unit->data_width == 1 ? false : true,
-                    .mark_final = GDMA_FINAL_LINK_TO_START,
-                },
-            },
-        };
-        gdma_link_mount_buffers(tx_unit->dma_link[next_link_idx], 0, mount_configs, 2, NULL);
-    } else {
-        gdma_link_mount_buffers(tx_unit->dma_link[next_link_idx], 0, &mount_config, 1, NULL);
-    }
+    gdma_link_mount_buffers(tx_unit->dma_link[next_link_idx], 0, &mount_config, 1, NULL);
 
     if (t->flags.loop_transmission) {
         // concatenate the DMA linked list of the next frame transmission with the DMA linked list of the current frame to realize the reuse of the current transmission transaction
@@ -522,11 +483,11 @@ static void parlio_tx_do_transaction(parlio_tx_unit_t *tx_unit, parlio_tx_trans_
     // And then switched back to the actual clock after the reset is completed.
     bool switch_clk = tx_unit->clk_src == PARLIO_CLK_SRC_EXTERNAL ? true : false;
     if (switch_clk) {
-        PERIPH_RCC_ATOMIC() {
+        PARLIO_CLOCK_SRC_ATOMIC() {
             parlio_ll_tx_set_clock_source(hal->regs, PARLIO_CLK_SRC_XTAL);
         }
     }
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_RCC_ATOMIC() {
         parlio_ll_tx_reset_clock(hal->regs);
     }
     // Since the threshold of the clock divider counter is not updated simultaneously with the clock source switching.
@@ -534,11 +495,11 @@ static void parlio_tx_do_transaction(parlio_tx_unit_t *tx_unit, parlio_tx_trans_
     // We place parlio_mount_buffer between reset clock and disable clock to ensure enough time for updating the threshold of the clock divider counter.
     parlio_mount_buffer(tx_unit, t);
     if (switch_clk) {
-        PERIPH_RCC_ATOMIC() {
+        PARLIO_CLOCK_SRC_ATOMIC() {
             parlio_ll_tx_set_clock_source(hal->regs, PARLIO_CLK_SRC_EXTERNAL);
         }
     }
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         parlio_ll_tx_enable_clock(hal->regs, false);
     }
     // reset tx fifo after disabling tx core clk to avoid unexpected rempty interrupt
@@ -579,7 +540,7 @@ static void parlio_tx_do_transaction(parlio_tx_unit_t *tx_unit, parlio_tx_trans_
     while (parlio_ll_tx_is_ready(hal->regs) == false);
     // turn on the core clock after we start the TX unit
     parlio_ll_tx_start(hal->regs, true);
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         parlio_ll_tx_enable_clock(hal->regs, true);
     }
 }
@@ -603,7 +564,7 @@ esp_err_t parlio_tx_unit_enable(parlio_tx_unit_handle_t tx_unit)
     }
 
     // the chip may resumes from light-sleep, in which case the register configuration needs to be resynchronized
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         parlio_ll_tx_enable_clock(hal->regs, true);
     }
 
@@ -650,10 +611,10 @@ esp_err_t parlio_tx_unit_disable(parlio_tx_unit_handle_t tx_unit)
     // stop the DMA engine, reset the peripheral state
     parlio_hal_context_t *hal = &tx_unit->base.group->hal;
     // to stop the undergoing transaction, disable and reset clock
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_CLOCK_SRC_ATOMIC() {
         parlio_ll_tx_enable_clock(hal->regs, false);
     }
-    PERIPH_RCC_ATOMIC() {
+    PARLIO_RCC_ATOMIC() {
         parlio_ll_tx_reset_clock(hal->regs);
     }
     gdma_stop(tx_unit->dma_chan);
@@ -682,9 +643,6 @@ esp_err_t parlio_tx_unit_transmit(parlio_tx_unit_handle_t tx_unit, const void *p
     ESP_RETURN_ON_FALSE(payload_bits <= tx_unit->max_transfer_bits, ESP_ERR_INVALID_ARG, TAG, "payload bit length too large");
 #if !PARLIO_LL_SUPPORT(TRANS_BIT_ALIGN)
     ESP_RETURN_ON_FALSE((payload_bits % 8) == 0, ESP_ERR_INVALID_ARG, TAG, "payload bit length must be multiple of 8");
-    if (payload_bits % 32 != 0) {
-        ESP_LOGW(TAG, "payload bit length %d is not multiple of 32, it may cause unexpected behavior", payload_bits);
-    }
 #endif // !PARLIO_LL_SUPPORT(TRANS_BIT_ALIGN)
 
 #if SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
@@ -704,21 +662,14 @@ esp_err_t parlio_tx_unit_transmit(parlio_tx_unit_handle_t tx_unit, const void *p
     }
 #endif // !PARLIO_LL_SUPPORT(TX_EOF_FROM_DMA)
 
-    size_t alignment = gdma_get_buffer_alignment_constraint(tx_unit->dma_chan, payload);
+    size_t alignment = esp_ptr_external_ram(payload) ? tx_unit->ext_mem_align : tx_unit->int_mem_align;
     // check alignment
-    ESP_RETURN_ON_FALSE(((uint32_t)payload & (alignment - 1)) == 0, ESP_ERR_INVALID_ARG, TAG, "payload address %p not aligned to %d", payload, alignment);
-    ESP_RETURN_ON_FALSE((payload_bits & (alignment - 1)) == 0, ESP_ERR_INVALID_ARG, TAG, "payload size %d not aligned to %d", payload_bits, alignment);
-    size_t payload_bytes = (payload_bits + 7) / 8;
-
-    // check if the payload size is too small to split into two DMA descriptors
-    if (config->flags.loop_transmission && payload_bytes <= PARLIO_DMA_BUFFER_MAX_SIZE(alignment)) {
-        size_t split_bytes = PARLIO_DMA_BUFFER_SPLIT_SIZE(payload_bytes, alignment);
-        ESP_RETURN_ON_FALSE(split_bytes > 0 && split_bytes < payload_bytes, ESP_ERR_INVALID_ARG, TAG, "loop payload too small");
-    }
+    ESP_RETURN_ON_FALSE(((uint32_t)payload & (alignment - 1)) == 0, ESP_ERR_INVALID_ARG, TAG, "payload address not aligned");
+    ESP_RETURN_ON_FALSE((payload_bits & (alignment - 1)) == 0, ESP_ERR_INVALID_ARG, TAG, "payload size not aligned");
 
     if (esp_cache_get_line_size_by_addr(payload) > 0) {
         // Write back to cache to synchronize the cache before DMA start
-        ESP_RETURN_ON_ERROR(esp_cache_msync((void *)payload, payload_bytes,
+        ESP_RETURN_ON_ERROR(esp_cache_msync((void *)payload, (payload_bits + 7) / 8,
                                             ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED), TAG, "cache sync failed");
     }
 
@@ -729,11 +680,6 @@ esp_err_t parlio_tx_unit_transmit(parlio_tx_unit_handle_t tx_unit, const void *p
         tx_unit->cur_trans->payload_bits = payload_bits;
         parlio_mount_buffer(tx_unit, tx_unit->cur_trans);
         atomic_store(&tx_unit->buffer_need_switch, true);
-#if PARLIO_USE_GDMA_LINK_SWITCH_EVENT
-        if (tx_unit->on_buffer_switched) {
-            ESP_RETURN_ON_ERROR(gdma_request_link_switch_event(tx_unit->dma_chan), TAG, "request link switch event failed");
-        }
-#endif
     } else {
         TickType_t queue_wait_ticks = portMAX_DELAY;
         if (config->flags.queue_nonblocking) {
@@ -783,7 +729,7 @@ esp_err_t parlio_tx_unit_transmit(parlio_tx_unit_handle_t tx_unit, const void *p
 }
 
 #if SOC_PARLIO_TX_SUPPORT_LOOP_TRANSMISSION
-static bool parlio_tx_gdma_buffer_switched_callback(gdma_channel_handle_t dma_chan, gdma_event_data_t *event_data, void *user_data)
+static bool parlio_tx_gdma_eof_callback(gdma_channel_handle_t dma_chan, gdma_event_data_t *event_data, void *user_data)
 {
     parlio_tx_unit_t *tx_unit = (parlio_tx_unit_t *) user_data;
     bool need_yield = false;

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,34 +38,6 @@ static inline void unlock_devices(void)
     if (s_esp_hidh_devices_semaphore != NULL) {
         xSemaphoreGive(s_esp_hidh_devices_semaphore);
     }
-}
-
-/*
- * Atomically checks whether a device is still in the global list and acquires
- * its mutex before releasing the list lock. This avoids TOCTOU between
- * `esp_hidh_dev_exists()` and `esp_hidh_dev_lock()` for call sites that need
- * a stable pointer.
- */
-static bool lock_known_device(esp_hidh_dev_t *dev)
-{
-    if (dev == NULL) {
-        return false;
-    }
-
-    bool found = false;
-    esp_hidh_dev_t *d = NULL;
-    lock_devices();
-    TAILQ_FOREACH(d, &s_esp_hidh_devices, devices) {
-        if (d == dev) {
-            found = true;
-            if (dev->mutex != NULL) {
-                xSemaphoreTake(dev->mutex, portMAX_DELAY);
-            }
-            break;
-        }
-    }
-    unlock_devices();
-    return found;
 }
 
 /*
@@ -235,7 +207,8 @@ esp_hidh_dev_t *esp_hidh_dev_open(uint8_t *bda, esp_hid_transport_t transport, u
 esp_err_t esp_hidh_dev_close(esp_hidh_dev_t *dev)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->close(dev);
         esp_hidh_dev_unlock(dev);
     } else {
@@ -246,7 +219,8 @@ esp_err_t esp_hidh_dev_close(esp_hidh_dev_t *dev)
 
 void esp_hidh_dev_dump(esp_hidh_dev_t *dev, FILE *fp)
 {
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         dev->dump(dev, fp);
         esp_hidh_dev_unlock(dev);
     }
@@ -255,7 +229,8 @@ void esp_hidh_dev_dump(esp_hidh_dev_t *dev, FILE *fp)
 esp_err_t esp_hidh_dev_output_set(esp_hidh_dev_t *dev, size_t map_index, size_t report_id, uint8_t *value, size_t value_len)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->report_write(dev, map_index, report_id, ESP_HID_REPORT_TYPE_OUTPUT, value, value_len);
         esp_hidh_dev_unlock(dev);
     } else {
@@ -267,7 +242,8 @@ esp_err_t esp_hidh_dev_output_set(esp_hidh_dev_t *dev, size_t map_index, size_t 
 esp_err_t esp_hidh_dev_feature_set(esp_hidh_dev_t *dev, size_t map_index, size_t report_id, uint8_t *value, size_t value_len)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->report_write(dev, map_index, report_id, ESP_HID_REPORT_TYPE_FEATURE, value, value_len);
         esp_hidh_dev_unlock(dev);
     } else {
@@ -279,7 +255,8 @@ esp_err_t esp_hidh_dev_feature_set(esp_hidh_dev_t *dev, size_t map_index, size_t
 esp_err_t esp_hidh_dev_feature_get(esp_hidh_dev_t *dev, size_t map_index, size_t report_id, size_t max_length, uint8_t *value, size_t *value_len)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->report_read(dev, map_index, report_id, ESP_HID_REPORT_TYPE_FEATURE, max_length, value, value_len);
         esp_hidh_dev_unlock(dev);
     } else {
@@ -291,7 +268,8 @@ esp_err_t esp_hidh_dev_feature_get(esp_hidh_dev_t *dev, size_t map_index, size_t
 esp_err_t esp_hidh_dev_set_report(esp_hidh_dev_t *dev, size_t map_index, size_t report_id, int report_type, uint8_t *data, size_t length)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         if (dev->set_report) {
             ret = dev->set_report(dev, map_index, report_id, report_type, data, length);
         } else {
@@ -308,7 +286,8 @@ esp_err_t esp_hidh_dev_get_report(esp_hidh_dev_t *dev, size_t map_index, size_t 
                                   size_t max_len)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->report_read(dev, map_index, report_id, report_type, max_len, NULL, NULL);
         esp_hidh_dev_unlock(dev);
     } else {
@@ -320,7 +299,8 @@ esp_err_t esp_hidh_dev_get_report(esp_hidh_dev_t *dev, size_t map_index, size_t 
 esp_err_t esp_hidh_dev_get_idle(esp_hidh_dev_t *dev)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         if (dev->get_idle) {
             ret = dev->get_idle(dev);
         } else {
@@ -336,7 +316,8 @@ esp_err_t esp_hidh_dev_get_idle(esp_hidh_dev_t *dev)
 esp_err_t esp_hidh_dev_set_idle(esp_hidh_dev_t *dev, uint8_t idle_time)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         if (dev->set_idle) {
             ret = dev->set_idle(dev, idle_time);
         } else {
@@ -352,7 +333,8 @@ esp_err_t esp_hidh_dev_set_idle(esp_hidh_dev_t *dev, uint8_t idle_time)
 esp_err_t esp_hidh_dev_get_protocol(esp_hidh_dev_t *dev)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         if (dev->get_protocol) {
             ret = dev->get_protocol(dev);
         } else {
@@ -368,7 +350,8 @@ esp_err_t esp_hidh_dev_get_protocol(esp_hidh_dev_t *dev)
 esp_err_t esp_hidh_dev_set_protocol(esp_hidh_dev_t *dev, uint8_t protocol_mode)
 {
     esp_err_t ret = ESP_OK;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         if (dev->set_protocol) {
             ret = dev->set_protocol(dev, protocol_mode);
         } else {
@@ -385,7 +368,8 @@ const uint8_t *esp_hidh_dev_bda_get(esp_hidh_dev_t *dev)
 {
     uint8_t *ret = NULL;
 #if CONFIG_BLUEDROID_ENABLED || CONFIG_BT_NIMBLE_ENABLED
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->addr.bda;
         esp_hidh_dev_unlock(dev);
     }
@@ -396,7 +380,8 @@ const uint8_t *esp_hidh_dev_bda_get(esp_hidh_dev_t *dev)
 esp_hid_transport_t esp_hidh_dev_transport_get(esp_hidh_dev_t *dev)
 {
     esp_hid_transport_t ret = ESP_HID_TRANSPORT_MAX;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->transport;
         esp_hidh_dev_unlock(dev);
     }
@@ -406,7 +391,8 @@ esp_hid_transport_t esp_hidh_dev_transport_get(esp_hidh_dev_t *dev)
 const esp_hid_device_config_t *esp_hidh_dev_config_get(esp_hidh_dev_t *dev)
 {
     esp_hid_device_config_t *ret = NULL;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = &dev->config;
         esp_hidh_dev_unlock(dev);
     }
@@ -416,7 +402,8 @@ const esp_hid_device_config_t *esp_hidh_dev_config_get(esp_hidh_dev_t *dev)
 const char *esp_hidh_dev_name_get(esp_hidh_dev_t *dev)
 {
     const char * ret = NULL;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.device_name ? dev->config.device_name : "";
         esp_hidh_dev_unlock(dev);
     }
@@ -426,7 +413,8 @@ const char *esp_hidh_dev_name_get(esp_hidh_dev_t *dev)
 const char *esp_hidh_dev_manufacturer_get(esp_hidh_dev_t *dev)
 {
     const char *ret = NULL;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.manufacturer_name ? dev->config.manufacturer_name : "";
         esp_hidh_dev_unlock(dev);
     }
@@ -436,7 +424,8 @@ const char *esp_hidh_dev_manufacturer_get(esp_hidh_dev_t *dev)
 const char *esp_hidh_dev_serial_get(esp_hidh_dev_t *dev)
 {
     const char *ret = NULL;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.serial_number ? dev->config.serial_number : "";
         esp_hidh_dev_unlock(dev);
     }
@@ -446,7 +435,8 @@ const char *esp_hidh_dev_serial_get(esp_hidh_dev_t *dev)
 uint16_t esp_hidh_dev_vendor_id_get(esp_hidh_dev_t *dev)
 {
     uint16_t ret = 0;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.vendor_id;
         esp_hidh_dev_unlock(dev);
     }
@@ -456,7 +446,8 @@ uint16_t esp_hidh_dev_vendor_id_get(esp_hidh_dev_t *dev)
 uint16_t esp_hidh_dev_product_id_get(esp_hidh_dev_t *dev)
 {
     uint16_t ret = 0;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.product_id;
         esp_hidh_dev_unlock(dev);
     }
@@ -466,7 +457,8 @@ uint16_t esp_hidh_dev_product_id_get(esp_hidh_dev_t *dev)
 uint16_t esp_hidh_dev_version_get(esp_hidh_dev_t *dev)
 {
     uint16_t ret = 0;
-    if (lock_known_device(dev)) {
+    if (!esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->config.version;
         esp_hidh_dev_unlock(dev);
     }
@@ -476,7 +468,8 @@ uint16_t esp_hidh_dev_version_get(esp_hidh_dev_t *dev)
 esp_hid_usage_t esp_hidh_dev_usage_get(esp_hidh_dev_t *dev)
 {
     esp_hid_usage_t ret = ESP_HID_USAGE_GENERIC;
-    if (lock_known_device(dev)) {
+    if (esp_hidh_dev_exists(dev)) {
+        esp_hidh_dev_lock(dev);
         ret = dev->usage;
         esp_hidh_dev_unlock(dev);
     }
@@ -488,9 +481,11 @@ esp_err_t esp_hidh_dev_reports_get(esp_hidh_dev_t *dev, size_t *num_reports, esp
     esp_err_t ret = 0;
     esp_hid_report_item_t *r = NULL;
 
-    if (!lock_known_device(dev)) {
+    if (!esp_hidh_dev_exists(dev)) {
         return ESP_FAIL;
     }
+
+    esp_hidh_dev_lock(dev);
     do {
         r = (esp_hid_report_item_t *)malloc(sizeof(esp_hid_report_item_t) * dev->reports_len);
         if (r == NULL) {
@@ -526,9 +521,10 @@ error_:;
 
 esp_err_t esp_hidh_dev_report_maps_get(esp_hidh_dev_t *dev, size_t *num_maps, esp_hid_raw_report_map_t **maps)
 {
-    if (!lock_known_device(dev)) {
+    if (!esp_hidh_dev_exists(dev)) {
         return ESP_FAIL;
     }
+    esp_hidh_dev_lock(dev);
     *num_maps = dev->config.report_maps_len;
     *maps = dev->config.report_maps;
     esp_hidh_dev_unlock(dev);
@@ -696,9 +692,6 @@ static void esp_hidh_dev_resources_free(esp_hidh_dev_t *dev)
         }
     }
     free((void *)dev->config.report_maps);
-#if CONFIG_BT_NIMBLE_ENABLED
-    free((void *)dev->protocol_mode);
-#endif
     esp_hidh_dev_report_t *r;
     while (dev->reports) {
         r = dev->reports;

@@ -4,13 +4,7 @@ if(${target} STREQUAL "linux")
     return() # This component is not supported by the POSIX/Linux simulator
 endif()
 
-if(BOOTLOADER_BUILD)
-    set(srcs "esp_bootloader_desc.c")
-else()
-    set(srcs "")
-endif()
-
-idf_component_register(SRCS ${srcs}
+idf_component_register(SRCS "esp_bootloader_desc.c"
                        INCLUDE_DIRS "include")
 
 if(BOOTLOADER_BUILD)

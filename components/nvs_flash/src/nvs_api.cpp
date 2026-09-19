@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,8 +12,6 @@
 #include "nvs_partition_manager.hpp"
 #include "esp_partition.h"
 #include <functional>
-#include <cmath>
-#include <limits>
 #include "nvs_handle_simple.hpp"
 #include "nvs_memory_management.hpp"
 #include "esp_err.h"
@@ -85,11 +83,8 @@ static esp_err_t close_handles_and_deinit(const char* part_name)
 
     auto it = find_if(begin(s_nvs_handles), end(s_nvs_handles), belongs_to_part);
 
-    // Same as nvs_close(): unlink first, then delete. Deleting while still linked
-    // UAF-corrupts the intrusive list (hangs host tests).
     while (it != end(s_nvs_handles)) {
         s_nvs_handles.erase(it);
-        delete static_cast<NVSHandleEntry*>(it);
         it = find_if(begin(s_nvs_handles), end(s_nvs_handles), belongs_to_part);
     }
 
@@ -253,7 +248,8 @@ extern "C" esp_err_t nvs_flash_erase_partition(const char *part_name)
 
     // erase the partition
     err = part->erase_range(0, part->get_size());
-    delete part;
+
+    // No need to delete the partition here, as it is managed by the NVSPartitionManager.
     return err;
 }
 
@@ -298,10 +294,6 @@ static esp_err_t nvs_find_ns_handle(nvs_handle_t c_handle, NVSHandleSimple** han
 
 extern "C" esp_err_t nvs_open_from_partition(const char *part_name, const char* namespace_name, nvs_open_mode_t open_mode, nvs_handle_t *out_handle)
 {
-    if (out_handle == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     esp_err_t lock_result = Lock::init();
     if (lock_result != ESP_OK) {
         return lock_result;
@@ -389,20 +381,6 @@ extern "C" esp_err_t nvs_erase_all(nvs_handle_t c_handle)
     return handle->erase_all();
 }
 
-extern "C" esp_err_t nvs_purge_all(nvs_handle_t c_handle)
-{
-    Lock lock;
-    ESP_LOGD(TAG, "%s", __func__);
-    NVSHandleSimple *handle;
-    auto err = nvs_find_ns_handle(c_handle, &handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return handle->purge_all();
-}
-
-
 template<typename T>
 static esp_err_t nvs_set(nvs_handle_t c_handle, const char* key, T value)
 {
@@ -455,41 +433,6 @@ extern "C" esp_err_t nvs_set_i64 (nvs_handle_t handle, const char* key, int64_t 
 extern "C" esp_err_t nvs_set_u64 (nvs_handle_t handle, const char* key, uint64_t value)
 {
     return nvs_set(handle, key, value);
-}
-
-static_assert(std::numeric_limits<float>::is_iec559, "float must conform to IEEE 754");
-static_assert(sizeof(float) == 4, "float must be 4 bytes");
-static_assert(std::numeric_limits<double>::is_iec559, "double must conform to IEEE 754");
-static_assert(sizeof(double) == 8, "double must be 8 bytes");
-
-extern "C" esp_err_t nvs_set_float (nvs_handle_t c_handle, const char* key, float value)
-{
-    if (std::isnan(value)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    Lock lock;
-    ESP_LOGD(TAG, "%s %s %f", __func__, key, static_cast<double>(value));
-    NVSHandleSimple *handle;
-    auto err = nvs_find_ns_handle(c_handle, &handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-    return handle->set_item(key, value);
-}
-
-extern "C" esp_err_t nvs_set_double (nvs_handle_t c_handle, const char* key, double value)
-{
-    if (std::isnan(value)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    Lock lock;
-    ESP_LOGD(TAG, "%s %s %f", __func__, key, value);
-    NVSHandleSimple *handle;
-    auto err = nvs_find_ns_handle(c_handle, &handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-    return handle->set_item(key, value);
 }
 
 extern "C" esp_err_t nvs_commit(nvs_handle_t c_handle)
@@ -578,16 +521,6 @@ extern "C" esp_err_t nvs_get_i64 (nvs_handle_t c_handle, const char* key, int64_
 }
 
 extern "C" esp_err_t nvs_get_u64 (nvs_handle_t c_handle, const char* key, uint64_t* out_value)
-{
-    return nvs_get(c_handle, key, out_value);
-}
-
-extern "C" esp_err_t nvs_get_float (nvs_handle_t c_handle, const char* key, float* out_value)
-{
-    return nvs_get(c_handle, key, out_value);
-}
-
-extern "C" esp_err_t nvs_get_double (nvs_handle_t c_handle, const char* key, double* out_value)
 {
     return nvs_get(c_handle, key, out_value);
 }

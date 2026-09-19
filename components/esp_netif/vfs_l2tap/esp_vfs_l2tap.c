@@ -1,9 +1,10 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdio.h>
 #include <stdatomic.h>
 #include <sys/fcntl.h>
 #include <sys/param.h>
@@ -20,7 +21,6 @@
 #include "esp_check.h"
 #include "esp_netif.h"
 #include "esp_eth_driver.h"
-#include "esp_private/esp_eth_sublayer_iodriver.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -51,18 +51,9 @@ typedef struct {
     QueueHandle_t rx_queue;
 
     SemaphoreHandle_t close_done_sem;
-
-    // Sublayer transmit functions
-    esp_err_t (*iodriver_transmit)(l2tap_iodriver_handle io_handle, void *buf, size_t len);
-    esp_err_t (*iodriver_transmit_wrap)(l2tap_iodriver_handle io_handle, void *buf, size_t len, void *eb);
-    void (*iodriver_free_rx_buffer)(l2tap_iodriver_handle io_handle, void *buffer);
-    esp_err_t (*iodriver_get_ll_driver)(l2tap_iodriver_handle io_handle, void **ll_driver);
-
-    // TODO create JIRA to remove this along with Ethernet glue or update glue to have `get_io_fns`
-    // Direct Ethernet Driver transmit functions (legacy mode)
     union {
-        esp_err_t (*eth_transmit)(l2tap_iodriver_handle io_handle, void *buffer, size_t len);
-        esp_err_t (*eth_transmit_ctrl_bufs)(l2tap_iodriver_handle io_handle, void *ctrl, const esp_eth_buf_desc_t *bufs, size_t buf_count);
+        esp_err_t (*driver_transmit)(l2tap_iodriver_handle io_handle, void *buffer, size_t len);
+        esp_err_t (*driver_transmit_ctrl_vargs)(l2tap_iodriver_handle io_handle, void *ctrl, uint32_t argc, ...);
     };
     void (*driver_free_rx_buffer)(l2tap_iodriver_handle io_handle, void* buffer);
 } l2tap_context_t;
@@ -70,8 +61,7 @@ typedef struct {
 typedef struct {
     void *buff;
     size_t len;
-    void *l2_buff;
-    l2tap_timestamp_t ts;
+    eth_mac_time_t ts;
 } frame_queue_entry_t;
 
 typedef struct {
@@ -99,33 +89,11 @@ static portMUX_TYPE s_critical_section_lock = portMUX_INITIALIZER_UNLOCKED;
 static l2tap_select_args_t **s_registered_selects = NULL;
 static int32_t s_registered_select_cnt = 0;
 
-typedef struct l2tap_provider_node {
-    l2tap_iodriver_provider_handle handle;
-    SLIST_ENTRY(l2tap_provider_node) next;
-} l2tap_provider_node_t;
-
-static SLIST_HEAD(l2tap_provider_list, l2tap_provider_node) s_provider_list =
-    SLIST_HEAD_INITIALIZER(s_provider_list);
-
 static const char *TAG = "vfs_l2tap";
 
 static void l2tap_select_notify(int fd, l2tap_select_notif_e select_notif);
 
 /* ================== Utils ====================== */
-static inline void default_free_rx_buffer(l2tap_iodriver_handle io_handle, void* buffer)
-{
-    free(buffer);
-}
-
-static void l2tap_free_rx_buffer(l2tap_context_t *l2tap_socket, void *buffer)
-{
-    if (l2tap_socket->iodriver_free_rx_buffer != NULL) {
-        l2tap_socket->iodriver_free_rx_buffer(l2tap_socket->driver_handle, buffer);
-        return;
-    }
-    l2tap_socket->driver_free_rx_buffer(l2tap_socket->driver_handle, buffer);
-}
-
 static esp_err_t init_rx_queue(l2tap_context_t *l2tap_socket)
 {
     l2tap_socket->rx_queue = xQueueCreate(RX_QUEUE_MAX_SIZE, sizeof(frame_queue_entry_t));
@@ -133,13 +101,12 @@ static esp_err_t init_rx_queue(l2tap_context_t *l2tap_socket)
     return ESP_OK;
 }
 
-static esp_err_t push_rx_queue(l2tap_context_t *l2tap_socket, void *buff, size_t len, void *l2_buff, l2tap_timestamp_t *ts)
+static esp_err_t push_rx_queue(l2tap_context_t *l2tap_socket, void *buff, size_t len, eth_mac_time_t *ts)
 {
-    frame_queue_entry_t rx_frame_info = {0};
+    frame_queue_entry_t rx_frame_info;
 
     rx_frame_info.buff = buff;
     rx_frame_info.len = len;
-    rx_frame_info.l2_buff = l2_buff;
     if (ts) {
         rx_frame_info.ts = *ts;
     }
@@ -164,7 +131,7 @@ static esp_err_t pop_rx_queue(l2tap_context_t *l2tap_socket, void *buff, size_t 
         // empty queue was issued indicating the fd is going to be closed
         if (rx_frame_info.len == 0) {
             // indicate to "clean_task" that task waiting for queue was unblocked
-            push_rx_queue(l2tap_socket, NULL, 0, NULL, NULL);
+            push_rx_queue(l2tap_socket, NULL, 0, NULL);
             *copy_len = 0;
             return ESP_OK;
         }
@@ -193,8 +160,8 @@ static esp_err_t pop_rx_queue(l2tap_context_t *l2tap_socket, void *buff, size_t 
                     // check if there is enough space to store TS
                     if (info_rec->len - sizeof(l2tap_irec_hdr_t) >= sizeof(struct timespec)) {
                         struct timespec *ts = (struct timespec *)info_rec->data;
-                        ts->tv_sec = rx_frame_info.ts.sec;
-                        ts->tv_nsec = rx_frame_info.ts.nsec;
+                        ts->tv_sec = rx_frame_info.ts.seconds;
+                        ts->tv_nsec = rx_frame_info.ts.nanoseconds;
                     } else {
                         info_rec->type = L2TAP_IREC_INVALID;
                     }
@@ -209,7 +176,7 @@ static esp_err_t pop_rx_queue(l2tap_context_t *l2tap_socket, void *buff, size_t 
             }
         }
         memcpy(copy_buff, rx_frame_info.buff, *copy_len);
-        l2tap_free_rx_buffer(l2tap_socket, rx_frame_info.l2_buff != NULL ? rx_frame_info.l2_buff : rx_frame_info.buff);
+        l2tap_socket->driver_free_rx_buffer(l2tap_socket->driver_handle, rx_frame_info.buff);
     } else {
         return ESP_ERR_TIMEOUT;
     }
@@ -226,7 +193,7 @@ static void flush_rx_queue(l2tap_context_t *l2tap_socket)
     frame_queue_entry_t rx_frame_info;
     while (xQueueReceive(l2tap_socket->rx_queue, &rx_frame_info, 0) == pdTRUE) {
         if (rx_frame_info.len > 0) {
-            l2tap_free_rx_buffer(l2tap_socket, rx_frame_info.l2_buff != NULL ? rx_frame_info.l2_buff : rx_frame_info.buff);
+            free(rx_frame_info.buff);
         }
     }
 }
@@ -247,34 +214,13 @@ static inline void l2tap_exit_critical(void)
     portEXIT_CRITICAL(&s_critical_section_lock);
 }
 
-static esp_err_t l2tap_transmit(l2tap_context_t *l2tap_socket, void *data, size_t size)
+static inline void default_free_rx_buffer(l2tap_iodriver_handle io_handle, void* buffer)
 {
-    if (l2tap_socket->iodriver_transmit != NULL) {
-        return l2tap_socket->iodriver_transmit(l2tap_socket->driver_handle, data, size);
-    }
-    if (l2tap_socket->eth_transmit != NULL) {
-        return l2tap_socket->eth_transmit(l2tap_socket->driver_handle, data, size);
-    }
-    return ESP_ERR_INVALID_STATE;
+    free(buffer);
 }
-
-static esp_err_t l2tap_transmit_ts(l2tap_context_t *l2tap_socket, void *data, size_t size, l2tap_timestamp_t *hw_ts)
-{
-    if (l2tap_socket->iodriver_transmit_wrap != NULL) {
-        return l2tap_socket->iodriver_transmit_wrap(l2tap_socket->driver_handle, data, size, hw_ts);
-    }
-    if (l2tap_socket->eth_transmit_ctrl_bufs != NULL) {
-        const esp_eth_buf_desc_t bufs[] = {
-            { .buf = (uint8_t *)data, .len = size },
-        };
-        return l2tap_socket->eth_transmit_ctrl_bufs(l2tap_socket->driver_handle, hw_ts, bufs, 1);
-    }
-    return ESP_ERR_INVALID_STATE;
-}
-
 
 /* ================== ESP NETIF L2 TAP intf ====================== */
-esp_err_t esp_vfs_l2tap_eth_filter_frame(l2tap_iodriver_handle driver_handle, void *buff, size_t *size, l2tap_eth_filter_info_t *info)
+esp_err_t esp_vfs_l2tap_eth_filter_frame(l2tap_iodriver_handle driver_handle, void *buff, size_t *size, void *info)
 {
     struct eth_hdr *eth_header = buff;
     uint16_t eth_type = ntohs(eth_header->type);
@@ -287,17 +233,15 @@ esp_err_t esp_vfs_l2tap_eth_filter_frame(l2tap_iodriver_handle driver_handle, vo
                     // Note that IEEE 802.2 LLC resolution is expected to be performed by upper stream app
                     (s_l2tap_sockets[i].ethtype_filter <= ETH_IEEE802_3_MAX_LEN && eth_type <= ETH_IEEE802_3_MAX_LEN))) {
                 l2tap_exit_critical();
-                l2tap_timestamp_t *ts = NULL;
-                void *l2_buffer = NULL;
-                if (info != NULL) {
-                    if (s_l2tap_sockets[i].flags & L2TAP_FLAG_TS) {
-                        ts = info->hw_ts;
-                    }
-                    l2_buffer = info->l2_buffer;
+                eth_mac_time_t *ts;
+                if (s_l2tap_sockets[i].flags & L2TAP_FLAG_TS) {
+                    ts = (eth_mac_time_t *)info;
+                } else {
+                    ts = NULL;
                 }
-                if (push_rx_queue(&s_l2tap_sockets[i], buff, *size, l2_buffer, ts) != ESP_OK) {
+                if (push_rx_queue(&s_l2tap_sockets[i], buff, *size, ts) != ESP_OK) {
                     // just tail drop when queue is full
-                    l2tap_free_rx_buffer(&s_l2tap_sockets[i], l2_buffer != NULL ? l2_buffer : buff);
+                    s_l2tap_sockets[i].driver_free_rx_buffer(s_l2tap_sockets[i].driver_handle, buff);
                     ESP_LOGD(TAG, "fd %d rx queue is full", i);
                 }
                 l2tap_enter_critical();
@@ -315,7 +259,7 @@ esp_err_t esp_vfs_l2tap_eth_filter_frame(l2tap_iodriver_handle driver_handle, vo
 }
 
 /* ====================== vfs ====================== */
-static int l2tap_open(__attribute__((unused)) void *ctx, const char *path, int flags, int mode)
+static int l2tap_open(const char *path, int flags, int mode)
 {
     int fd;
 
@@ -330,12 +274,8 @@ static int l2tap_open(__attribute__((unused)) void *ctx, const char *path, int f
             s_l2tap_sockets[fd].ethtype_filter = 0x0;
             s_l2tap_sockets[fd].flags = 0;
             s_l2tap_sockets[fd].driver_handle = NULL;
-            s_l2tap_sockets[fd].iodriver_transmit = NULL;
-            s_l2tap_sockets[fd].iodriver_transmit_wrap = NULL;
-            s_l2tap_sockets[fd].iodriver_free_rx_buffer = NULL;
-            s_l2tap_sockets[fd].iodriver_get_ll_driver = NULL;
             s_l2tap_sockets[fd].flags |= ((flags & O_NONBLOCK) == O_NONBLOCK) ? L2TAP_FLAG_NON_BLOCK : 0;
-            s_l2tap_sockets[fd].eth_transmit = esp_eth_transmit;
+            s_l2tap_sockets[fd].driver_transmit = esp_eth_transmit;
             s_l2tap_sockets[fd].driver_free_rx_buffer = default_free_rx_buffer;
             atomic_store(&s_l2tap_sockets[fd].state, L2TAP_SOCK_STATE_OPENED);
             return fd;
@@ -367,7 +307,7 @@ static int l2tap_tx_esp_err_to_errno(esp_err_t esp_err)
     }
 }
 
-static ssize_t l2tap_write(__attribute__((unused)) void *ctx, int fd, const void *data, size_t size)
+static ssize_t l2tap_write(int fd, const void *data, size_t size)
 {
     void *eth_buff;
     l2tap_extended_buff_t *ext_buff;
@@ -409,8 +349,8 @@ static ssize_t l2tap_write(__attribute__((unused)) void *ctx, int fd, const void
         }
 
         if (s_l2tap_sockets[fd].flags & L2TAP_FLAG_TS) {
-            l2tap_timestamp_t hw_ts;
-            if ((esp_ret = l2tap_transmit_ts(&s_l2tap_sockets[fd], eth_buff, size, &hw_ts)) == ESP_OK){
+            eth_mac_time_t eth_ts;
+            if ((esp_ret = s_l2tap_sockets[fd].driver_transmit_ctrl_vargs(s_l2tap_sockets[fd].driver_handle, &eth_ts, 2, eth_buff, size)) == ESP_OK){
                 // find the record allocated for the time stamp info
                 l2tap_irec_hdr_t *info_rec = L2TAP_IREC_FIRST(ext_buff);
                 while(info_rec != NULL) {
@@ -423,19 +363,18 @@ static ssize_t l2tap_write(__attribute__((unused)) void *ctx, int fd, const void
                 if (info_rec != NULL) {
                     if (info_rec->len - sizeof(l2tap_irec_hdr_t) >= sizeof(struct timespec)) {
                         struct timespec *ts = (struct timespec *)info_rec->data;
-                        ts->tv_sec = hw_ts.sec;
-                        ts->tv_nsec = hw_ts.nsec;
+                        ts->tv_sec = eth_ts.seconds;
+                        ts->tv_nsec = eth_ts.nanoseconds;
                     } else {
                         info_rec->type = L2TAP_IREC_INVALID;
                     }
                 }
                 ret = size;
             } else {
-                ESP_LOGE(TAG, "l2tap_transmit_ts failed: %d", esp_ret);
                 errno = l2tap_tx_esp_err_to_errno(esp_ret);
             }
         } else {
-            if ((esp_ret = l2tap_transmit(&s_l2tap_sockets[fd], eth_buff, size)) == ESP_OK) {
+            if ((esp_ret = s_l2tap_sockets[fd].driver_transmit(s_l2tap_sockets[fd].driver_handle, eth_buff, size)) == ESP_OK) {
                 ret = size;
             } else {
                 errno = l2tap_tx_esp_err_to_errno(esp_ret);
@@ -463,7 +402,7 @@ static int l2tap_rx_esp_err_to_errno(esp_err_t esp_err)
     }
 }
 
-static ssize_t l2tap_read(__attribute__((unused)) void *ctx, int fd, void *data, size_t size)
+static ssize_t l2tap_read(int fd, void *data, size_t size)
 {
     // fd might be in process of opening/closing (close was already called but preempted)
     if (atomic_load(&s_l2tap_sockets[fd].state) != L2TAP_SOCK_STATE_OPENED) {
@@ -502,7 +441,7 @@ static ssize_t l2tap_read(__attribute__((unused)) void *ctx, int fd, void *data,
     return actual_size;
 }
 
-static void l2tap_clean_task(void *task_param)
+void l2tap_clean_task(void *task_param)
 {
     l2tap_context_t *l2tap_socket = (l2tap_context_t *)task_param;
 
@@ -510,7 +449,7 @@ static void l2tap_clean_task(void *task_param)
     flush_rx_queue(l2tap_socket);
 
     // push empty queue to unblock possibly blocking task
-    push_rx_queue(l2tap_socket, NULL, 0, NULL, NULL);
+    push_rx_queue(l2tap_socket, NULL, 0, NULL);
     // wait for the indication that blocking task was executed (unblocked)
     ssize_t actual_size;
     pop_rx_queue(l2tap_socket, NULL, 0, &actual_size);
@@ -526,7 +465,7 @@ static void l2tap_clean_task(void *task_param)
     vTaskDelete(NULL);
 }
 
-static int l2tap_close(__attribute__((unused)) void *ctx, int fd)
+static int l2tap_close(int fd)
 {
     if (atomic_load(&s_l2tap_sockets[fd].state) != L2TAP_SOCK_STATE_OPENED) {
         // not valid opened fd
@@ -539,16 +478,14 @@ static int l2tap_close(__attribute__((unused)) void *ctx, int fd)
 
     if ((s_l2tap_sockets[fd].close_done_sem = xSemaphoreCreateBinary()) == NULL) {
         ESP_LOGE(TAG, "create close_done_sem failed");
-        goto close_failed;
+        return -1;
     }
     // If one task is blocked in I/O operation and another task tries to close the fd, the first task is
     // unblocked by pushing empty queue in low priority task (to ensure context switch to the first task).
     // The first's task read operation then ends with error and the low priority task frees the queue resources.
     if (xTaskCreate(l2tap_clean_task, "l2tap_clean_task", 1024, &s_l2tap_sockets[fd], tskIDLE_PRIORITY, NULL) == pdFAIL) {
         ESP_LOGE(TAG, "create l2tap_clean_task failed");
-        vSemaphoreDelete(s_l2tap_sockets[fd].close_done_sem);
-        s_l2tap_sockets[fd].close_done_sem = NULL;
-        goto close_failed;
+        return -1;
     }
 
     // wait for the low priority close task & then delete the semaphore
@@ -558,14 +495,6 @@ static int l2tap_close(__attribute__((unused)) void *ctx, int fd)
     // indicate that socket is ready to be used again
     atomic_store(&s_l2tap_sockets[fd].state, L2TAP_SOCK_STATE_READY);
     return 0;
-
-close_failed:
-    flush_rx_queue(&s_l2tap_sockets[fd]);
-    (void)push_rx_queue(&s_l2tap_sockets[fd], NULL, 0, NULL, NULL);
-    delete_rx_queue(&s_l2tap_sockets[fd]);
-    atomic_store(&s_l2tap_sockets[fd].state, L2TAP_SOCK_STATE_READY);
-    errno = ENOMEM;
-    return -1;
 }
 
 // used to find a netif with the attached driver matching the argument
@@ -574,44 +503,7 @@ static bool netif_driver_matches(esp_netif_t *netif, void* driver)
     return esp_netif_get_io_driver(netif) == driver;
 }
 
-static void l2tap_socket_apply_io_fns(l2tap_context_t *l2tap_socket, const esp_eth_iodriver_io_fns_t *io_fns)
-{
-    l2tap_socket->driver_handle = io_fns->io_handle;
-    l2tap_socket->iodriver_transmit = io_fns->iodriver_transmit;
-    l2tap_socket->iodriver_transmit_wrap = io_fns->iodriver_transmit_wrap;
-    l2tap_socket->iodriver_free_rx_buffer = io_fns->iodriver_free_rx_buffer;
-    l2tap_socket->iodriver_get_ll_driver = io_fns->iodriver_get_ll_driver;
-}
-
-static void l2tap_bind_io_handle(l2tap_context_t *l2tap_socket, l2tap_iodriver_handle io_handle)
-{
-    l2tap_provider_node_t *it;
-    esp_eth_iodriver_provider_base_t *provider;
-    esp_eth_iodriver_io_fns_t io_fns;
-
-    l2tap_enter_critical();
-    // NULL handle can't be served by any provider, don't even try and bind it directly (legacy mode)
-    if (io_handle != NULL) {
-        SLIST_FOREACH(it, &s_provider_list, next) {
-            provider = (esp_eth_iodriver_provider_base_t *)it->handle;
-            if (provider->get_io_fns != NULL &&
-                    provider->get_io_fns(provider, io_handle, &io_fns) == ESP_OK) {
-                l2tap_socket_apply_io_fns(l2tap_socket, &io_fns);
-                l2tap_exit_critical();
-                return;
-            }
-        }
-    }
-    // No iodriver provider matched: bind the handle directly (legacy mode).
-    l2tap_socket->driver_handle = io_handle;
-    l2tap_socket->iodriver_transmit = NULL;
-    l2tap_socket->iodriver_transmit_wrap = NULL;
-    l2tap_socket->iodriver_free_rx_buffer = NULL;
-    l2tap_socket->iodriver_get_ll_driver = NULL;
-    l2tap_exit_critical();
-}
-
-static int l2tap_ioctl(__attribute__((unused)) void *ctx, int fd, int cmd, va_list args)
+static int l2tap_ioctl(int fd, int cmd, va_list args)
 {
     esp_netif_t *esp_netif;
     switch (cmd) {
@@ -650,21 +542,15 @@ static int l2tap_ioctl(__attribute__((unused)) void *ctx, int fd, int cmd, va_li
     }
     case L2TAP_S_INTF_DEVICE:{
         const char *str = va_arg(args, const char *);
-        // get netif handle from if key (the highest layer)
         esp_netif = esp_netif_get_handle_from_ifkey(str);
         if (esp_netif == NULL) {
             // No such device
             errno = ENODEV;
             goto err;
         }
-        // find the iodriver provider based on the netif iodriver
-        esp_netif_iodriver_handle netif_iodriver = esp_netif_get_io_driver(esp_netif);
-        if (netif_iodriver == NULL) {
-            // No such device (netif does not have any IO driver attached)
-            errno = ENODEV;
-            goto err;
-        }
-        l2tap_bind_io_handle(&s_l2tap_sockets[fd], netif_iodriver);
+        l2tap_enter_critical();
+        s_l2tap_sockets[fd].driver_handle = esp_netif_get_io_driver(esp_netif);
+        l2tap_exit_critical();
         break;
     }
     case L2TAP_G_INTF_DEVICE:{
@@ -676,34 +562,26 @@ static int l2tap_ioctl(__attribute__((unused)) void *ctx, int fd, int cmd, va_li
         break;
     }
     case L2TAP_S_DEVICE_DRV_HNDL:{
-        l2tap_iodriver_handle device_driver_hdl = va_arg(args, l2tap_iodriver_handle);
-        if (device_driver_hdl == NULL) {
+        l2tap_iodriver_handle set_driver_hdl = va_arg(args, l2tap_iodriver_handle);
+        if (set_driver_hdl == NULL) {
             // No such device (not valid driver handle)
-            errno = EINVAL;
+            errno = ENODEV;
             goto err;
         }
-        l2tap_bind_io_handle(&s_l2tap_sockets[fd], device_driver_hdl);
+        l2tap_enter_critical();
+        s_l2tap_sockets[fd].driver_handle = set_driver_hdl;
+        l2tap_exit_critical();
         break;
     }
     case L2TAP_G_DEVICE_DRV_HNDL:{
         l2tap_iodriver_handle *get_driver_hdl = va_arg(args, l2tap_iodriver_handle*);
-        // the driver handle and the associated getter must be read consistently since they can be
-        // reassigned from other task
-        l2tap_enter_critical();
-        // no iodriver provider registered, get the driver handle directly (legacy mode)
-        if (s_l2tap_sockets[fd].iodriver_get_ll_driver == NULL) {
-            *get_driver_hdl = s_l2tap_sockets[fd].driver_handle;
-        } else {
-            s_l2tap_sockets[fd].iodriver_get_ll_driver(s_l2tap_sockets[fd].driver_handle, get_driver_hdl);
-        }
-        l2tap_exit_critical();
+        *get_driver_hdl = s_l2tap_sockets[fd].driver_handle;
         break;
     }
     case L2TAP_S_TIMESTAMP_EN:
         l2tap_enter_critical();
         s_l2tap_sockets[fd].flags |= L2TAP_FLAG_TS;
-        // TODO add JIRA ticket - maybe not needed tests with sublayer where L2TAP_S_TIMESTAMP_EN may not be needed
-        s_l2tap_sockets[fd].eth_transmit_ctrl_bufs = esp_eth_transmit_ctrl_bufs;
+        s_l2tap_sockets[fd].driver_transmit_ctrl_vargs = esp_eth_transmit_ctrl_vargs;
         l2tap_exit_critical();
         break;
     default:
@@ -730,7 +608,7 @@ static void l2tap_set_nonblocking(l2tap_context_t *l2tap_socket, bool nonblock)
     l2tap_exit_critical();
 }
 
-static int l2tap_fcntl(__attribute__((unused)) void *ctx, int fd, int cmd, int arg)
+static int l2tap_fcntl(int fd, int cmd, int arg)
 {
     int result = 0;
     if (cmd == F_GETFL) {
@@ -923,71 +801,16 @@ static const esp_vfs_select_ops_t s_vfs_l2tap_select = {
 #endif //CONFIG_VFS_SUPPORT_SELECT
 
 static const esp_vfs_fs_ops_t s_vfs_l2tap = {
-    .write_p = &l2tap_write,
-    .open_p = &l2tap_open,
-    .close_p = &l2tap_close,
-    .read_p = &l2tap_read,
-    .fcntl_p = &l2tap_fcntl,
-    .ioctl_p = &l2tap_ioctl,
+    .write = &l2tap_write,
+    .open = &l2tap_open,
+    .close = &l2tap_close,
+    .read = &l2tap_read,
+    .fcntl = &l2tap_fcntl,
+    .ioctl = &l2tap_ioctl,
 #ifdef CONFIG_VFS_SUPPORT_SELECT
     .select = &s_vfs_l2tap_select,
 #endif // CONFIG_VFS_SUPPORT_SELECT
 };
-
-/* ================== IO Driver Provider Registry ====================== */
-
-esp_err_t esp_vfs_l2tap_iodriver_provider_register(l2tap_iodriver_provider_handle provider)
-{
-    ESP_RETURN_ON_FALSE(provider, ESP_ERR_INVALID_ARG, TAG, "iodriver provider handle is NULL");
-
-    l2tap_provider_node_t *node = malloc(sizeof(*node));
-    if (!node) {
-        return ESP_ERR_NO_MEM;
-    }
-    node->handle = provider;
-
-    esp_err_t ret = ESP_OK;
-    l2tap_enter_critical();
-    l2tap_provider_node_t *it;
-    SLIST_FOREACH(it, &s_provider_list, next) {
-        if (it->handle == provider) {
-            ret = ESP_ERR_INVALID_STATE;
-            break;
-        }
-    }
-    if (ret == ESP_OK) {
-        SLIST_INSERT_HEAD(&s_provider_list, node, next);
-    }
-    l2tap_exit_critical();
-
-    if (ret != ESP_OK) {
-        free(node);
-    }
-    return ret;
-}
-
-esp_err_t esp_vfs_l2tap_iodriver_provider_unregister(l2tap_iodriver_provider_handle provider)
-{
-    ESP_RETURN_ON_FALSE(provider, ESP_ERR_INVALID_ARG, TAG, "iodriver provider handle is NULL");
-
-    l2tap_provider_node_t *found = NULL;
-    l2tap_enter_critical();
-    l2tap_provider_node_t *it;
-    SLIST_FOREACH(it, &s_provider_list, next) {
-        if (it->handle == provider) {
-            found = it;
-            SLIST_REMOVE(&s_provider_list, it, l2tap_provider_node, next);
-            break;
-        }
-    }
-    l2tap_exit_critical();
-
-    if (found) {
-        free(found);
-        return ESP_OK;
-    }
-    return ESP_ERR_NOT_FOUND;
-}
 
 esp_err_t esp_vfs_l2tap_intf_register(l2tap_vfs_config_t *config)
 {
@@ -1000,7 +823,7 @@ esp_err_t esp_vfs_l2tap_intf_register(l2tap_vfs_config_t *config)
 
     ESP_RETURN_ON_FALSE(!s_is_registered, ESP_ERR_INVALID_STATE, TAG, "vfs is already registered");
     s_is_registered = true;
-    ESP_RETURN_ON_ERROR(esp_vfs_register_fs(config->base_path, &s_vfs_l2tap, ESP_VFS_FLAG_STATIC | ESP_VFS_FLAG_CONTEXT_PTR, NULL), TAG, "vfs register error");
+    ESP_RETURN_ON_ERROR(esp_vfs_register_fs(config->base_path, &s_vfs_l2tap, ESP_VFS_FLAG_STATIC, NULL), TAG, "vfs register error");
 
     return ESP_OK;
 }

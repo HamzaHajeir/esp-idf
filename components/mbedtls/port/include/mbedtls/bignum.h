@@ -5,8 +5,7 @@
  */
 #pragma once
 
-#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
-#include_next "mbedtls/private/bignum.h"
+#include_next "mbedtls/bignum.h"
 #include "sdkconfig.h"
 
 /**

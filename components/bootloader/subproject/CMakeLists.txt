@@ -15,24 +15,17 @@ if(NOT IDF_TARGET)
         "in by the parent build process.")
 endif()
 
-if(IDF_BUILD_V2)
-    include(CMakeLists_v2.txt)
-    return()
-endif()
-
 # A number of these components are implemented as config-only when built in the bootloader
 set(COMPONENTS
     bootloader
     esptool_py
     esp_hw_support
-    esp_hal_security
     esp_system
     freertos
     hal
     partition_table
     soc
     bootloader_support
-    esp_image_verify
     log
     spi_flash
     micro-ecc
@@ -56,25 +49,13 @@ if(IGNORE_EXTRA_COMPONENT)
          OUTPUT_VARIABLE EXTRA_COMPONENT_EXCLUDE_DIRS)
 endif()
 
-foreach(extra_component_dir ${EXTRA_COMPONENT_DIRS})
-    if(EXISTS "${extra_component_dir}/CMakeLists.txt")
-        # BOOTLOADER_EXTRA_COMPONENT_DIRS may point directly to a single component.
-        # Add the directory name so the bootloader COMPONENTS filter keeps it.
-        get_filename_component(component "${extra_component_dir}" NAME)
-        if(NOT ${component} IN_LIST IGNORE_EXTRA_COMPONENT)
-            list(APPEND COMPONENTS ${component})
-        endif()
-    else()
-        # BOOTLOADER_EXTRA_COMPONENT_DIRS may also point to a directory containing
-        # multiple component directories. Add each child directory to the filter.
-        file(GLOB proj_components RELATIVE ${extra_component_dir} ${extra_component_dir}/*)
-        foreach(component ${proj_components})
-            # Only directories are considered components.
-            if(IS_DIRECTORY "${extra_component_dir}/${component}" AND NOT ${component} IN_LIST IGNORE_EXTRA_COMPONENT)
-                list(APPEND COMPONENTS ${component})
-            endif()
-        endforeach()
-    endif()
+# Consider each directory in the project's bootloader_components as a component to be compiled
+file(GLOB proj_components RELATIVE ${PROJECT_EXTRA_COMPONENTS} ${PROJECT_EXTRA_COMPONENTS}/*)
+foreach(component ${proj_components})
+  # Only directories are considered components
+  if(IS_DIRECTORY "${PROJECT_EXTRA_COMPONENTS}/${component}" AND NOT ${component} IN_LIST IGNORE_EXTRA_COMPONENT)
+    list(APPEND COMPONENTS ${component})
+  endif()
 endforeach()
 
 set(BOOTLOADER_BUILD 1)
@@ -87,8 +68,11 @@ idf_build_set_property(__OUTPUT_SDKCONFIG 0)
 # Define a property for the default linker script
 set(LD_DEFAULT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/main/ld/${IDF_TARGET}")
 project(bootloader)
-target_linker_script("__idf_main" INTERFACE "${LD_DEFAULT_PATH}/bootloader.memory.ld.in")
-target_linker_script("__idf_main" INTERFACE "${LD_DEFAULT_PATH}/bootloader.sections.ld.in")
+if(CONFIG_ESP32P4_REV_MIN_300)
+    target_linker_script("__idf_main" INTERFACE "${LD_DEFAULT_PATH}/bootloader.rev3.ld.in")
+else()
+    target_linker_script("__idf_main" INTERFACE "${LD_DEFAULT_PATH}/bootloader.ld.in")
+endif()
 
 idf_build_set_property(COMPILE_DEFINITIONS "BOOTLOADER_BUILD=1" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "NON_OS_BUILD=1" APPEND)

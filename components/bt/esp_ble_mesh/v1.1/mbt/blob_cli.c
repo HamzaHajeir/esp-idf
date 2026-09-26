@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2020 Nordic Semiconductor ASA
- * SPDX-FileContributor: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,8 +17,6 @@
 #include "mesh/buf.h"
 
 #if CONFIG_BLE_MESH_BLOB_CLI
-
-#define CHUNK_SIZE_MAX BLOB_TX_CHUNK_SIZE
 
 #define TARGETS_FOR_EACH(cli, target)                                          \
         SYS_SLIST_FOR_EACH_CONTAINER((sys_slist_t *)&(cli)->inputs->targets,   \
@@ -51,9 +49,7 @@ _Static_assert((BLOB_BLOCK_STATUS_MSG_MAXLEN + BLE_MESH_MODEL_OP_LEN(BT_MESH_BLO
                 BLE_MESH_MIC_SHORT) <= BLE_MESH_RX_SDU_MAX,
                "The BLOB Block Status message does not fit into the maximum incoming SDU size.");
 
-NET_BUF_SIMPLE_DEFINE_STATIC(chunk_buf, BLOB_CHUNK_SDU_LEN(CHUNK_SIZE_MAX));
-static bool chunk_sending;
-static bool last_chunk_sent;
+NET_BUF_SIMPLE_DEFINE_STATIC(chunk_buf, BLE_MESH_TX_SDU_MAX);
 
 struct block_status {
     enum bt_mesh_blob_status status;
@@ -569,8 +565,7 @@ void blob_cli_broadcast_rsp(struct bt_mesh_blob_cli *cli,
 
 void blob_cli_broadcast_abort(struct bt_mesh_blob_cli *cli)
 {
-    if (!cli->tx.ctx.is_inited &&
-        cli->state != BT_MESH_BLOB_CLI_STATE_SUSPENDED) {
+    if (!cli->tx.ctx.is_inited) {
         return;
     }
 
@@ -596,12 +591,6 @@ static int tx(struct bt_mesh_blob_cli *cli, uint16_t addr,
         .addr = addr,
         .send_ttl = cli->inputs->ttl,
     };
-
-    if (chunk_sending) {
-        memcpy(&ctx.enh, &cli->xfer->chunk_enh_params,
-               sizeof(bt_mesh_msg_enh_params_t));
-    }
-
     int err;
 
     err = bt_mesh_model_send((struct bt_mesh_model *)cli->mod, &ctx, buf, &end_cb, cli);
@@ -625,10 +614,6 @@ static void send_start(uint16_t duration, int err, void *cb_data)
 static void send_end(int err, void *user_data)
 {
     struct bt_mesh_blob_cli *cli = user_data;
-
-    if (chunk_sending) {
-        chunk_sending = false;
-    }
 
     if (!cli->tx.ctx.is_inited) {
         return;
@@ -657,15 +642,7 @@ static void xfer_start_tx(struct bt_mesh_blob_cli *cli, uint16_t dst)
     net_buf_simple_add_le64(&buf, cli->xfer->id);
     net_buf_simple_add_le32(&buf, cli->xfer->size);
     net_buf_simple_add_u8(&buf, cli->xfer->block_size_log);
-#if CONFIG_BLE_MESH_LONG_PACKET
-    if (cli->xfer->chunk_enh_params.long_pkt_cfg_used) {
-        net_buf_simple_add_le16(&buf, BLE_MESH_EXT_TX_SDU_MAX);
-    } else {
-        net_buf_simple_add_le16(&buf, BLE_MESH_TX_SDU_MAX);
-    }
-#else
     net_buf_simple_add_le16(&buf, BLE_MESH_TX_SDU_MAX);
-#endif
 
     tx(cli, dst, &buf);
 }
@@ -712,13 +689,6 @@ static void chunk_tx(struct bt_mesh_blob_cli *cli, uint16_t dst)
     chunk.size = chunk_size(cli->xfer, &cli->block, cli->chunk_idx);
     chunk.offset = cli->xfer->chunk_size * cli->chunk_idx;
     chunk.data = net_buf_simple_add(&chunk_buf, chunk.size);
-
-    if ((cli->block.number == cli->block_count - 1) &&
-        (cli->chunk_idx < cli->block.chunk_count)) {
-        last_chunk_sent = true;
-    } else {
-        last_chunk_sent = false;
-    }
 
     err = cli->io->rd(cli->io, cli->xfer, &cli->block, &chunk);
     if (err || cli->state == BT_MESH_BLOB_CLI_STATE_NONE) {
@@ -989,8 +959,6 @@ static void chunk_send(struct bt_mesh_blob_cli *cli)
            chunk_size(cli->xfer, &cli->block, cli->chunk_idx));
 
     cli->state = BT_MESH_BLOB_CLI_STATE_BLOCK_SEND;
-    chunk_sending = true;
-
     blob_cli_broadcast(cli, &ctx);
 }
 
@@ -1127,7 +1095,7 @@ static void progress_checked(struct bt_mesh_blob_cli *cli)
 
     cli->state = BT_MESH_BLOB_CLI_STATE_NONE;
 
-    if (cli->cb && cli->cb->xfer_progress_complete) {
+    if (cli->cb && cli->cb->end) {
         cli->cb->xfer_progress_complete(cli);
     }
 }
@@ -1269,11 +1237,8 @@ static int handle_xfer_status(const struct bt_mesh_model *mod, struct bt_mesh_ms
     info.mode = status_and_mode >> 6;
     info.phase = net_buf_simple_pull_u8(buf);
 
-    if (buf->len >= 8) {
+    if (buf->len) {
         info.id = net_buf_simple_pull_le64(buf);
-    } else if (buf->len > 0) {
-        BT_WARN("Invalid ID field length: %u", buf->len);
-        return -EINVAL;
     }
 
     if (buf->len >= 7) {
@@ -1281,9 +1246,6 @@ static int handle_xfer_status(const struct bt_mesh_model *mod, struct bt_mesh_ms
         info.block_size_log = net_buf_simple_pull_u8(buf);
         info.mtu_size = net_buf_simple_pull_le16(buf);
         info.missing_blocks = net_buf_simple_pull(buf, buf->len);
-    } else if (buf->len > 0) {
-        BT_WARN("Invalid extended field length: %u", buf->len);
-        return -EINVAL;
     }
 
     BT_DBG("status: %u %s phase: %u %s", info.status,
@@ -1364,9 +1326,8 @@ static int handle_block_report(const struct bt_mesh_model *mod, struct bt_mesh_m
         int idx;
 
         idx = chunk_idx_decode(buf);
-        if (idx < 0 || idx >= cli->block.chunk_count) {
-            BT_ERR("Invalid encoding");
-            return -EINVAL;
+        if (idx < 0) {
+            return idx;
         }
 
         blob_chunk_missing_set(status.block.missing, idx, true);
@@ -1398,10 +1359,6 @@ static int handle_block_status(const struct bt_mesh_model *mod, struct bt_mesh_m
     size_t len;
     int idx;
 
-    if (!cli->xfer) {
-        return -EINVAL;
-    }
-
     target = target_get(cli, ctx->addr);
     if (!target) {
         return -ENOENT;
@@ -1412,10 +1369,6 @@ static int handle_block_status(const struct bt_mesh_model *mod, struct bt_mesh_m
     status.missing = status_and_format >> 6;
     status.block.number = net_buf_simple_pull_le16(buf);
     chunk_size = net_buf_simple_pull_le16(buf);
-    if (chunk_size == 0 || chunk_size != cli->xfer->chunk_size) {
-        BT_ERR("Invalid chunk_size: %d,%d", chunk_size, cli->xfer->chunk_size);
-        return -EINVAL;
-    }
     status.block.chunk_count =
         DIV_ROUND_UP(cli->block.size, chunk_size);
 
@@ -1643,17 +1596,6 @@ int bt_mesh_blob_cli_suspend(struct bt_mesh_blob_cli *cli)
         return -EINVAL;
     }
 
-    /* After the last chunk data is sent, if the server
-     * successfully receives the chunk, it will be in the
-     * complete state. At this time, if the client resumes
-     * from suspend and restarts the transmission, an error
-     * will occur, resulting in lost target */
-    if (last_chunk_sent) {
-        BT_WARN("About to end, refuse to suspend");
-        return -EINVAL;
-    }
-
-    io_close(cli);
     cli->state = BT_MESH_BLOB_CLI_STATE_SUSPENDED;
     (void)k_work_cancel_delayable(&cli->tx.retry);
     cli->tx.ctx.is_inited = 0;
@@ -1684,8 +1626,8 @@ int bt_mesh_blob_cli_resume(struct bt_mesh_blob_cli *cli)
         return -ENODEV;
     }
 
-    block_start(cli);
-    return 0;
+    block_set(cli, 0);
+    return xfer_start(cli);
 }
 
 void bt_mesh_blob_cli_cancel(struct bt_mesh_blob_cli *cli)
@@ -1699,9 +1641,6 @@ void bt_mesh_blob_cli_cancel(struct bt_mesh_blob_cli *cli)
 
     if (cli->state == BT_MESH_BLOB_CLI_STATE_CAPS_GET ||
             cli->state == BT_MESH_BLOB_CLI_STATE_SUSPENDED) {
-        if (cli->state == BT_MESH_BLOB_CLI_STATE_SUSPENDED) {
-            io_close(cli);
-        }
         cli_state_reset(cli);
         return;
     }
@@ -1734,7 +1673,7 @@ int bt_mesh_blob_cli_xfer_progress_get(struct bt_mesh_blob_cli *cli,
 
 uint8_t bt_mesh_blob_cli_xfer_progress_active_get(struct bt_mesh_blob_cli *cli)
 {
-    if (cli->state < BT_MESH_BLOB_CLI_STATE_START || cli->block_count == 0) {
+    if (cli->state < BT_MESH_BLOB_CLI_STATE_START) {
         return 0;
     }
 

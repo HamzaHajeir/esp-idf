@@ -307,7 +307,6 @@ void print_uuid(esp_bt_uuid_t *uuid)
                        uuid->uuid.uuid128[13], uuid->uuid.uuid128[14], uuid->uuid.uuid128[15]);
     }
 }
-#endif /* !CONFIG_BT_NIMBLE_ENABLED */
 
 #if CONFIG_BT_HID_HOST_ENABLED
 static void handle_bt_device_result(struct disc_res_param *disc_res)
@@ -655,6 +654,7 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
         break;
     }
 }
+#endif
 
 static esp_err_t init_ble_gap(void)
 {
@@ -1042,7 +1042,10 @@ static esp_err_t init_low_level(uint8_t mode)
     bt_cfg.mode = mode;
 #endif
 #if CONFIG_BT_HID_HOST_ENABLED
-    if (!(mode & ESP_BT_MODE_CLASSIC_BT))
+    if (mode & ESP_BT_MODE_CLASSIC_BT) {
+        bt_cfg.bt_max_acl_conn = 3;
+        bt_cfg.bt_max_sync_conn = 3;
+    } else
 #endif
     {
         ret = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,7 +34,7 @@ typedef struct {
     uint32_t resolution_hz;              /*!< Counter resolution in Hz
                                               The step size of each count tick equals to (1 / resolution_hz) seconds */
     mcpwm_timer_count_mode_t count_mode; /*!< Count mode */
-    uint32_t period_ticks;               /*!< Number of count ticks within a period. For up-down mode, the timer peak value is half of the period_ticks */
+    uint32_t period_ticks;               /*!< Number of count ticks within a period */
     int intr_priority;                   /*!< MCPWM timer interrupt priority,
                                               if set to 0, the driver will try to allocate an interrupt with a relative low priority (1,2,3) */
     /// Extra configuration flags for MCPWM timer
@@ -60,17 +60,6 @@ typedef struct {
  *      - ESP_FAIL: Create MCPWM timer failed because of other error
  */
 esp_err_t mcpwm_new_timer(const mcpwm_timer_config_t *config, mcpwm_timer_handle_t *ret_timer);
-
-/**
- * @brief Get MCPWM timer resolution, in Hz
- *
- * @param[in] timer MCPWM timer handle, allocated by `mcpwm_new_timer()`
- * @param[out] out_resolution Returned timer resolution, in Hz
- * @return
- *      - ESP_OK: Get timer resolution successfully
- *      - ESP_ERR_INVALID_ARG: Get timer resolution failed because of invalid argument
- */
-esp_err_t mcpwm_timer_get_resolution(mcpwm_timer_handle_t timer, uint32_t *out_resolution);
 
 /**
  * @brief Delete MCPWM timer

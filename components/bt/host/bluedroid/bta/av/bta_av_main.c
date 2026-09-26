@@ -368,12 +368,7 @@ static tBTA_AV_SCB *bta_av_alloc_scb(tBTA_AV_CHNL chnl)
                     p_ret->hndl = (tBTA_AV_HNDL)((xx + 1) | chnl);
                     p_ret->hdi  = xx;
                     p_ret->a2d_list = list_new(NULL);
-                    if (p_ret->a2d_list == NULL) {
-                        osi_free(p_ret);
-                        p_ret = NULL;
-                    } else {
-                        bta_av_cb.p_scb[xx] = p_ret;
-                    }
+                    bta_av_cb.p_scb[xx] = p_ret;
                 }
                 break;
             }
@@ -422,15 +417,13 @@ void bta_av_conn_cback(UINT8 handle, BD_ADDR bd_addr, UINT8 event, tAVDT_CTRL *p
             p_scb = bta_av_addr_to_scb(bd_addr);
         }
         else if (AVDT_CONNECT_IND_EVT == event) {
-            if (p_data) {
-                APPL_TRACE_DEBUG("CONN_IND is ACP:%d\n", p_data->hdr.err_param);
-            }
+            APPL_TRACE_DEBUG("CONN_IND is ACP:%d\n", p_data->hdr.err_param);
         }
 
         if ((p_msg = (tBTA_AV_STR_MSG *) osi_malloc((UINT16) (sizeof(tBTA_AV_STR_MSG)))) != NULL) {
             p_msg->hdr.event = evt;
             p_msg->hdr.layer_specific = event;
-            p_msg->hdr.offset = p_data ? p_data->hdr.err_param : 0;
+            p_msg->hdr.offset = p_data->hdr.err_param;
             bdcpy(p_msg->bd_addr, bd_addr);
             if (p_scb) {
                 APPL_TRACE_DEBUG("scb hndl x%x, role x%x\n", p_scb->hndl, p_scb->role);
@@ -482,7 +475,8 @@ static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data)
     activate_sink = p_data->hdr.layer_specific;
     APPL_TRACE_DEBUG("bta_av_api_sink_enable %d \n", activate_sink)
     char p_service_name[BTA_SERVICE_NAME_LEN + 1];
-    BCM_STRLCPY_S(p_service_name, BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN + 1);
+    BCM_STRNCPY_S(p_service_name, BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN);
+    p_service_name[BTA_SERVICE_NAME_LEN] = '\0';
 
     if (activate_sink) {
         AVDT_SINK_Activate();
@@ -542,10 +536,13 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
     tAVDT_CS        cs;
     char            *p_service_name;
     tBTA_UTL_COD    cod;
+#if (BTA_AV_EXT_CODEC == FALSE)
     tBTA_AV_CODEC   codec_type;
     UINT8           index = 0;
+#endif
     char p_avk_service_name[BTA_SERVICE_NAME_LEN + 1];
-    BCM_STRLCPY_S(p_avk_service_name, BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN + 1);
+    BCM_STRNCPY_S(p_avk_service_name, BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN);
+    p_avk_service_name[BTA_SERVICE_NAME_LEN] = '\0';
 
     memset(&cs, 0, sizeof(tAVDT_CS));
 
@@ -665,25 +662,10 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
 
             /* keep the configuration in the stream control block */
             memcpy(&p_scb->cfg, &cs.cfg, sizeof(tAVDT_CFG));
-            /*
-             * Create local SEPs:
-             * - Internal codec: init() supplies SBC (typically one SEP).
-             * - External codec: A2DP mandates SBC, so pre-fill every SEID with
-             *   the default SBC SEP; app register_stream_endpoint() may overwrite.
-             */
-            while (index < BTA_AV_MAX_SEPS) {
-#if (BTA_AV_EXT_CODEC == TRUE)
-                if (bta_av_co_audio_build_sbc_default(p_data->api_reg.tsep, &codec_type,
-                                                      cs.cfg.codec_info) != TRUE) {
-                    APPL_TRACE_ERROR("failed to build default SBC SEP for seid %d", index);
-                    break;
-                }
-#endif
-                if ((p_scb->p_cos->init)(index, &codec_type, cs.cfg.codec_info,
-                                         &cs.cfg.num_protect, cs.cfg.protect_info,
-                                         p_data->api_reg.tsep) != TRUE) {
-                    break;
-                }
+#if (BTA_AV_EXT_CODEC == FALSE)
+            while (index < BTA_AV_MAX_SEPS &&
+                    (p_scb->p_cos->init)(&codec_type, cs.cfg.codec_info,
+                                         &cs.cfg.num_protect, cs.cfg.protect_info, p_data->api_reg.tsep) == TRUE) {
 
 #if (BTA_AV_SINK_INCLUDED == TRUE)
                 if (p_data->api_reg.tsep == AVDT_TSEP_SNK) {
@@ -711,6 +693,7 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
                     break;
                 }
             }
+#endif
 
             if (!bta_av_cb.reg_audio) {
                 if (p_data->api_reg.tsep == AVDT_TSEP_SRC) {
@@ -765,9 +748,7 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
     } while (0);
 
     /* call callback with register event */
-    if (bta_av_cb.p_cback != NULL) {
-        (*bta_av_cb.p_cback)(BTA_AV_REGISTER_EVT, (tBTA_AV *)&registr);
-    }
+    (*bta_av_cb.p_cback)(BTA_AV_REGISTER_EVT, (tBTA_AV *)&registr);
 }
 
 static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
@@ -782,7 +763,7 @@ static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
     sep_reg.seid = p_data->api_reg_sep.seid;
     sep_reg.reg_state = BTA_AV_FAIL;
 
-    if (index >= BTA_AV_MAX_SEPS || p_data->hdr.layer_specific != BTA_AV_CHNL_AUDIO) {
+    if (index > BTA_AV_MAX_SEPS || p_data->hdr.layer_specific != BTA_AV_CHNL_AUDIO) {
         (*bta_av_cb.p_cback)(BTA_AV_SEP_REG_EVT, (tBTA_AV *)&sep_reg);
         APPL_TRACE_WARNING("%s invalid parameter: seid %d, ch %d", __FUNCTION__, index, p_data->hdr.layer_specific);
         return;
@@ -819,7 +800,7 @@ static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
 
             codec_type = p_data->api_reg_sep.codec_type;
             memcpy(cs.cfg.codec_info, p_data->api_reg_sep.codec_info, AVDT_CODEC_SIZE);
-            if ((p_scb->p_cos->init)(index, &codec_type, cs.cfg.codec_info,
+            if ((p_scb->p_cos->init)(&codec_type, cs.cfg.codec_info,
                                      &cs.cfg.num_protect, cs.cfg.protect_info, p_data->api_reg_sep.tsep) == TRUE) {
 
 #if (BTA_AV_SINK_INCLUDED == TRUE)
@@ -834,7 +815,6 @@ static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
                     p_scb->seps[index].codec_type = codec_type;
                     p_scb->seps[index].tsep = cs.tsep;
                     p_scb->seps[index].p_app_data_cback = p_data->api_reg_sep.p_data_cback;
-                    sep_reg.reg_state = BTA_AV_SUCCESS;
                 } else {
                     APPL_TRACE_WARNING("%s fail to create sep", __FUNCTION__);
                     break;
@@ -846,6 +826,7 @@ static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
         }
     }
 
+    sep_reg.reg_state = BTA_AV_SUCCESS;
     (*bta_av_cb.p_cback)(BTA_AV_SEP_REG_EVT, (tBTA_AV *)&sep_reg);
 #endif
 }
@@ -1283,9 +1264,9 @@ void bta_av_dup_audio_buf(tBTA_AV_SCB *p_scb, BT_HDR *p_buf)
                     if (list_length(p_scbi->a2d_list) >  p_bta_av_cfg->audio_mqs) {
                         // Drop the oldest packet
                         bta_av_co_audio_drop(p_scbi->hndl);
-                        BT_HDR *p_buf_drop = list_front(p_scbi->a2d_list);
-                        list_remove(p_scbi->a2d_list, p_buf_drop);
-                        osi_free(p_buf_drop);
+                        BT_HDR *p_buf = list_front(p_scbi->a2d_list);
+                        list_remove(p_scbi->a2d_list, p_buf);
+                        osi_free(p_buf);
                     }
                 }
             }
@@ -1309,20 +1290,12 @@ void bta_av_sm_execute(tBTA_AV_CB *p_cb, UINT16 event, tBTA_AV_DATA *p_data)
     tBTA_AV_ST_TBL      state_table;
     UINT8               action;
 
-    if (p_cb == NULL || p_cb->state >= (sizeof(bta_av_st_tbl) / sizeof(bta_av_st_tbl[0]))) {
-        return;
-    }
-
     APPL_TRACE_EVENT("AV event=0x%x state=%d\n", event, p_cb->state);
 
     /* look up the state table for the current state */
     state_table = bta_av_st_tbl[p_cb->state];
 
     event &= 0x00FF;
-
-    if (event >= (sizeof(bta_av_st_init) / sizeof(bta_av_st_init[0]))) {
-        return;
-    }
 
     /* set next state */
     p_cb->state = state_table[event][BTA_AV_NEXT_STATE];
@@ -1356,10 +1329,8 @@ BOOLEAN bta_av_hdl_event(BT_HDR *p_msg)
 
     if (event >= first_event) {
         APPL_TRACE_VERBOSE("AV nsm event=0x%x(%s)\n", event, bta_av_evt_code(event));
-        if (event <= BTA_AV_LAST_NSM_EVT) {
-            /* non state machine events */
-            (*bta_av_nsm_act[event - BTA_AV_FIRST_NSM_EVT]) ((tBTA_AV_DATA *) p_msg);
-        }
+        /* non state machine events */
+        (*bta_av_nsm_act[event - BTA_AV_FIRST_NSM_EVT]) ((tBTA_AV_DATA *) p_msg);
     } else if (event >= BTA_AV_FIRST_SM_EVT && event <= BTA_AV_LAST_SM_EVT) {
         APPL_TRACE_VERBOSE("AV sm event=0x%x(%s)\n", event, bta_av_evt_code(event));
         /* state machine events */

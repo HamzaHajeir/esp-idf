@@ -24,6 +24,7 @@
 void IRAM_ATTR esp_psram_extram_writeback_cache(void)
 {
     int x;
+    volatile int i = 0;
     volatile uint8_t *psram = (volatile uint8_t*)SOC_EXTRAM_DATA_LOW;
     int cache_was_disabled = 0;
 
@@ -50,7 +51,7 @@ void IRAM_ATTR esp_psram_extram_writeback_cache(void)
     the cache by just reading 64K worth of cache lines.
     */
     for (x = 0; x < 1024 * 64; x += 32) {
-        (void)psram[x];
+        i += psram[x];
     }
 #else
     /*
@@ -60,8 +61,8 @@ void IRAM_ATTR esp_psram_extram_writeback_cache(void)
     we ever support external RAM chips of 2M or smaller, this may need adjusting.
     */
     for (x = 0; x < 1024 * 64; x += 32) {
-        (void)psram[x];
-        (void)psram[x + (1024 * 1024 * 2)];
+        i += psram[x];
+        i += psram[x + (1024 * 1024 * 2)];
     }
 #endif
 

@@ -31,7 +31,7 @@ If you are working on a bug fix or a feature and one of the tests starts to fail
 
 1. Find the name of the failing test in the CI job log
 1. Follow the steps in the section above to run that one test
-1. By default, the fixtures which create temporary directories will remove them after the test. To prevent the directories from being removed, run `pytest` with `--work-dir /some/path` flag. The temporary directories will be created under `/some/path`, and you will be able to inspect them once the test fails. Failed `idf.py` / `cmake` output is also written to `failed_command_logs/` under that work directory.
+1. By default, the fixtures which create temporary directories will remove them after the test. To prevent the directories from being removed, run `pytest` with `--work-dir /some/path` flag. The temporary directories will be created under `/some/path`, and you will be able to inspect them once the test fails.
 1. You can increase the logging level to see the commands being executed by the test by running `pytest` with `--log-cli-level DEBUG` argument.
 
 ## Adding new tests
@@ -148,20 +148,6 @@ def test_target_guessing()
 @pytest.mark.buildv2_skip('This functionality has not been implemented in cmakev2 yet.')
 def test_target_guessing()
 ```
-
-### `pytest.mark.revert_later` Marker
-
-This marker reverts all files to their original state after the test is finished. should pass a list of file paths (absolute or relative to `IDF_PATH`) to the marker. The files will be reverted even if the test fails.
-
-```python
-@pytest.mark.revert_later(['tools/idf_extra_components.yml'])
-def test_modify_file(idf_copy):
-    path = os.path.join(os.getenv('IDF_PATH'), 'tools', 'idf_extra_components.yml')
-    with open(path, 'a') as f:
-        f.write('# some changes\n')
-    # The changes to idf_extra_components.yml will be reverted after the test
-```
-
 
 ### Build snapshots
 

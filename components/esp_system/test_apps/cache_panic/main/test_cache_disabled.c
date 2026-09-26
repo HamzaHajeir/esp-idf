@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -96,7 +96,7 @@ static void IRAM_ATTR cache_access_test_func(void* arg)
 #define CACHE_ERROR_REASON "Cache error,SW_CPU"
 #endif
 
-// These tests work properly if they reset the chip with the
+// These tests works properly if they resets the chip with the
 // "Cache Error" reason and the correct CPU is logged.
 static void invalid_access_to_cache_pro_cpu(void)
 {
@@ -119,16 +119,12 @@ TEST_CASE_MULTIPLE_STAGES("invalid access to cache raises panic (APP CPU)", "[ms
 #endif // !CONFIG_FREERTOS_UNICORE
 #endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2)
 
-#if MSPI_LL_AXI_DISABLE_SUPPORTED && CONFIG_ESP_PANIC_HANDLER_IRAM
-// AXI stays closed after the first fault. A flash-resident panic handler would nested-fault (CPU lockup / WDT).
-// Using IRAM handler can complete with ESP_RST_PANIC.
-
-#define AXI_RESET_REASON    ESP_RST_PANIC
+#if MSPI_LL_AXI_DISABLE_SUPPORTED
 static void reset_after_disable_axi(void)
 {
-    //For now we only support AXI disabling LL APIs, so the reset reason will be AXI_RESET_REASON
+    //For now we only support AXI disabling LL APIs, so the reset reason will be `ESP_RST_WDT`
     //This will be updated when AXI disabling methods are fully supported
-    TEST_ASSERT_EQUAL(AXI_RESET_REASON, esp_reset_reason());
+    TEST_ASSERT_EQUAL(ESP_RST_WDT, esp_reset_reason());
 }
 
 static void NOINLINE_ATTR IRAM_ATTR s_invalid_axi_access(void)
@@ -147,4 +143,4 @@ static void NOINLINE_ATTR IRAM_ATTR s_invalid_axi_access(void)
 }
 
 TEST_CASE_MULTIPLE_STAGES("invalid access to axi bus", "[mspi][reset="CACHE_ERROR_REASON"]", s_invalid_axi_access, reset_after_disable_axi);
-#endif // MSPI_LL_AXI_DISABLE_SUPPORTED && CONFIG_ESP_PANIC_HANDLER_IRAM
+#endif // MSPI_LL_AXI_DISABLE_SUPPORTED

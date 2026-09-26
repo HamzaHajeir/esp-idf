@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include "soc/soc_caps.h"
 #include "soc/mcpwm_struct.h"
-#include "soc/mcpwm_reg.h"
 #include "soc/clk_tree_defs.h"
 #include "soc/hp_sys_clkrst_struct.h"
 #include "hal/mcpwm_types.h"
@@ -71,19 +70,6 @@ extern "C" {
 #define MCPWM_LL_TIMER_EVENT_TO_REG_VAL(event) ((uint8_t[]) {0, 1}[(event)])
 #define MCPWM_LL_GEN_ACTION_TO_REG_CAL(action) ((uint8_t[]) {0, 1, 2, 3}[(action)])
 #define MCPWM_LL_BRAKE_MODE_TO_REG_VAL(mode)  ((uint8_t[]) {0, 1}[(mode)])
-
-// MCPWM ETM timer event table
-#define MCPWM_LL_ETM_TIMER_EVENT_TABLE(group, timer_id, event)            \
-    (uint32_t[2][MCPWM_TIMER_ETM_EVENT_MAX]){                           \
-        {                                                                              \
-            [MCPWM_TIMER_ETM_EVENT_TEZ] = MCPWM0_EVT_TIMER0_TEZ + timer_id, \
-            [MCPWM_TIMER_ETM_EVENT_TEP] = MCPWM0_EVT_TIMER0_TEP + timer_id, \
-        }, \
-        {                                                                              \
-            [MCPWM_TIMER_ETM_EVENT_TEZ] = MCPWM1_EVT_TIMER0_TEZ + timer_id, \
-            [MCPWM_TIMER_ETM_EVENT_TEP] = MCPWM1_EVT_TIMER0_TEP + timer_id, \
-        },                                                                             \
-    }[group][event]
 
 // MCPWM ETM comparator event table
 #define MCPWM_LL_ETM_COMPARATOR_EVENT_TABLE(group, oper_id, cmpr_id, event)            \
@@ -1724,18 +1710,16 @@ static inline mcpwm_capture_edge_t mcpwm_ll_capture_get_edge(mcpwm_dev_t *mcpwm,
 }
 
 /**
- * @brief Set capture input prescale (same-edge ratio)
- *
- * @note Hardware field N = 0 means bypass (ratio 1); N >= 1 means same-edge ratio = 2 * N.
+ * @brief Set the prescale of the input capture signal
  *
  * @param mcpwm Peripheral instance address
  * @param channel Channel ID, index from 0 to 2
- * @param prescale Desired same-edge ratio: 1 (bypass) or even
+ * @param prescale Prescale value
  */
 static inline void mcpwm_ll_capture_set_prescale(mcpwm_dev_t *mcpwm, int channel, uint32_t prescale)
 {
     HAL_ASSERT(prescale > 0);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(mcpwm->cap_chn_cfg[channel], capn_prescale, prescale / 2);
+    HAL_FORCE_MODIFY_U32_REG_FIELD(mcpwm->cap_chn_cfg[channel], capn_prescale, prescale - 1);
 }
 
 //////////////////////////////////////////MCPWM ETM Specific////////////////////////////////////////////////////////////
@@ -1771,29 +1755,6 @@ static inline void mcpwm_ll_etm_enable_evt_comparator_event(mcpwm_dev_t *mcpwm, 
         mcpwm->evt_en2.val |= 1 << (operator_id + 3 * evt_cmpr_id);
     } else {
         mcpwm->evt_en2.val &= ~(1 << (operator_id + 3 * evt_cmpr_id));
-    }
-}
-
-/**
- * @brief Enable timer ETM event
- *
- * @param mcpwm Peripheral instance address
- * @param timer_id Timer ID, index from 0 to 2
- * @param event_type Timer ETM event type (TEZ or TEP)
- * @param en True: enable ETM module, False: disable ETM module
- */
-static inline void mcpwm_ll_etm_enable_timer_event(mcpwm_dev_t *mcpwm, int timer_id, mcpwm_timer_etm_event_type_t event_type, bool en)
-{
-    uint32_t bit_offset;
-    if (event_type == MCPWM_TIMER_ETM_EVENT_TEZ) {
-        bit_offset = timer_id + MCPWM_EVT_TIMER0_TEZ_EN_S;  // TEZ events start at bit 3
-    } else {  // MCPWM_TIMER_ETM_EVENT_TEP
-        bit_offset = timer_id + MCPWM_EVT_TIMER0_TEP_EN_S;  // TEP events start at bit 6
-    }
-    if (en) {
-        mcpwm->evt_en.val |= 1 << bit_offset;
-    } else {
-        mcpwm->evt_en.val &= ~(1 << bit_offset);
     }
 }
 

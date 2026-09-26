@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,8 +7,6 @@
 #pragma once
 #include <stdint.h>
 #include "sdkconfig.h"
-#include "esp_attr.h"
-#include "hal/gpio_ll.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,12 +41,9 @@ void esp_sleep_gpio_pupd_config_workaround_unapply(void);
 #endif // CONFIG_IDF_TARGET_ESP32
 
 /**
- * @brief Clear all GPIO dedicated control signals
+ * @brief Call once in startup to disable the wakeup IO pins and release their holding state after waking up from Deep-sleep
  */
-FORCE_INLINE_ATTR void esp_sleep_gpio_clear_dedicated_ctrl(void)
-{
-    gpio_ll_clear_dedicated_ctrl();
-}
+void esp_deep_sleep_wakeup_io_reset(void);
 
 #ifdef __cplusplus
 }

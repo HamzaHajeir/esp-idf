@@ -8,7 +8,7 @@
 
 {IDF_TARGET_CRYPT_CNT:default="SPI_BOOT_CRYPT_CNT",esp32="FLASH_CRYPT_CNT"}
 {IDF_TARGET_CRYPT_CNT_MAX_VAL:default="7",esp32="127"}
-{IDF_TARGET_SBV2_DEFAULT_SCHEME:default="RSA", esp32c2, esp32h4="ECDSA (V2)"}
+{IDF_TARGET_SBV2_DEFAULT_SCHEME:default="RSA", esp32c2="ECDSA (V2)"}
 {IDF_TARGET_FLASH_ENC_ARGS:default="--aes-xts", esp32=""}
 
 概述
@@ -97,13 +97,13 @@
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
-        如果 :menuitem:`生成的 AES-XTS 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-128（256 位密钥）：
+        如果 :ref:`生成的 AES-XTS 密钥大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-128（256 位密钥）：
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key my_flash_encryption_key.bin
 
-        如果 :menuitem:`生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-256（512 位密钥）：
+        如果 :ref:`生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-256（512 位密钥）：
 
         .. code-block:: bash
 
@@ -118,69 +118,31 @@
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-        如果 :menuitem:`生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-128（256 位密钥）：
+        如果 :ref:` 生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 为 AES-128（256 位密钥）：
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key my_flash_encryption_key.bin
 
-        如果 :menuitem:`生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是从 128 位（SHA256（128 位））派生的 AES-128 密钥：
+        如果 :ref:`生成的 AES-XTS 密钥的大小 <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` 是从 128 位（SHA256（128 位））派生的 AES-128 密钥：
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key --keylen 128 my_flash_encryption_key.bin
 
-3. 将生成的 flash 加密密钥烧录到设备中
-
-    .. only:: SOC_KEY_MANAGER_SUPPORTED
-
-        a. 若使用密钥管理器存储 flash 加密密钥，请为 flash 加密密钥生成密钥恢复信息，并使用以下命令将其保存至 flash 地址 0x0 处：
-
-        .. code-block:: bash
-
-            esptool --port PORT write-flash 0x0 key_recovery_info.bin
-
-        将密钥恢复信息存储至 flash 后，还需要烧录 ``KM_XTS_KEY_LENGTH_256`` 和 ``FORCE_USE_KEY_MANAGER_KEY`` eFuse。
-
-        .. warning::
-
-            此操作 **无法回退**。
-
-        ``FORCE_USE_KEY_MANAGER_KEY`` eFuse 的第 1 位用于强制使用基于密钥管理器的 XTS-AES 密钥。
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse FORCE_USE_KEY_MANAGER_KEY 2
-
-        ``KM_XTS_KEY_LENGTH_256`` eFuse 用于控制基于密钥管理器的 XTS-AES 密钥长度。将该 eFuse 设置为 1 表示使用 128 位密钥，设置为 0 表示使用 256 位密钥。
-
-        若使用 128 位密钥，请将 ``KM_XTS_KEY_LENGTH_256`` eFuse 设置为 1。
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse KM_XTS_KEY_LENGTH_256 1
-
-        若使用 256 位密钥，请将 ``KM_XTS_KEY_LENGTH_256`` eFuse 设置为 0。
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse KM_XTS_KEY_LENGTH_256 0
-
-        b. 如需将 flash 加密密钥存储至 eFuse 中，请运行以下命令：
-
-    .. only:: not SOC_KEY_MANAGER_SUPPORTED
-
-        如需将 flash 加密密钥存储在 eFuse 中，请运行以下命令：
+3. 将 flash 加密密钥烧录到 eFuse 中
 
     .. warning::
 
-        此操作 **无法回退**。
+        这个操作 **无法回退**。
+
+    运行以下命令进行烧录：
 
     .. only:: not SOC_FLASH_ENCRYPTION_XTS_AES
 
         .. code-block:: bash
 
-            espefuse --port PORT burn-key flash_encryption my_flash_encryption_key.bin
+            espefuse --port PORT burn-key flash-encryption my_flash_encryption_key.bin
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
@@ -188,7 +150,7 @@
 
             espefuse --port PORT burn-key BLOCK my_flash_encryption_key.bin KEYPURPOSE
 
-        其中， ``BLOCK`` 是位于 ``BLOCK_KEY0`` 和 ``BLOCK_KEY5`` 之间的空闲密钥块， ``KEYPURPOSE`` 是 ``XTS_AES_256_KEY_1``， ``XTS_AES_256_KEY_2`` 或 ``XTS_AES_128_KEY``。有关密钥用途的说明，请参阅 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_CN_URL}>`__。
+        其中， ``BLOCK`` 是位于 ``BLOCK_KEY0`` 和 ``BLOCK_KEY5`` 之间的空闲密钥块， ``KEYPURPOSE`` 是 ``XTS_AES_256_KEY_1``， ``XTS_AES_256_KEY_2`` 或 ``XTS_AES_128_KEY``。有关密钥用途的说明，请参阅 `{IDF_TARGET_NAME} 技术参考手册 <{IDF_TARGET_TRM_EN_URL}>`__。
 
         对于 AES-128（256 位密钥）- ``XTS_AES_128_KEY``：
 
@@ -227,7 +189,7 @@
 
             espefuse --port PORT burn-key BLOCK_KEY0 flash_encryption_key256.bin XTS_AES_128_KEY
 
-        对于从 SHA256（128 eFuse 位）派生的 AES-128 密钥 - ``XTS_AES_128_KEY_DERIVED_FROM_128_EFUSE_BITS``。FE 密钥会被写入 eFuse BLOCK_KEY0 低位部分。高 128 位不会被使用，并保持可供软件读取状态。使用 espefuse 工具的特殊模式，可以用任何 espefuse 命令将数据写入其中，可参考下文 ``同时烧录两个密钥``。
+        对于从 SHA256（128 eFuse 位）派生的 AES-128 密钥 - ``XTS_AES_128_KEY_DERIVED_FROM_128_EFUSE_BITS``。FE 密钥会被写入 eFuse BLOCK_KEY0 的后半部分。前 128 位不会被使用，并保持可供软件读取状态。使用 espefuse 工具的特殊模式，可以用任何 espefuse 命令将数据写入其中，可参考下文 ``同时烧录两个密钥``。
 
         .. code-block:: bash
 
@@ -336,12 +298,12 @@
 
     .. list::
 
-        - :menuitem:`启动时启用 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
-        :esp32: - :menuitem:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （注意，若选择量产模式，则将烧录 ``DISABLE_DL_ENCRYPT`` 和 ``DISABLE_DL_DECRYPT`` eFuse 位，ROM 下载模式下 flash 加密硬件将被禁用）。
-        :esp32: - :menuitem:`选择 UART ROM 下载模式（永久禁用（推荐））<CONFIG_SECURE_UART_ROM_DL_MODE>` （注意，此选项仅在 :menuitem:`CONFIG_ESP32_REV_MIN` 设为 3 (ESP32 V3) 时可用）。UART ROM 下载模式在默认设置中自动启用，但建议永久禁用此模式以减少攻击者可用的选项。
-        :not esp32: - :menuitem:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （注意，若选择量产模式，则将烧录 ``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse 位，ROM 下载模式下 flash 加密硬件将被禁用）。
-        :not esp32: - :menuitem:`选择 UART ROM 下载模式（永久切换到安全模式（推荐））<CONFIG_SECURE_UART_ROM_DL_MODE>`。这是推荐的默认选项，如果不需要，也可将其更改为永久禁用 UART ROM 下载模式。
-        - :menuitem:`选择适当的引导加载程序日志级别 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
+        - :ref:`启动时启用 flash 加密 <CONFIG_SECURE_FLASH_ENC_ENABLED>`。
+        :esp32: - :ref:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （注意，若选择量产模式，则将烧录 ``DISABLE_DL_ENCRYPT`` 和 ``DISABLE_DL_DECRYPT`` eFuse 位，ROM 下载模式下 flash 加密硬件将被禁用）。
+        :esp32: - :ref:`选择 UART ROM 下载模式（永久禁用（推荐））<CONFIG_SECURE_UART_ROM_DL_MODE>` （注意，此选项仅在 :ref:`CONFIG_ESP32_REV_MIN` 设为 3 (ESP32 V3) 时可用）。UART ROM 下载模式在默认设置中自动启用，但建议永久禁用此模式以减少攻击者可用的选项。
+        :not esp32: - :ref:`选择量产模式 <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` （注意，若选择量产模式，则将烧录 ``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse 位，ROM 下载模式下 flash 加密硬件将被禁用）。
+        :not esp32: - :ref:`选择 UART ROM 下载模式（永久切换到安全模式（推荐））<CONFIG_SECURE_UART_ROM_DL_MODE>`。这是推荐的默认选项，如果不需要，也可将其更改为永久禁用 UART ROM 下载模式。
+        - :ref:`选择适当的引导加载程序日志级别 <CONFIG_BOOTLOADER_LOG_LEVEL>`。
         - 保存配置并退出。
 
 7. 构建、加密并烧录二进制文件
@@ -438,7 +400,7 @@ flash 加密指南
 
         .. code:: bash
 
-            espsecure generate-signing-key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
+            espsecure generate-signing-key --version 2 --scheme rsa3072 secure_boot_signinig_key.pem
 
     .. only:: SOC_SECURE_BOOT_V2_ECC
 
@@ -448,9 +410,13 @@ flash 加密指南
 
             espsecure generate-signing-key --version 2 --scheme ecdsa256 secure_boot_signing_key.pem
 
+        .. only:: not SOC_ECDSA_SUPPORT_CURVE_P384
+
+           将上述命令中的方案更改为 ``ecdsa192``，可生成 ecdsa192 私钥。
+
         .. only:: SOC_ECDSA_SUPPORT_CURVE_P384
 
-           将上述命令中的方案更改为 ``ecdsa384``，可生成 ecdsa384 私钥。
+           将上述命令中的方案更改为 ``ecdsa384`` 或 ``ecdsa192``，可生成 ecdsa384 或 ecdsa192 私钥。
 
     .. only:: SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS
 
@@ -510,7 +476,7 @@ flash 加密指南
 
             espefuse --port PORT --chip {IDF_TARGET_PATH_NAME} burn-efuse SECURE_BOOT_EN
 
-    .. only:: SOC_SECURE_BOOT_V2_ECC and SOC_ECDSA_SUPPORT_CURVE_P384
+    .. only:: SOC_ECDSA_SUPPORT_CURVE_P384
 
         如果启用了带有 ECDSA-P384 签名方案的 Secure Boot v2，则必须使用 SHA-384 来计算镜像的摘要。因此，需要烧录以下 eFuse：
 
@@ -533,12 +499,12 @@ flash 加密指南
         :SOC_EFUSE_DIS_BOOT_REMAP: - ``DIS_BOOT_REMAP``：禁用将 ROM 重新映射到 RAM 地址空间的功能。
         :SOC_EFUSE_HARD_DIS_JTAG: - ``HARD_DIS_JTAG``：硬禁用 JTAG 外设。
         :SOC_EFUSE_SOFT_DIS_JTAG: - ``SOFT_DIS_JTAG``：禁止软件对 JTAG 外设的访问。
-        :SOC_EFUSE_DIS_DIRECT_BOOT: - ``DIS_DIRECT_BOOT``: 禁用直接引导（旧版 SPI 引导模式）。
+        :SOC_EFUSE_DIS_DIRECT_BOOT:- ``DIS_DIRECT_BOOT``: 禁用直接引导（旧版 SPI 引导模式）。
         :SOC_EFUSE_DIS_LEGACY_SPI_BOOT: - ``DIS_LEGACY_SPI_BOOT``：禁用旧版 SPI 引导模式。
         :SOC_EFUSE_DIS_USB_JTAG: - ``DIS_USB_JTAG``：禁止从 USB 切换到 JTAG。
         :SOC_EFUSE_DIS_PAD_JTAG: - ``DIS_PAD_JTAG``：永久禁用 JTAG。
         :SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS: - ``SECURE_BOOT_AGGRESSIVE_REVOKE``：主动吊销密钥摘要。详请请参阅 :ref:`secure-boot-v2-aggressive-key-revocation`。
-        :SOC_ECDSA_P192_CURVE_DEFAULT_DISABLED: - ``WR_DIS_ECDSA_CURVE_MODE``：禁止写入 ECDSA 曲线模式的 eFuse 位。由于此写保护位与 ``ECC_FORCE_CONST_TIME`` 共享，建议配置好 ``ECC_FORCE_CONST_TIME`` eFuse 字段后，再设置此写保护位。
+        :SOC_ECDSA_P192_CURVE_DEFAULT_DISABLED: - ``WR_DIS_ECDSA_CURVE_MODE``：禁止写入 ECDSA 曲线模式的 eFuse 位。由于此写保护位与 ``ECC_FORCE_CONST_TIME`` 共享，建议先配置好 ``ECC_FORCE_CONST_TIME`` eFuse 字段后，再设置此写保护位）。
         :SOC_ECDSA_SUPPORT_CURVE_P384: - ``WR_DIS_SECURE_BOOT_SHA384_EN``：禁止写入 SHA-384 Secure Boot 的 eFuse 位。由于此写保护位与 ``XTS_DPA_PSEUDO_LEVEL`` 和 ``ECC_FORCE_CONST_TIME`` 共享，建议先配置好这两个 eFuse，再设置此写保护位。
 
     运行以下命令烧录相应的 eFuse：
@@ -579,7 +545,7 @@ flash 加密指南
 
 6. 构建二进制文件
 
-    默认情况下，一级 (ROM) 引导加载程序只会验证 :ref:`second-stage-bootloader`。只有在启用 :menuitem:`CONFIG_SECURE_BOOT` 选项（并将 :menuitem:`CONFIG_SECURE_BOOT_VERSION` 设置为 ``SECURE_BOOT_V2_ENABLED``）时，二级引导加载程序才会在构建引导加载程序时验证应用程序分区。
+    默认情况下，一级 (ROM) 引导加载程序只会验证 :ref:`second-stage-bootloader`。只有在启用 :ref:`CONFIG_SECURE_BOOT` 选项（并将 :ref:`CONFIG_SECURE_BOOT_VERSION` 设置为 ``SECURE_BOOT_V2_ENABLED``）时，二级引导加载程序才会在构建引导加载程序时验证应用程序分区。
 
     A) 打开 :ref:`project-configuration-menu`，在 ``Security features`` 中设置 ``Enable hardware Secure Boot in bootloader`` 启用 Secure Boot。
 
@@ -591,7 +557,7 @@ flash 加密指南
 
         选中 ``Secure Boot v2`` 选项， ``App Signing Scheme`` 将被默认设置为 {IDF_TARGET_SBV2_DEFAULT_SCHEME}。
 
-    B) 在 :ref:`project-configuration-menu` 中为项目禁用 :menuitem:`CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES` 选项，以确保所有生成的二进制文件都受到安全保护且未签名，避免生成签名的二进制文件，因为需要使用 ``espsecure`` 工具手动签名二进制文件。
+    B) 在 :ref:`project-configuration-menu` 中为项目禁用 :ref:`CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES` 选项，以确保所有生成的二进制文件都受到安全保护且未签名，避免生成签名的二进制文件，因为需要使用 ``espsecure`` 工具手动签名二进制文件。
 
 7. 构建、签名并烧录二进制文件
 
@@ -711,7 +677,7 @@ Secure Boot v2 指南
 
     3. 生成加密的 NVS 分区
 
-        主机上将会生成加密 NVS 分区。有关生成加密 NVS 分区的详细信息，请参阅 :ref:`generate-encrypted-nvs-partition`。为此，CSV 文件中应该包含 NVS 文件的全部内容。详情请参阅 :ref:`nvs-csv-file-format`。
+        主机上将会生成加密 NVS 分区。有关生成加密 NVS 分区的详细信息，请参阅读 :ref:`generate-encrypted-nvs-partition`。为此，CSV 文件中应该包含 NVS 文件的全部内容。详情请参阅 :ref:`nvs-csv-file-format`。
 
         使用以下命令，可以生成加密的 NVS 分区：
 
@@ -727,11 +693,11 @@ Secure Boot v2 指南
 
     4. 配置项目
 
-        * 通过设置 :menuitem:`CONFIG_NVS_ENCRYPTION`，启用 `NVS 加密`。
+        * 通过设置 :ref:`CONFIG_NVS_ENCRYPTION`，启用 `NVS 加密`。
 
-        * 将 :menuitem:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` 设置为 ``CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC``，启用基于 HMAC 的 NVS 加密。
+        * 将 :ref:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` 设置为 ``CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC``，启用基于 HMAC 的 NVS 加密。
 
-        * 通过设置 :menuitem:`CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID`，将 HMAC eFuse 密钥 ID 设为步骤 2 中烧录 eFuse 密钥的 ID。
+        * 通过设置 :ref:`CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID`，将 HMAC eFuse 密钥 ID 设为步骤 2 中烧录 eFuse 密钥的 ID。
 
     5. 烧录 NVS 分区
 
@@ -770,14 +736,14 @@ Secure Boot v2 指南
 
     下文解释了上述命令中的一些参数：
 
-    * CSV 文件名 - 上述命令中的 `sample_singlepage_blob.csv` 是指包含 NVS 数据的 CSV 文件，请将其替换为所选文件。
+    * CSV 文件名 - 上述命名中的 `sample_singlepage_blob.csv` 是指包含 NVS 数据的 CSV 文件，请将其替换为所选文件。
 
     * NVS 分区大小 - 这是 NVS 分区的大小（以字节为单位）。请将上述命令中的示例值 ``0x3000`` 更新为你实际 NVS 分区的正确大小。
 
 3. 配置项目
 
-    * 通过启用 :menuitem:`CONFIG_NVS_ENCRYPTION` 来启用 `NVS 加密`。
-    * 通过将 :menuitem:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` 设置为 ``CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC``，配置 NVS 使用基于 flash 加密的方案。
+    * 通过启用 :ref:`CONFIG_NVS_ENCRYPTION` 来启用 `NVS 加密`。
+    * 通过将 :ref:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` 设置为 ``CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC``，配置 NVS 使用基于 flash 加密的方案。
 
 4. 烧录 NVS 分区和 NVS 加密密钥
 

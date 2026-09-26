@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 # pylint: disable=W0621  # redefined-outer-name
 #
@@ -36,15 +36,12 @@ from _pytest.config import Config
 from _pytest.fixtures import FixtureRequest
 from idf_ci import PytestCase
 from idf_ci.idf_pytest import IDF_CI_PYTEST_CASE_KEY
-from idf_ci_utils import APP_EXTRA_S3_ARTIFACT_TYPE
-from idf_ci_utils import IDF_PATH
 from idf_ci_utils import idf_relpath
 from idf_pytest.constants import DEFAULT_LOGDIR
 from idf_pytest.plugin import IDF_LOCAL_PLUGIN_KEY
 from idf_pytest.plugin import IdfLocalPlugin
 from idf_pytest.plugin import requires_elf_or_map
 from idf_pytest.utils import format_case_id
-from pytest_embedded.plugin import _request_param_or_config_option_or_default
 from pytest_embedded.plugin import multi_dut_fixture
 from pytest_embedded.utils import to_bytes
 from pytest_embedded.utils import to_str
@@ -128,7 +125,7 @@ class AppDownloader:
         self.commit_sha = commit_sha
         self.pipeline_id = pipeline_id
 
-    def download_app(self, app_dir: str, build_dir: str, artifact_type: str | None = None) -> None:
+    def download_app(self, app_build_path: str, artifact_type: str | None = None) -> None:
         args = [
             'idf-ci',
             'gitlab',
@@ -138,53 +135,18 @@ class AppDownloader:
         ]
         if artifact_type:
             args.extend(['--type', artifact_type])
-
         if self.pipeline_id:
             args.extend(['--pipeline-id', self.pipeline_id])
+        args.append(app_build_path)
 
-        args.extend(
-            [
-                app_dir,
-                '--build-dir',
-                build_dir,
-            ]
-        )
-        result = subprocess.run(
+        subprocess.run(
             args,
-            capture_output=True,
-            text=True,
-            cwd=IDF_PATH,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
-        logging.info(result.stdout)
-        if result.stderr:
-            logging.info(result.stderr)
 
-    def download_app_extra(self, app_dir: str) -> None:
-        """Download app-dir artifacts defined under app_extra in .idf_ci.toml."""
-        args = [
-            'idf-ci',
-            'gitlab',
-            'download-artifacts',
-            '--commit-sha',
-            self.commit_sha,
-            '--type',
-            APP_EXTRA_S3_ARTIFACT_TYPE,
-            app_dir,
-        ]
-        if self.pipeline_id:
-            args.extend(['--pipeline-id', self.pipeline_id])
 
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            cwd=IDF_PATH,
-        )
-        logging.info(result.stdout)
-        if result.stderr:
-            logging.info(result.stderr)
-        if result.returncode != 0:
-            raise RuntimeError(f'Failed to download {APP_EXTRA_S3_ARTIFACT_TYPE} artifacts for {app_dir}')
+PRESIGNED_JSON = 'presigned.json'
 
 
 class OpenOCD:
@@ -260,24 +222,14 @@ class OpenOCD:
         else:
             raise ConnectionRefusedError
 
-    def write(self, s: str, timeout: int = 30) -> t.Any:
+    def write(self, s: str) -> t.Any:
         if self.telnet is None:
             logging.error('Telnet connection is not established.')
             return ''
         resp = self.telnet.read_very_eager()
         self.telnet.write(to_bytes(s, '\n'))
-        resp += self.telnet.read_until(b'>', timeout=timeout)
-        if not resp.endswith(b'>'):
-            return ''
+        resp += self.telnet.read_until(b'>')
         return to_str(resp)
-
-    def consume_output(self, duration: float) -> None:
-        if self.telnet is None:
-            return
-        end = time.time() + duration
-        while time.time() < end:
-            self.telnet.read_very_eager()
-            time.sleep(0.05)
 
     def apptrace_wait_stop(self, timeout: int = 30) -> None:
         stopped = False
@@ -291,17 +243,6 @@ class OpenOCD:
             if not stopped and time.time() > end_before:
                 raise pexpect.TIMEOUT('Failed to wait for apptrace stop!')
             time.sleep(1)
-
-    def gcov_dump(self, on_the_fly: bool = True) -> t.Any:
-        cmd = 'esp gcov'
-        if not on_the_fly:
-            cmd += ' dump'
-        cmd_out = self.write(cmd)
-        if 'Targets connected.' not in cmd_out:
-            raise pexpect.TIMEOUT('Failed to start gcov dump!')
-        if 'Targets disconnected.' not in cmd_out:
-            raise pexpect.TIMEOUT('Failed to stop gcov dump!')
-        return cmd_out
 
     def kill(self) -> None:
         # Check if the process is still running
@@ -340,18 +281,6 @@ def app_downloader(
 
 
 @pytest.fixture
-def download_app_extra(app_downloader: AppDownloader | None) -> t.Callable[[str], None]:
-    """Download app_extra S3 artifacts for the given app path (no-op outside CI)."""
-
-    def _download_app_extra(app_path: str) -> None:
-        if app_downloader is None:
-            return
-        app_downloader.download_app_extra(idf_relpath(app_path))
-
-    return _download_app_extra
-
-
-@pytest.fixture
 @multi_dut_fixture
 def build_dir(
     request: FixtureRequest,
@@ -380,13 +309,12 @@ def build_dir(
         downloader = app_downloader
 
     if downloader:
-        app_dir = idf_relpath(app_path)
-        build_dir = f'build_{target}_{config}'
         # somehow hardcoded...
+        app_build_path = os.path.join(idf_relpath(app_path), f'build_{target}_{config}')
         if requires_elf_or_map(case):
-            downloader.download_app(app_dir, build_dir)
+            downloader.download_app(app_build_path)
         else:
-            downloader.download_app(app_dir, build_dir, 'flash')
+            downloader.download_app(app_build_path, 'flash')
         check_dirs = [f'build_{target}_{config}']
     else:
         check_dirs = []
@@ -491,6 +419,61 @@ def log_performance(record_property: t.Callable[[str, object], None]) -> t.Calla
 
 
 @pytest.fixture
+def check_performance(idf_path: str) -> t.Callable[[str, float, str], None]:
+    """
+    check if the given performance item meets the passing standard or not
+    """
+
+    def real_func(item: str, value: float, target: str) -> None:
+        """
+        :param item: performance item name
+        :param value: performance item value
+        :param target: target chip
+        :raise: AssertionError: if check fails
+        """
+
+        def _find_perf_item(operator: str, path: str) -> float:
+            with open(path, encoding='utf-8') as f:
+                data = f.read()
+            match = re.search(rf'#define\s+IDF_PERFORMANCE_{operator}_{item.upper()}\s+([\d.]+)', data)
+            return float(match.group(1))  # type: ignore
+
+        def _check_perf(operator: str, standard_value: float) -> None:
+            if operator == 'MAX':
+                ret = value <= standard_value
+            else:
+                ret = value >= standard_value
+            if not ret:
+                raise AssertionError(
+                    f"[Performance] {item} value is {value}, doesn't meet pass standard {standard_value}"
+                )
+
+        path_prefix = os.path.join(idf_path, 'components', 'idf_test', 'include')
+        performance_files = (
+            os.path.join(path_prefix, target, 'idf_performance_target.h'),
+            os.path.join(path_prefix, 'idf_performance.h'),
+        )
+
+        found_item = False
+        for op in ['MIN', 'MAX']:
+            for performance_file in performance_files:
+                try:
+                    standard = _find_perf_item(op, performance_file)
+                except (OSError, AttributeError):
+                    # performance file doesn't exist or match is not found in it
+                    continue
+
+                _check_perf(op, standard)
+                found_item = True
+                break
+
+        if not found_item:
+            raise AssertionError(f'Failed to get performance standard for {item}')
+
+    return real_func
+
+
+@pytest.fixture
 def log_minimum_free_heap_size(dut: IdfDut, config: str, idf_path: str) -> t.Callable[..., None]:
     def real_func() -> None:
         res = dut.expect(r'Minimum free heap size: (\d+) bytes')
@@ -515,12 +498,12 @@ def log_minimum_free_heap_size(dut: IdfDut, config: str, idf_path: str) -> t.Cal
 
 @pytest.fixture(scope='session')
 def dev_password(request: FixtureRequest) -> str:
-    return _request_param_or_config_option_or_default(request, 'dev_password', '')  # type: ignore
+    return request.config.getoption('dev_passwd') or ''
 
 
 @pytest.fixture(scope='session')
 def dev_user(request: FixtureRequest) -> str:
-    return _request_param_or_config_option_or_default(request, 'dev_user', '')  # type: ignore
+    return request.config.getoption('dev_user') or ''
 
 
 ##################

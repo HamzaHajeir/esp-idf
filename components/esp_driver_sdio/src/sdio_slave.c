@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -79,7 +79,7 @@ The driver of FIFOs works as below:
 
 #include "soc/soc_memory_layout.h"
 #include "soc/soc_caps.h"
-#include "hal/sdio_slave_periph.h"
+#include "soc/sdio_slave_periph.h"
 #include "esp_cpu.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
@@ -94,8 +94,6 @@ The driver of FIFOs works as below:
 #include "driver/gpio.h"
 #include "driver/sdio_slave.h"
 
-#define SDIO_SLAVE_DMA_DESC_MAX_BUF_SIZE_ALIGNED_DOWN  (SDIO_SLAVE_LL_DMA_DESC_MAX_BUF_SIZE & ~0x3U)
-
 #define SDIO_SLAVE_CHECK(res, str, ret_val) do { if(!(res)){\
     SDIO_SLAVE_LOGE("%s", str);\
     return ret_val;\
@@ -105,6 +103,12 @@ static const char TAG[] = "sdio_slave";
 
 #define SDIO_SLAVE_LOGE(s, ...) ESP_LOGE(TAG, "%s(%d): "s, __FUNCTION__,__LINE__,##__VA_ARGS__)
 #define SDIO_SLAVE_LOGW(s, ...) ESP_LOGW(TAG, "%s: "s, __FUNCTION__,##__VA_ARGS__)
+
+#if !SOC_RCC_IS_INDEPENDENT
+#define SDIO_SLAVE_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define SDIO_SLAVE_RCC_ATOMIC()
+#endif
 
 // sdio_slave_buf_handle_t is of type recv_desc_t*;
 typedef struct recv_desc_s {
@@ -308,7 +312,7 @@ static inline esp_err_t sdio_slave_hw_init(sdio_slave_config_t *config)
     configure_pin(slot->d3_gpio, slot->func, pullup);
 
     //enable register clock
-    PERIPH_RCC_ATOMIC() {
+    SDIO_SLAVE_RCC_ATOMIC() {
         sdio_slave_ll_enable_bus_clock(true);
         sdio_slave_ll_reset_register();
     }
@@ -341,7 +345,7 @@ static void sdio_slave_hw_deinit(void)
     recover_pin(slot->d3_gpio, slot->func);
 
     //disable register clock
-    PERIPH_RCC_ATOMIC() {
+    SDIO_SLAVE_RCC_ATOMIC() {
         sdio_slave_ll_enable_bus_clock(false);
     }
 }
@@ -355,7 +359,15 @@ esp_err_t sdio_slave_initialize(sdio_slave_config_t *config)
     r = init_context(config);
     SDIO_SLAVE_CHECK(r == ESP_OK, "context initialization failed", r);
 
-    r = esp_intr_alloc(ETS_SLC0_INTR_SOURCE, flags, sdio_intr, NULL, &intr_handle);
+    r = esp_intr_alloc_intrstatus(
+            ETS_SLC0_INTR_SOURCE,
+            flags,
+            (uint32_t)sdio_slave_hal_get_intr_status_reg(context.hal),
+            sdio_slave_ll_intr_status_mask,
+            sdio_intr,
+            NULL,
+            &intr_handle
+        );
     SDIO_SLAVE_CHECK(r == ESP_OK, "interrupt allocation failed", r);
     context.intr_handle = intr_handle;
 
@@ -605,8 +617,7 @@ static void sdio_intr_send(void *arg)
 
 esp_err_t sdio_slave_send_queue(uint8_t *addr, size_t len, void *arg, uint32_t wait)
 {
-    SDIO_SLAVE_CHECK(len > 0 && len <= SDIO_SLAVE_DMA_DESC_MAX_BUF_SIZE_ALIGNED_DOWN,
-                     "length out of range for a single DMA descriptor", ESP_ERR_INVALID_ARG);
+    SDIO_SLAVE_CHECK(len > 0, "len <= 0", ESP_ERR_INVALID_ARG);
     SDIO_SLAVE_CHECK(esp_ptr_dma_capable(addr) && (uint32_t)addr % 4 == 0, "buffer to send should be DMA capable and 32-bit aligned",
                      ESP_ERR_INVALID_ARG);
 

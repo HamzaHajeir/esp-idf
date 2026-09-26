@@ -14,7 +14,7 @@
 #define MTVT                        (0x307)
 #define MINTTHRESH                  (0x347)
 
-    .section    .spm.data,"aw"
+    .section    .tcm.data,"aw"
     .global     rv_core_critical_regs_frame
     .type       rv_core_critical_regs_frame,@object
     .align      4
@@ -33,7 +33,7 @@ rv_core_critical_regs_frame:
 --------------------------------------------------------------------------------
 */
 
-    .section    .spm.text,"ax"
+    .section    .tcm.text,"ax"
     .global     rv_core_critical_regs_save
     .type       rv_core_critical_regs_save,@function
     .align      4

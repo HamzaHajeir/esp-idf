@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,13 +18,7 @@
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_pmu.h"
 
-#if CONFIG_GPTIMER_ISR_CACHE_SAFE
-#define TEST_ALARM_CALLBACK_ATTR IRAM_ATTR
-#else
-#define TEST_ALARM_CALLBACK_ATTR
-#endif // CONFIG_GPTIMER_ISR_CACHE_SAFE
-
-TEST_ALARM_CALLBACK_ATTR static bool test_gptimer_alarm_stop_callback(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
+static bool test_gptimer_alarm_stop_callback(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
 {
     TaskHandle_t task_handle = (TaskHandle_t)user_data;
     BaseType_t high_task_wakeup;
@@ -91,7 +85,7 @@ static void test_gptimer_sleep_retention(bool allow_pd)
 
     printf("check if the sleep happened as expected\r\n");
     TEST_ASSERT_EQUAL(0, sleep_ctx.sleep_request_result);
-#if SOC_TIMER_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
+#if SOC_TIMER_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && !SOC_PM_TOP_PD_NOT_ALLOWED
     // check if the power domain also is powered down
     TEST_ASSERT_EQUAL(allow_pd ? PMU_SLEEP_PD_TOP : 0, (sleep_ctx.sleep_flags) & PMU_SLEEP_PD_TOP);
 #endif
@@ -208,7 +202,7 @@ static void test_gptimer_etm_sleep_retention(bool back_up_before_sleep)
 
     printf("check if the sleep happened as expected\r\n");
     TEST_ASSERT_EQUAL(0, sleep_ctx.sleep_request_result);
-#if SOC_TIMER_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
+#if SOC_TIMER_SUPPORT_SLEEP_RETENTION && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && !SOC_PM_TOP_PD_NOT_ALLOWED
     // check if the power domain also is powered down
     TEST_ASSERT_EQUAL(back_up_before_sleep ? PMU_SLEEP_PD_TOP : 0, (sleep_ctx.sleep_flags) & PMU_SLEEP_PD_TOP);
 #endif
@@ -244,7 +238,6 @@ static void test_gptimer_etm_sleep_retention(bool back_up_before_sleep)
     TEST_ESP_OK(esp_etm_del_event(gptimer_event));
     TEST_ESP_OK(esp_etm_channel_disable(etm_channel_a));
     TEST_ESP_OK(esp_etm_channel_disable(etm_channel_b));
-    TEST_ESP_OK(gpio_reset_pin(output_gpio));
     TEST_ESP_OK(esp_etm_del_channel(etm_channel_a));
     TEST_ESP_OK(esp_etm_del_channel(etm_channel_b));
 }

@@ -5,14 +5,7 @@ function add_ssh_keys() {
   mkdir -p ~/.ssh
   chmod 700 ~/.ssh
   echo -n "${key_string}" >~/.ssh/id_rsa_base64
-  # Detect base64 implementation via --help output
-  if base64 --help 2>&1 | grep -q -- '--ignore-garbage'; then
-    # GNU coreutils base64
-    base64 --decode --ignore-garbage ~/.ssh/id_rsa_base64 >~/.ssh/id_rsa
-  else
-    # macOS/BSD base64 - requires stdin or -i flag
-    base64 --decode -i ~/.ssh/id_rsa_base64 -o ~/.ssh/id_rsa
-  fi
+  base64 --decode --ignore-garbage ~/.ssh/id_rsa_base64 >~/.ssh/id_rsa
   chmod 600 ~/.ssh/id_rsa
 }
 
@@ -163,4 +156,39 @@ function join_by {
   if shift 2; then
     printf %s "$f" "${@/#/$d}"
   fi
+}
+
+function is_based_on_commits() {
+  # This function would accept space-separated args as multiple commits.
+  # The return value would be 0 if current HEAD is based on any of the specified commits.
+  #
+  # In our CI, we use environment variable $REQUIRED_ANCESTOR_COMMITS to declare the ancestor commits.
+  # Please remember to set one commit for each release branch.
+
+  commits=$*
+  if [[ -z $commits ]]; then
+    info "Not specifying commits that branches should be based on, skipping check..."
+    return 0
+  fi
+
+  commits_str="$(join_by " or " $commits)" # no doublequotes here, passing array
+
+  info "Checking if current branch is based on $commits_str..."
+  for i in $commits; do
+    if git merge-base --is-ancestor "$i" HEAD >/dev/null 2>&1; then
+      info "Current branch is based on $i"
+      return 0
+    else
+      info "Current branch is not based on $i"
+    fi
+  done
+
+  error "The base commit of your branch is too old."
+  error "The branch should be more recent than either of the following commits:"
+  error "  $commits_str"
+  error "To fix the issue:"
+  error " - If your merge request is 'Draft', or has conflicts with the target branch, rebase it to the latest master or release branch"
+  error " - Otherwise, simply run a new pipeline."
+
+  return 1
 }

@@ -104,12 +104,12 @@
 
 3. 镜像有一个校验和字节，位于最后一个段之后。此字节写在一个十六字节填充边界上，因此应用程序镜像可能需要填充。
 4. 如果在 :cpp:type:`esp_image_header_t` 中设置了 ``hash_appended`` 字段，则会附加 SHA256 校验和字段。SHA256 哈希值的计算范围是从第一个字节开始，到这个字段为止。该字段长度为 32 字节。
-5. 如果选项 :menuitem:`CONFIG_SECURE_SIGNED_APPS_SCHEME` 设置为 ECDSA，那么应用程序镜像将有额外的 68 字节用于 ECDSA 签名，其中包括：
+5. 如果选项 :ref:`CONFIG_SECURE_SIGNED_APPS_SCHEME` 设置为 ECDSA，那么应用程序镜像将有额外的 68 字节用于 ECDSA 签名，其中包括：
 
     * 版本号（4 字节）
     * 签名数据（64 字节）
 
-6. 如果选项 :menuitem:`CONFIG_SECURE_SIGNED_APPS_SCHEME` 设置为 RSA 或 ECDSA (V2)，则应用程序镜像将有一个额外的签名扇区，大小为 4K 字节。关于此签名扇区格式的更多内容，请参考 :ref:`signature-block-format`。
+6. 如果选项 :ref:`CONFIG_SECURE_SIGNED_APPS_SCHEME` 设置为 RSA 或 ECDSA (V2)，则应用程序镜像将有一个额外的签名扇区，大小为 4K 字节。关于此签名扇区格式的更多内容，请参考 :ref:`signature-block-format`。
 
 .. _app-image-format-application-description:
 
@@ -125,10 +125,6 @@
 * ``time`` 和 ``date``：编译时间和日期
 * ``idf_ver``：ESP-IDF 的版本 [#f1]_
 * ``app_elf_sha256``：包含应用程序 ELF 文件的 sha256 哈希
-* ``min_efuse_blk_rev_full``：镜像支持的最小 eFuse 块版本，格式为：major * 100 + minor
-* ``max_efuse_blk_rev_full``：镜像支持的最大 eFuse 块版本，格式为：major * 100 + minor
-* ``mmu_page_size``：MMU 页大小，以 log2 格式表示
-* ``spi_flash_mode``：SPI flash 模式，取自 ``CONFIG_ESPTOOLPY_FLASHMODE_VAL``，用于 OTA 过程中的兼容性检查
 
 .. [#f1] 最大长度为 32 个字符，其中包括 null 终止符。也就是说，如果 ``PROJECT_NAME`` 的长度超过 31 个字符，超出的字符将被忽略。
 

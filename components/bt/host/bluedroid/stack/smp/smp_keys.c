@@ -34,18 +34,8 @@
 #include "btm_int.h"
 #include "btm_ble_int.h"
 #include "stack/hcimsgs.h"
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-#include "psa/crypto.h"
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-#include "tinycrypt/aes.h"
-#include "tinycrypt/cmac_mode.h"
-#include "tinycrypt/ecc_dh.h"
-#include "tinycrypt/ecc.h"
-#include "tinycrypt/constants.h"
-#else
 #include "aes.h"
 #include "p_256_ecc_pp.h"
-#endif /* SMP_CRYPTO_MBEDTLS */
 #include "device/controller.h"
 
 #ifndef SMP_MAX_ENC_REPEAT
@@ -169,11 +159,12 @@ BOOLEAN smp_encrypt_data (UINT8 *key, UINT8 key_len,
                           UINT8 *plain_text, UINT8 pt_len,
                           tSMP_ENC *p_out)
 {
+    aes_context ctx;
     UINT8 *p_start = NULL;
     UINT8 *p = NULL;
-    UINT8 *p_rev_data = NULL;    /* input data in big endian format */
-    UINT8 *p_rev_key = NULL;     /* input key in big endian format */
-    UINT8 *p_rev_output = NULL;  /* encrypted output in big endian format */
+    UINT8 *p_rev_data = NULL;    /* input data in big endilan format */
+    UINT8 *p_rev_key = NULL;     /* input key in big endilan format */
+    UINT8 *p_rev_output = NULL;  /* encrypted output in big endilan format */
 
     SMP_TRACE_DEBUG ("%s\n", __func__);
     if ( (p_out == NULL ) || (key_len != SMP_ENCRYT_KEY_SIZE) ) {
@@ -203,67 +194,8 @@ BOOLEAN smp_encrypt_data (UINT8 *key, UINT8 key_len,
     smp_debug_print_nbyte_little_endian(p_start, (const UINT8 *)"Plain text", SMP_ENCRYT_DATA_SIZE);
 #endif
     p_rev_output = p;
-
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-    {
-        psa_status_t status;
-        psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-        psa_key_id_t key_id = 0;
-        size_t output_len = 0;
-
-        psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_ENCRYPT);
-        psa_set_key_algorithm(&key_attributes, PSA_ALG_ECB_NO_PADDING);
-        psa_set_key_type(&key_attributes, PSA_KEY_TYPE_AES);
-        psa_set_key_bits(&key_attributes, 128);
-
-        status = psa_import_key(&key_attributes, p_rev_key, SMP_ENCRYT_KEY_SIZE, &key_id);
-        psa_reset_key_attributes(&key_attributes);
-
-        if (status != PSA_SUCCESS) {
-            SMP_TRACE_ERROR("%s psa_import_key failed: %d\n", __func__, status);
-            osi_free(p_start);
-            return FALSE;
-        }
-
-        status = psa_cipher_encrypt(key_id, PSA_ALG_ECB_NO_PADDING, p_rev_data,
-                                    SMP_ENCRYT_DATA_SIZE, p_rev_output, SMP_ENCRYT_DATA_SIZE, &output_len);
-        psa_destroy_key(key_id);
-
-        if (status != PSA_SUCCESS || output_len != SMP_ENCRYT_DATA_SIZE) {
-            SMP_TRACE_ERROR("%s psa_cipher_encrypt failed: %d\n", __func__, status);
-            osi_free(p_start);
-            return FALSE;
-        }
-    }
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-    {
-        struct tc_aes_key_sched_struct sched;
-
-        /* TinyCrypt expects big-endian key and data */
-        if (tc_aes128_set_encrypt_key(&sched, p_rev_key) == TC_CRYPTO_FAIL) {
-            SMP_TRACE_ERROR("%s tc_aes128_set_encrypt_key failed\n", __func__);
-            memset(&sched, 0, sizeof(sched));
-            osi_free(p_start);
-            return FALSE;
-        }
-
-        if (tc_aes_encrypt(p_rev_output, p_rev_data, &sched) == TC_CRYPTO_FAIL) {
-            SMP_TRACE_ERROR("%s tc_aes_encrypt failed\n", __func__);
-            memset(&sched, 0, sizeof(sched));
-            osi_free(p_start);
-            return FALSE;
-        }
-
-        /* Clear sensitive data from key schedule */
-        memset(&sched, 0, sizeof(sched));
-    }
-#else
-    {
-        aes_context ctx;
-        aes_set_key(p_rev_key, SMP_ENCRYT_KEY_SIZE, &ctx);
-        bluedroid_aes_encrypt(p_rev_data, p_rev_output, &ctx);  /* outputs in byte 48 to byte 63 */
-    }
-#endif /* SMP_CRYPTO_MBEDTLS */
+    aes_set_key(p_rev_key, SMP_ENCRYT_KEY_SIZE, &ctx);
+    bluedroid_aes_encrypt(p_rev_data, p, &ctx);  /* outputs in byte 48 to byte 63 */
 
     p = p_out->param_buf;
     REVERSE_ARRAY_TO_STREAM (p, p_rev_output, SMP_ENCRYT_DATA_SIZE);
@@ -275,8 +207,6 @@ BOOLEAN smp_encrypt_data (UINT8 *key, UINT8 key_len,
     p_out->status = HCI_SUCCESS;
     p_out->opcode =  HCI_BLE_ENCRYPT;
 
-    /* Clear sensitive data (including key at byte 32-47) before freeing */
-    memset(p_start, 0, SMP_ENCRYT_DATA_SIZE * 4);
     osi_free(p_start);
 
     return TRUE;
@@ -621,10 +551,10 @@ void smp_concatenate_peer( tSMP_CB *p_cb, UINT8 **p_data, UINT8 op_code)
 ** Description      Generate Confirm/Compare Step1:
 **                  p1 = press || preq || rat' || iat'
 **
-** Returns          BOOLEAN
+** Returns          void
 **
 *******************************************************************************/
-BOOLEAN smp_gen_p1_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p1)
+void smp_gen_p1_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p1)
 {
     UINT8 *p = (UINT8 *)p1;
     tBLE_ADDR_TYPE    addr_type = 0;
@@ -634,7 +564,7 @@ BOOLEAN smp_gen_p1_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p1)
 
     if (!BTM_ReadRemoteConnectionAddr(p_cb->pairing_bda, remote_bda, &addr_type)) {
         SMP_TRACE_ERROR("can not generate confirm for unknown device\n");
-        return FALSE;
+        return;
     }
 
     BTM_ReadConnectionAddr( p_cb->pairing_bda, p_cb->local_bda, &p_cb->addr_type);
@@ -662,7 +592,6 @@ BOOLEAN smp_gen_p1_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p1)
     SMP_TRACE_DEBUG("p1 = press || preq || rat' || iat'\n");
     smp_debug_print_nbyte_little_endian ((UINT8 *)p1, (const UINT8 *)"P1", 16);
 #endif
-    return TRUE;
 }
 
 /*******************************************************************************
@@ -672,10 +601,10 @@ BOOLEAN smp_gen_p1_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p1)
 ** Description      Generate Confirm/Compare Step2:
 **                  p2 = padding || ia || ra
 **
-** Returns          FALSE if remote address unavailable, TRUE otherwise
+** Returns          void
 **
 *******************************************************************************/
-BOOLEAN smp_gen_p2_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p2)
+void smp_gen_p2_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p2)
 {
     UINT8       *p = (UINT8 *)p2;
     BD_ADDR     remote_bda;
@@ -683,7 +612,7 @@ BOOLEAN smp_gen_p2_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p2)
     SMP_TRACE_DEBUG ("smp_gen_p2_4_confirm\n");
     if (!BTM_ReadRemoteConnectionAddr(p_cb->pairing_bda, remote_bda, &addr_type)) {
         SMP_TRACE_ERROR("can not generate confirm p2 for unknown device\n");
-        return FALSE;
+        return;
     }
 
     SMP_TRACE_DEBUG ("smp_gen_p2_4_confirm\n");
@@ -705,7 +634,6 @@ BOOLEAN smp_gen_p2_4_confirm( tSMP_CB *p_cb, BT_OCTET16 p2)
     SMP_TRACE_DEBUG("p2 = padding || ia || ra");
     smp_debug_print_nbyte_little_endian(p2, (const UINT8 *)"p2", 16);
 #endif
-    return TRUE;
 }
 
 /*******************************************************************************
@@ -727,11 +655,7 @@ void smp_calculate_comfirm (tSMP_CB *p_cb, BT_OCTET16 rand, BD_ADDR bda)
 
     SMP_TRACE_DEBUG ("smp_calculate_comfirm \n");
     /* generate p1 = press || preq || rat' || iat' */
-    if (!smp_gen_p1_4_confirm(p_cb, p1)) {
-
-        smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &status);
-        return ;
-    }
+    smp_gen_p1_4_confirm(p_cb, p1);
 
     /* p1 = rand XOR p1 */
     smp_xor_128(p1, rand);
@@ -769,10 +693,7 @@ static void smp_calculate_comfirm_cont(tSMP_CB *p_cb, tSMP_ENC *p)
     smp_debug_print_nbyte_little_endian (p->param_buf, (const UINT8 *)"C1", 16);
 #endif
 
-    if (!smp_gen_p2_4_confirm(p_cb, p2)) {
-        smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &status);
-        return;
-    }
+    smp_gen_p2_4_confirm(p_cb, p2);
 
     /* calculate p2 = (p1' XOR p2) */
     smp_xor_128(p2, p->param_buf);
@@ -1147,12 +1068,6 @@ void smp_continue_private_key_creation (tSMP_CB *p_cb, tBTM_RAND_ENC *p)
     UINT8   state = p_cb->rand_enc_proc_state & ~0x80;
     SMP_TRACE_DEBUG ("%s state=0x%x\n", __func__, state);
 
-    /* Validate param_len to prevent buffer overflow/underflow */
-    if (p == NULL || p->param_len != BT_OCTET8_LEN) {
-        SMP_TRACE_ERROR("invalid param_len: %d, expected %d\n", p ? p->param_len : 0, BT_OCTET8_LEN);
-        return;
-    }
-
     switch (state) {
     case SMP_GENERATE_PRIVATE_KEY_0_7:
         memcpy((void *)p_cb->private_key, p->param_buf, p->param_len);
@@ -1203,6 +1118,8 @@ void smp_continue_private_key_creation (tSMP_CB *p_cb, tBTM_RAND_ENC *p)
 *******************************************************************************/
 void smp_process_private_key(tSMP_CB *p_cb)
 {
+    Point       public_key;
+    BT_OCTET32  private_key;
     tSMP_LOC_OOB_DATA *p_loc_oob = &p_cb->sc_oob_data.loc_oob_data;
 
     SMP_TRACE_DEBUG ("%s", __FUNCTION__);
@@ -1214,96 +1131,10 @@ void smp_process_private_key(tSMP_CB *p_cb)
         memcpy(p_cb->loc_publ_key.y, p_loc_oob->publ_key_used.y, BT_OCTET32_LEN);
         memcpy(p_cb->local_random, p_loc_oob->randomizer, BT_OCTET16_LEN);
     } else {
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-        psa_status_t status;
-        psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-        psa_key_id_t key_id = 0;
-        UINT8 priv_be[BT_OCTET32_LEN];
-        UINT8 pub_be[BT_OCTET32_LEN + BT_OCTET32_LEN + 1];  /* 0x04 || X (32 bytes) || Y (32 bytes) */
-        size_t pub_len = 0;
-        BOOLEAN psa_ok = FALSE;
-
-        /* Convert private key from little-endian to big-endian */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            priv_be[i] = p_cb->private_key[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Import the private key */
-        psa_set_key_type(&key_attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
-        psa_set_key_bits(&key_attributes, 256);
-        psa_set_key_algorithm(&key_attributes, PSA_ALG_ECDH);
-        psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_DERIVE | PSA_KEY_USAGE_EXPORT);
-
-        status = psa_import_key(&key_attributes, priv_be, BT_OCTET32_LEN, &key_id);
-        psa_reset_key_attributes(&key_attributes);
-
-        if (status != PSA_SUCCESS) {
-            SMP_TRACE_ERROR("%s psa_import_key failed: %d\n", __FUNCTION__, status);
-            goto psa_pubkey_cleanup;
-        }
-
-        /* Export public key */
-        status = psa_export_public_key(key_id, pub_be, sizeof(pub_be), &pub_len);
-        if (status != PSA_SUCCESS || pub_len != (BT_OCTET32_LEN + BT_OCTET32_LEN + 1)) {
-            SMP_TRACE_ERROR("%s psa_export_public_key failed: %d\n", __FUNCTION__, status);
-            goto psa_pubkey_cleanup;
-        }
-
-        /* Convert X and Y from big-endian to little-endian */
-        /* pub_be: 0x04 || X (32 bytes) || Y (32 bytes) */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            p_cb->loc_publ_key.x[i] = pub_be[1 + BT_OCTET32_LEN - 1 - i];
-            p_cb->loc_publ_key.y[i] = pub_be[33 + BT_OCTET32_LEN - 1 - i];
-        }
-        psa_ok = TRUE;
-
-psa_pubkey_cleanup:
-        psa_destroy_key(key_id);
-        /* Clear sensitive data from stack */
-        memset(priv_be, 0, sizeof(priv_be));
-        memset(pub_be, 0, sizeof(pub_be));
-        if (!psa_ok) {
-            return;
-        }
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-        {
-            UINT8 pub_key[64];  /* TinyCrypt format: X (32 bytes) || Y (32 bytes), no prefix */
-            UINT8 priv_be[BT_OCTET32_LEN];
-
-            /* Convert private key from little-endian to big-endian */
-            for (int i = 0; i < BT_OCTET32_LEN; i++) {
-                priv_be[i] = p_cb->private_key[BT_OCTET32_LEN - 1 - i];
-            }
-
-            /* Compute public key from private key */
-            /* uECC_compute_public_key returns 1 if successful, 0 if failed */
-            if (uECC_compute_public_key(priv_be, pub_key, uECC_secp256r1()) != TC_CRYPTO_SUCCESS) {
-                SMP_TRACE_ERROR("%s uECC_compute_public_key failed\n", __FUNCTION__);
-                memset(priv_be, 0, sizeof(priv_be));
-                memset(pub_key, 0, sizeof(pub_key));
-                return;
-            }
-
-            /* Convert X and Y from big-endian to little-endian */
-            /* TinyCrypt format: X (32 bytes) || Y (32 bytes) */
-            for (int i = 0; i < BT_OCTET32_LEN; i++) {
-                p_cb->loc_publ_key.x[i] = pub_key[BT_OCTET32_LEN - 1 - i];
-                p_cb->loc_publ_key.y[i] = pub_key[BT_OCTET32_LEN + BT_OCTET32_LEN - 1 - i];
-            }
-
-            /* Clear sensitive data from stack */
-            memset(priv_be, 0, sizeof(priv_be));
-            memset(pub_key, 0, sizeof(pub_key));
-        }
-#else
-        Point       public_key;
-        BT_OCTET32  private_key;
-
         memcpy(private_key, p_cb->private_key, BT_OCTET32_LEN);
         ECC_PointMult(&public_key, &(curve_p256.G), (DWORD *) private_key, KEY_LENGTH_DWORDS_P256);
         memcpy(p_cb->loc_publ_key.x, public_key.x, BT_OCTET32_LEN);
         memcpy(p_cb->loc_publ_key.y, public_key.y, BT_OCTET32_LEN);
-#endif /* SMP_CRYPTO_MBEDTLS */
     }
 
     smp_debug_print_nbyte_little_endian (p_cb->private_key, (const UINT8 *)"private",
@@ -1325,140 +1156,25 @@ psa_pubkey_cleanup:
 **                    key and peer public key;
 **                  - saves the new public key x-coordinate as DHKey.
 **
-** Returns          TRUE if DHKey was computed successfully, FALSE otherwise.
+** Returns          void
 **
 *******************************************************************************/
-BOOLEAN smp_compute_dhkey (tSMP_CB *p_cb)
+void smp_compute_dhkey (tSMP_CB *p_cb)
 {
-    SMP_TRACE_DEBUG ("%s\n", __FUNCTION__);
-
-#if (SMP_CRYPTO_MBEDTLS == TRUE)
-    psa_status_t status;
-    psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-    psa_key_id_t key_id = 0;
-    UINT8 priv_be[BT_OCTET32_LEN];
-    UINT8 peer_pub_be[BT_OCTET32_LEN + BT_OCTET32_LEN + 1];  /* 0x04 || X (32 bytes) || Y (32 bytes) */
-    UINT8 shared_secret[BT_OCTET32_LEN];
-    size_t output_len = 0;
-    BOOLEAN psa_ok = FALSE;
-
-    /* Convert private key from little-endian to big-endian */
-    for (int i = 0; i < BT_OCTET32_LEN; i++) {
-        priv_be[i] = p_cb->private_key[BT_OCTET32_LEN - 1 - i];
-    }
-
-    /* Import the private key */
-    psa_set_key_type(&key_attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
-    psa_set_key_bits(&key_attributes, 256);
-    psa_set_key_algorithm(&key_attributes, PSA_ALG_ECDH);
-    psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_DERIVE);
-
-    status = psa_import_key(&key_attributes, priv_be, BT_OCTET32_LEN, &key_id);
-    psa_reset_key_attributes(&key_attributes);
-
-    if (status != PSA_SUCCESS) {
-        SMP_TRACE_ERROR("%s psa_import_key failed: %d\n", __FUNCTION__, status);
-        goto psa_dhkey_cleanup;
-    }
-
-    /* Construct peer public key in uncompressed format: 0x04 || X || Y */
-    peer_pub_be[0] = 0x04;
-    for (int i = 0; i < BT_OCTET32_LEN; i++) {
-        peer_pub_be[1 + i] = p_cb->peer_publ_key.x[BT_OCTET32_LEN - 1 - i];
-        peer_pub_be[33 + i] = p_cb->peer_publ_key.y[BT_OCTET32_LEN - 1 - i];
-    }
-
-    /* Compute ECDH shared secret */
-    status = psa_raw_key_agreement(PSA_ALG_ECDH, key_id, peer_pub_be, sizeof(peer_pub_be),
-                                   shared_secret, sizeof(shared_secret), &output_len);
-    if (status != PSA_SUCCESS || output_len != BT_OCTET32_LEN) {
-        SMP_TRACE_ERROR("%s psa_raw_key_agreement failed: %d\n", __FUNCTION__, status);
-        goto psa_dhkey_cleanup;
-    }
-
-    /* Convert shared secret from big-endian to little-endian for DHKey */
-    for (int i = 0; i < BT_OCTET32_LEN; i++) {
-        p_cb->dhkey[i] = shared_secret[BT_OCTET32_LEN - 1 - i];
-    }
-    psa_ok = TRUE;
-
-psa_dhkey_cleanup:
-    psa_destroy_key(key_id);
-    /* Clear sensitive data from stack */
-    memset(priv_be, 0, sizeof(priv_be));
-    memset(peer_pub_be, 0, sizeof(peer_pub_be));
-    memset(shared_secret, 0, sizeof(shared_secret));
-    if (!psa_ok) {
-        return FALSE;
-    }
-#elif (SMP_CRYPTO_TINYCRYPT == TRUE)
-    {
-        UINT8 priv_be[BT_OCTET32_LEN];
-        UINT8 peer_pub_be[64];  /* TinyCrypt format: X (32 bytes) || Y (32 bytes), no prefix */
-        UINT8 shared_secret[BT_OCTET32_LEN];
-
-        /* Convert private key from little-endian to big-endian */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            priv_be[i] = p_cb->private_key[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Convert peer public key from little-endian to big-endian */
-        /* TinyCrypt format: X (32 bytes) || Y (32 bytes), no prefix */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            peer_pub_be[i] = p_cb->peer_publ_key.x[BT_OCTET32_LEN - 1 - i];
-            peer_pub_be[BT_OCTET32_LEN + i] = p_cb->peer_publ_key.y[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Validate peer public key */
-        /* uECC_valid_public_key returns 0 if valid, negative value if invalid */
-        if (uECC_valid_public_key(peer_pub_be, uECC_secp256r1()) != 0) {
-            SMP_TRACE_ERROR("%s Invalid peer public key\n", __FUNCTION__);
-            memset(priv_be, 0, sizeof(priv_be));
-            memset(peer_pub_be, 0, sizeof(peer_pub_be));
-            return FALSE;
-        }
-
-        /* Compute ECDH shared secret */
-        /* uECC_shared_secret returns TC_CRYPTO_SUCCESS (1) if successful, TC_CRYPTO_FAIL (0) if failed */
-        if (uECC_shared_secret(peer_pub_be, priv_be, shared_secret, uECC_secp256r1()) != TC_CRYPTO_SUCCESS) {
-            SMP_TRACE_ERROR("%s uECC_shared_secret failed\n", __FUNCTION__);
-            memset(priv_be, 0, sizeof(priv_be));
-            memset(peer_pub_be, 0, sizeof(peer_pub_be));
-            memset(shared_secret, 0, sizeof(shared_secret));
-            return FALSE;
-        }
-
-        /* Convert shared secret from big-endian to little-endian for DHKey */
-        for (int i = 0; i < BT_OCTET32_LEN; i++) {
-            p_cb->dhkey[i] = shared_secret[BT_OCTET32_LEN - 1 - i];
-        }
-
-        /* Clear sensitive data from stack */
-        memset(priv_be, 0, sizeof(priv_be));
-        memset(peer_pub_be, 0, sizeof(peer_pub_be));
-        memset(shared_secret, 0, sizeof(shared_secret));
-    }
-#else
     Point       peer_publ_key, new_publ_key;
     BT_OCTET32  private_key;
+
+    SMP_TRACE_DEBUG ("%s\n", __FUNCTION__);
 
     memcpy(private_key, p_cb->private_key, BT_OCTET32_LEN);
     memcpy(peer_publ_key.x, p_cb->peer_publ_key.x, BT_OCTET32_LEN);
     memcpy(peer_publ_key.y, p_cb->peer_publ_key.y, BT_OCTET32_LEN);
 
-    if (!ECC_CheckPointIsInElliCur_P256(&peer_publ_key)) {
-        SMP_TRACE_ERROR("%s Invalid peer public key\n", __FUNCTION__);
-        memset(private_key, 0, sizeof(private_key));
-        return FALSE;
-    }
-
     ECC_PointMult(&new_publ_key, &peer_publ_key, (DWORD *) private_key, KEY_LENGTH_DWORDS_P256);
 
     memcpy(p_cb->dhkey, new_publ_key.x, BT_OCTET32_LEN);
-    memset(private_key, 0, sizeof(private_key));
-#endif /* SMP_CRYPTO_MBEDTLS */
 
-    smp_debug_print_nbyte_little_endian (p_cb->dhkey, (const UINT8 *)"DHKey",
+    smp_debug_print_nbyte_little_endian (p_cb->dhkey, (const UINT8 *)"Old DHKey",
                                          BT_OCTET32_LEN);
 
     smp_debug_print_nbyte_little_endian (p_cb->private_key, (const UINT8 *)"private",
@@ -1467,7 +1183,8 @@ psa_dhkey_cleanup:
                                          BT_OCTET32_LEN);
     smp_debug_print_nbyte_little_endian (p_cb->peer_publ_key.y, (const UINT8 *)"rem public(y)",
                                          BT_OCTET32_LEN);
-    return TRUE;
+    smp_debug_print_nbyte_little_endian (p_cb->dhkey, (const UINT8 *)"Reverted DHKey",
+                                         BT_OCTET32_LEN);
 }
 
 /*******************************************************************************
@@ -1578,9 +1295,6 @@ void smp_calculate_peer_commitment(tSMP_CB *p_cb, BT_OCTET16 output_buf)
 **
 ** Note             The LSB is the first octet, the MSB is the last octet of
 **                  the AES-CMAC input/output stream.
-**                  In little-endian implementation, the message is constructed
-**                  as Z||V||U (reversed parameter order) to compensate for
-**                  byte order differences with the big-endian specification.
 **
 *******************************************************************************/
 void smp_calculate_f4(UINT8 *u, UINT8 *v, UINT8 *x, UINT8 z, UINT8 *c)
@@ -1759,7 +1473,7 @@ UINT32 smp_calculate_g2(UINT8 *u, UINT8 *v, UINT8 *x, UINT8 *y)
     smp_debug_print_nbyte_little_endian (p_prnt, (const UINT8 *)"cmac mod 2**32 mod 10**6", 4);
 #endif
 
-    SMP_TRACE_WARNING("Value for numeric comparison = %d", vres);
+    SMP_TRACE_ERROR("Value for numeric comparison = %d", vres);
     return vres;
 }
 
@@ -2079,16 +1793,11 @@ BOOLEAN smp_calculate_f5_key(UINT8 *w, UINT8 *t)
 *******************************************************************************/
 void smp_calculate_local_dhkey_check(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
-    UINT8   iocap[3], a[7] = {0}, b[7] = {0};
+    UINT8   iocap[3], a[7], b[7];
 
     SMP_TRACE_DEBUG ("%s", __FUNCTION__);
 
-    if (!smp_calculate_f5_mackey_and_long_term_key(p_cb)) {
-        UINT8 reason = SMP_PAIR_FAIL_UNKNOWN;
-        p_cb->failure = reason;
-        smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &reason);
-        return;
-    }
+    smp_calculate_f5_mackey_and_long_term_key(p_cb);
 
     smp_collect_local_io_capabilities(iocap, p_cb);
 
@@ -2111,7 +1820,7 @@ void smp_calculate_local_dhkey_check(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 *******************************************************************************/
 void smp_calculate_peer_dhkey_check(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
-    UINT8       iocap[3], a[7] = {0}, b[7] = {0};
+    UINT8       iocap[3], a[7], b[7];
     BT_OCTET16  param_buf;
     BOOLEAN     ret;
     tSMP_KEY    key;
@@ -2281,8 +1990,11 @@ BOOLEAN smp_calculate_link_key_from_long_term_key(tSMP_CB *p_cb)
         SMP_TRACE_ERROR("%s failed", __func__);
     } else {
         UINT8 link_key_type;
-        if ((btm_cb.security_mode == BTM_SEC_MODE_SC) ||
-            (controller_get_interface()->supports_secure_connections())) {
+        if (btm_cb.security_mode == BTM_SEC_MODE_SC) {
+            /* Secure Connections Only Mode */
+            link_key_type = BTM_LKEY_TYPE_AUTH_COMB_P_256;
+        } else if (controller_get_interface()->supports_secure_connections()) {
+            /* both transports are SC capable */
             if (p_cb->sec_level == SMP_SEC_AUTHENTICATED) {
                 link_key_type = BTM_LKEY_TYPE_AUTH_COMB_P_256;
             } else {
@@ -2296,10 +2008,9 @@ BOOLEAN smp_calculate_link_key_from_long_term_key(tSMP_CB *p_cb)
                 link_key_type = BTM_LKEY_TYPE_UNAUTH_COMB;
             }
         } else {
-            SMP_TRACE_WARNING ("%s BR/EDR transport not available (Sec Mode = %d, sm4 = 0x%02x), "
-                               "skip LK derivation",
-                               __func__, btm_cb.security_mode, p_dev_rec->sm4);
-            return TRUE;
+            SMP_TRACE_ERROR ("%s failed to update link_key. Sec Mode = %d, sm4 = 0x%02x",
+                             __func__, btm_cb.security_mode, p_dev_rec->sm4);
+            return FALSE;
         }
 
         link_key_type += BTM_LTK_DERIVED_LKEY_OFFSET;
@@ -2523,62 +2234,37 @@ static void smp_rand_back(tBTM_RAND_ENC *p)
     UINT8   *pp = NULL;
     UINT8   failure = SMP_PAIR_FAIL_UNKNOWN;
     UINT8   state = p_cb->rand_enc_proc_state & ~0x80;
-    BOOLEAN check_failed = FALSE;
 
     SMP_TRACE_DEBUG ("%s state=0x%x", __FUNCTION__, state);
     if (p && p->status == HCI_SUCCESS) {
         switch (state) {
         case SMP_GEN_SRAND_MRAND:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             memcpy((void *)p_cb->rand, p->param_buf, p->param_len);
             smp_generate_rand_cont(p_cb, NULL);
             break;
 
         case SMP_GEN_SRAND_MRAND_CONT:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             memcpy((void *)&p_cb->rand[8], p->param_buf, p->param_len);
             smp_generate_confirm(p_cb, NULL);
             break;
 
         case SMP_GEN_DIV_LTK:
-            if (p->param_len < 2) {
-                check_failed = TRUE;
-                break;
-            }
             pp = p->param_buf;
             STREAM_TO_UINT16(p_cb->div, pp);
             smp_generate_ltk_cont(p_cb, NULL);
             break;
 
         case SMP_GEN_DIV_CSRK:
-            if (p->param_len < 2) {
-                check_failed = TRUE;
-                break;
-            }
             pp = p->param_buf;
             STREAM_TO_UINT16(p_cb->div, pp);
             smp_compute_csrk(p_cb, NULL);
             break;
 
         case SMP_GEN_TK:
-            if (p->param_len < 4) {
-                check_failed = TRUE;
-                break;
-            }
             smp_proc_passkey(p_cb, p);
             break;
 
         case SMP_GEN_RAND_V:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             memcpy(p_cb->enc_rand, p->param_buf, BT_OCTET8_LEN);
             smp_generate_y(p_cb, NULL);
             break;
@@ -2587,34 +2273,21 @@ static void smp_rand_back(tBTM_RAND_ENC *p)
         case SMP_GENERATE_PRIVATE_KEY_8_15:
         case SMP_GENERATE_PRIVATE_KEY_16_23:
         case SMP_GENERATE_PRIVATE_KEY_24_31:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             smp_continue_private_key_creation(p_cb, p);
             break;
 
         case SMP_GEN_NONCE_0_7:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             memcpy((void *)p_cb->rand, p->param_buf, p->param_len);
             smp_finish_nonce_generation(p_cb);
             break;
 
         case SMP_GEN_NONCE_8_15:
-            if (p->param_len != BT_OCTET8_LEN) {
-                check_failed = TRUE;
-                break;
-            }
             memcpy((void *)&p_cb->rand[8], p->param_buf, p->param_len);
             smp_process_new_nonce(p_cb);
             break;
         }
-        if (!check_failed) {
-            return;
-        }
+
+        return;
     }
 
     SMP_TRACE_ERROR("%s key generation failed: (%d)", __FUNCTION__, p_cb->rand_enc_proc_state);

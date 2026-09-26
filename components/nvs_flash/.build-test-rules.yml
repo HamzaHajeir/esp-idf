@@ -1,6 +1,5 @@
 components/nvs_flash/host_test:
   depends_components:
-    - *common_components
     - nvs_flash
     - nvs_sec_provider
     - esp_blockdev
@@ -11,7 +10,6 @@ components/nvs_flash/host_test:
 
 components/nvs_flash/test_apps:
   depends_components:
-    - *common_components
     - spi_flash
     - nvs_flash
     - nvs_sec_provider
@@ -22,7 +20,6 @@ components/nvs_flash/test_apps:
 
 components/nvs_flash/test_apps_bootloader:
   depends_components:
-    - *common_components
     - spi_flash
     - nvs_flash
     - esp_partition

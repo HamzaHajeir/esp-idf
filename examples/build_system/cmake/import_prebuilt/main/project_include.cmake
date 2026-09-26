@@ -9,8 +9,6 @@ if("$ENV{CI}")
         )
     file(REMOVE_RECURSE ${CMAKE_SOURCE_DIR}/prebuilt/build)
 
-    idf_build_get_property(python PYTHON)
-    idf_build_get_property(idf_path IDF_PATH)
-    execute_process(COMMAND ${python} "${idf_path}/tools/idf.py" build
+    execute_process(COMMAND ${IDFTOOL} build
                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/prebuilt)
 endif()

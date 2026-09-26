@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import pytest
 from pytest_embedded import Dut
@@ -6,7 +6,6 @@ from pytest_embedded_idf.utils import idf_parametrize
 
 
 @pytest.mark.generic
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @pytest.mark.parametrize(
     'config',
     [
@@ -15,7 +14,7 @@ from pytest_embedded_idf.utils import idf_parametrize
     ],
     indirect=True,
 )
-@idf_parametrize('target', ['esp32c2', 'esp32c3', 'esp32c6', 'esp32h2', 'esp32p4', 'esp32h4'], indirect=['target'])
+@idf_parametrize('target', ['esp32c2', 'esp32c3', 'esp32c6', 'esp32h2'], indirect=['target'])
 def test_vfs_default(dut: Dut) -> None:
     dut.run_all_single_board_cases()
 

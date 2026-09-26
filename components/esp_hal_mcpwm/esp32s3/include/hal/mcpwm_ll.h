@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -1627,18 +1627,16 @@ static inline mcpwm_capture_edge_t mcpwm_ll_capture_get_edge(mcpwm_dev_t *mcpwm,
 }
 
 /**
- * @brief Set capture input prescale (same-edge ratio)
- *
- * @note Hardware field N = 0 means bypass (ratio 1); N >= 1 means same-edge ratio = 2 * N.
+ * @brief Set the prescale of the input capture signal
  *
  * @param mcpwm Peripheral instance address
  * @param channel Channel ID, index from 0 to 2
- * @param prescale Desired same-edge ratio: 1 (bypass) or even
+ * @param prescale Prescale value
  */
 static inline void mcpwm_ll_capture_set_prescale(mcpwm_dev_t *mcpwm, int channel, uint32_t prescale)
 {
     HAL_ASSERT(prescale > 0);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(mcpwm->cap_chn_cfg[channel], capn_prescale, prescale / 2);
+    HAL_FORCE_MODIFY_U32_REG_FIELD(mcpwm->cap_chn_cfg[channel], capn_prescale, prescale - 1);
 }
 
 #ifdef __cplusplus

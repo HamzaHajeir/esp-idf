@@ -9,14 +9,6 @@ idf_build_get_property(non_os_build NON_OS_BUILD)
 idf_build_get_property(custom_secure_service_dir CUSTOM_SECURE_SERVICE_COMPONENT_DIR)
 idf_build_get_property(custom_secure_service_component CUSTOM_SECURE_SERVICE_COMPONENT)
 
-if(IDF_BUILD_V2)
-    # Under build system v2, partition_table/project_include.cmake may run
-    # after this file, so PARTITION_TABLE_BIN_PATH is not yet set. Defer the
-    # read to CMake's generate phase via a generator expression.
-    idf_build_get_property(partition_table_bin PARTITION_TABLE_BIN_PATH GENERATOR_EXPRESSION)
-else()
-    idf_build_get_property(partition_table_bin PARTITION_TABLE_BIN_PATH)
-endif()
 
 if(NOT CONFIG_SECURE_ENABLE_TEE OR non_os_build)
     return()
@@ -40,41 +32,10 @@ set(tee_binary_files
     "${TEE_BUILD_DIR}/esp_tee.map"
     )
 
-# Override LibC for ESP-TEE if needed
+# Use only Newlib libc to reduce binary size, as some Newlib functions are already available in ROM
 set(esp_tee_sdkconfig "${CMAKE_CURRENT_BINARY_DIR}/sdkconfig.esp_tee")
 configure_file("${sdkconfig}" "${esp_tee_sdkconfig}" COPYONLY)
-
-file(READ "${esp_tee_sdkconfig}" content)
-
-unset(REE_LIBC)
-unset(TEE_LIBC)
-
-foreach(libc NEWLIB PICOLIBC)
-    if(content MATCHES "CONFIG_LIBC_${libc}=y")
-        set(REE_LIBC ${libc})
-    endif()
-
-    if(content MATCHES "CONFIG_SECURE_TEE_LIBC_${libc}=y")
-        set(TEE_LIBC ${libc})
-    endif()
-endforeach()
-
-if(REE_LIBC AND TEE_LIBC AND NOT REE_LIBC STREQUAL TEE_LIBC)
-    string(REGEX REPLACE
-        "CONFIG_LIBC_(NEWLIB|PICOLIBC)=y"
-        "# CONFIG_LIBC_\\1 is not set"
-        content
-        "${content}"
-    )
-    # Enable libc selected by TEE
-    string(REGEX REPLACE
-        "# CONFIG_LIBC_${TEE_LIBC} is not set"
-        "CONFIG_LIBC_${TEE_LIBC}=y"
-        content
-        "${content}"
-    )
-    file(WRITE "${esp_tee_sdkconfig}" "${content}")
-endif()
+file(APPEND "${esp_tee_sdkconfig}" "\nCONFIG_LIBC_NEWLIB=y\n")
 
 set(secure_service_headers_dir "${CMAKE_CURRENT_BINARY_DIR}/secure_service_headers")
 make_directory(${secure_service_headers_dir})
@@ -88,7 +49,6 @@ externalproject_add(esp_tee
                 -DCUSTOM_SECURE_SERVICE_COMPONENT=${custom_secure_service_component}
                 -DCUSTOM_SECURE_SERVICE_COMPONENT_DIR=${custom_secure_service_dir}
                 -DSECURE_SERVICE_HEADERS_DIR=${secure_service_headers_dir}
-                -DPARTITION_TABLE_BIN_PATH=${partition_table_bin}
                 ${extra_cmake_args} ${sign_key_arg}
     INSTALL_COMMAND ""
     BUILD_ALWAYS 1  # no easy way around this...

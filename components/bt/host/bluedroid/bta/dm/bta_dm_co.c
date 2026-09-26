@@ -45,8 +45,8 @@ tBTE_APPL_CFG bte_appl_cfg = {
     BTM_AUTH_SPGB_YES,            // Authentication requirements
 #endif
     BTM_LOCAL_IO_CAPS_BLE,
-    BTM_BLE_INITIATOR_KEY_MASK,
-    BTM_BLE_RESPONDER_KEY_MASK,
+    BTM_BLE_INITIATOR_KEY_SIZE,
+    BTM_BLE_RESPONDER_KEY_SIZE,
     BTM_BLE_MAX_KEY_SIZE,
     BTM_BLE_MIN_KEY_SIZE,
     BTM_BLE_ONLY_ACCEPT_SPECIFIED_SEC_AUTH_DISABLE,
@@ -57,8 +57,8 @@ void bta_dm_co_security_param_init(void)
 {
     bte_appl_cfg.ble_auth_req = BTA_LE_AUTH_REQ_SC_MITM_BOND;
     bte_appl_cfg.ble_io_cap = BTM_LOCAL_IO_CAPS_BLE;
-    bte_appl_cfg.ble_init_key = BTM_BLE_INITIATOR_KEY_MASK;
-    bte_appl_cfg.ble_resp_key = BTM_BLE_RESPONDER_KEY_MASK;
+    bte_appl_cfg.ble_init_key = BTM_BLE_INITIATOR_KEY_SIZE;
+    bte_appl_cfg.ble_resp_key = BTM_BLE_RESPONDER_KEY_SIZE;
     bte_appl_cfg.ble_max_key_size = BTM_BLE_MAX_KEY_SIZE;
     bte_appl_cfg.ble_min_key_size = BTM_BLE_MIN_KEY_SIZE;
     bte_appl_cfg.ble_accept_auth_enable = BTM_BLE_ONLY_ACCEPT_SPECIFIED_SEC_AUTH_DISABLE;
@@ -107,20 +107,20 @@ BOOLEAN bta_dm_co_get_compress_memory(tBTA_SYS_ID id, UINT8 **memory_p, UINT32 *
 **
 ** Parameters       bt_io_cap  - IO capabilities
 **
-** @return          - ESP_OK : success
+** @return          - ESP_BT_STATUS_SUCCESS : success
 **                  - other  : failed
 **
 *******************************************************************************/
 #if (CLASSIC_BT_INCLUDED == TRUE)
 esp_err_t bta_dm_co_bt_set_io_cap(UINT8 bt_io_cap)
 {
-    esp_err_t ret = ESP_OK;
+    esp_err_t ret = ESP_BT_STATUS_SUCCESS;
 
     if(bt_io_cap < BTM_IO_CAP_MAX ) {
         btm_cb.devcb.loc_io_caps = bt_io_cap;
-        ret = ESP_OK;
+        ret = ESP_BT_STATUS_SUCCESS;
     } else {
-        ret = ESP_FAIL;
+        ret = ESP_BT_STATUS_FAIL;
         APPL_TRACE_ERROR("%s error:Invalid io cap value.",__func__);
     }
 
@@ -368,11 +368,11 @@ void bta_dm_co_ble_io_req(BD_ADDR bd_addr,  tBTA_IO_CAP *p_io_cap,
         *p_io_cap = bte_appl_cfg.ble_io_cap;
     }
 
-    if ((bte_appl_cfg.ble_init_key & ~BTM_BLE_INITIATOR_KEY_MASK) == 0) {
+    if (bte_appl_cfg.ble_init_key <= BTM_BLE_INITIATOR_KEY_SIZE) {
         *p_init_key = bte_appl_cfg.ble_init_key;
     }
 
-    if ((bte_appl_cfg.ble_resp_key & ~BTM_BLE_RESPONDER_KEY_MASK) == 0) {
+    if (bte_appl_cfg.ble_resp_key <= BTM_BLE_RESPONDER_KEY_SIZE) {
         *p_resp_key = bte_appl_cfg.ble_resp_key;
     }
 

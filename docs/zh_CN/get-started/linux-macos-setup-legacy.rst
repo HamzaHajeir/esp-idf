@@ -211,13 +211,11 @@ ESP-IDF 工具安装器会下载 Github 发布版本中附带的一些工具，�
 
 .. note::
     推荐国内用户使用国内的下载服务器，以加快下载速度。
-    也可以同时设置环境变量 ``PIP_INDEX_URL`` 为国内的 PyPI 镜像，以加快 Python 包的下载速度。
 
     .. code-block:: bash
 
         cd ~/esp/esp-idf
         export IDF_GITHUB_ASSETS="dl.espressif.cn/github_assets"
-        export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
         ./install.sh
 
 自定义工具安装路径

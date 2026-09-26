@@ -141,7 +141,7 @@ static esp_err_t unsafe_bootloader_ota_update(esp_https_ota_config_t *ota_config
     const esp_partition_t *primary_bootloader;
     ESP_ERROR_CHECK(register_partition(ESP_PRIMARY_BOOTLOADER_OFFSET, ESP_BOOTLOADER_SIZE, "PrimaryBTLDR", ESP_PARTITION_TYPE_BOOTLOADER, ESP_PARTITION_SUBTYPE_BOOTLOADER_PRIMARY, &primary_bootloader));
     const esp_partition_t *ota_partition = esp_ota_get_next_update_partition(NULL); // free app ota partition will be used for downloading a new image
-#if CONFIG_BOOTLOADER_APP_ROLLBACK_CONFIRM_BY_APP
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
     // Check if the passive OTA app partition is not needed for rollback before using it for other partitions.
     // The same can be done for partition table and storage updates.
     esp_ota_img_states_t ota_state;
@@ -209,19 +209,14 @@ static esp_err_t ota_update_partitions(esp_https_ota_config_t *ota_config)
         }
 
     } else if (strstr(ota_config->http_config->url, "storage.bin") != NULL) {
-#if CONFIG_APP_UPDATE_SECURE_SIGNED_DATA_PARTITION
-        ota_config->partition.staging = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "staging");
-        assert(ota_config->partition.staging != NULL);
-#else
         ota_config->partition.staging = NULL; // free app ota partition will be selected and used for downloading a new image
-#endif // APP_UPDATE_SECURE_SIGNED_DATA_PARTITION
         ota_config->partition.final = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
         assert(ota_config->partition.final != NULL);
         ota_config->partition.finalize_with_copy = true; // After the download is complete, copy the received image to the final partition automatically
         ret = esp_https_ota(ota_config);
-        char text[16] = {0};
+        char text[16];
         ESP_ERROR_CHECK(esp_partition_read(ota_config->partition.final, 0, text, sizeof(text)));
-        ESP_LOG_BUFFER_HEXDUMP(TAG, text, sizeof(text), ESP_LOG_INFO);
+        ESP_LOG_BUFFER_CHAR(TAG, text, sizeof(text));
         assert(memcmp("7296406769363431", text, sizeof(text)) == 0);
 
     } else {

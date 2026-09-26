@@ -164,7 +164,7 @@ ESP-IDF 库中的 Docker 文件提供了以下构建参数，可用于构建自�
         --build-arg IDF_INSTALL_TARGETS=esp32c3 \
         tools/docker
 
-.. _远程串行接口: https://docs.espressif.com/projects/esptool/en/latest/esp32/remote-serial-ports.html
+.. _远程串行接口: https://docs.espressif.com/projects/esptool/en/latest/esptool/remote-serial-ports.html
 .. _RFC2217: http://www.ietf.org/rfc/rfc2217.txt
 .. _ESP 工具版本: https://github.com/espressif/esptool/releases
 .. _设备选项: https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities

@@ -48,7 +48,6 @@
 #define SMP_OPCODE_MAX                    SMP_OPCODE_PAIR_KEYPR_NOTIF
 #define SMP_OPCODE_MIN                    SMP_OPCODE_PAIRING_REQ
 #define SMP_OPCODE_PAIR_COMMITM           0x0F
-#define SMP_OPCODE_ARRAY_SIZE             (SMP_OPCODE_PAIR_COMMITM + 1)
 // #endif
 
 /* SMP event type */
@@ -226,9 +225,6 @@ typedef struct {
     BOOLEAN is_pair_cancel;
     BOOLEAN smp_over_br;
     tSMP_AUTH_REQ auth_mode;
-    /* TRUE when the local stack refused the procedure (e.g. hardened re-pairing)
-       and the stored bond must be kept regardless of REMOVE_BOND_ON_PAIR_FAIL_AS_*. */
-    BOOLEAN keep_bond;
 } tSMP_CMPL;
 
 typedef struct {
@@ -469,10 +465,10 @@ extern void SMP_SecureConnectionOobDataReply(UINT8 *p_data);
 ** Description      This function is called to encrypt the data with the specified
 **                  key
 **
-** Parameters:      key                 - Pointer to key key[0] contains the MSB
+** Parameters:      key                 - Pointer to key key[0] conatins the MSB
 **                  key_len             - key length
 **                  plain_text          - Pointer to data to be encrypted
-**                                        plain_text[0] contains the MSB
+**                                        plain_text[0] conatins the MSB
 **                  pt_len              - plain text length
 **                  p_out               - pointer to the encrypted outputs
 **

@@ -25,19 +25,12 @@ set(ESP_TEE_BUILD 1)
 set(NON_OS_BUILD 1)
 
 # Additional components
-list(APPEND COMPONENTS bootloader_support esp_image_verify efuse esp_hal_mspi esp_hal_wdt
-     esp_hal_security esp_security mbedtls esp_stdio)
+list(APPEND COMPONENTS bootloader_support efuse esp_hal_mspi esp_hal_wdt esp_security mbedtls esp_stdio)
 
 # TEE-specific components
-list(APPEND COMPONENTS attestation tee_flash_mgr tee_ota_ops tee_sec_storage)
+list(APPEND COMPONENTS tee_flash_mgr tee_ota_ops tee_sec_storage tee_attestation)
 
 include_directories("${SECURE_SERVICE_HEADERS_DIR}")
-
-# The TEE subproject is not yet ported to build system v2.
-# Explicitly clear the IDF_BUILD_V2 environment variable so that
-# tools/cmake/project.cmake does not activate the cmakev2 shim when
-# the parent build was invoked with IDF_BUILD_V2=1.
-unset(ENV{IDF_BUILD_V2})
 
 include("${IDF_PATH}/tools/cmake/project.cmake")
 set(common_req esp_common esp_hw_support esp_rom freertos hal log esp_libc soc spi_flash)
@@ -104,18 +97,4 @@ if(CONFIG_SECURE_BOOT_V2_ENABLED)
         COMMENT "${comment}"
         ${key_arg}
     )
-endif()
-
-# Generate TEE post-build check of the TEE size against the partition
-partition_table_add_check_tee_size_target(esp_tee_check_size
-    DEPENDS gen_esp_tee_binary
-    TEE_BINARY_PATH "${CMAKE_BINARY_DIR}/${esp_tee_unsigned_bin}")
-add_dependencies(app esp_tee_check_size)
-
-if(CONFIG_SECURE_BOOT_V2_ENABLED AND CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES)
-    # Check the size of the TEE + signature block.
-    partition_table_add_check_tee_size_target(esp_tee_check_size_signed
-        DEPENDS gen_signed_esp_tee_binary
-        TEE_BINARY_PATH "${CMAKE_BINARY_DIR}/${project_bin}")
-    add_dependencies(app esp_tee_check_size_signed)
 endif()

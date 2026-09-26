@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,23 +15,22 @@
 #include "esp_console.h"
 #include "argtable3/argtable3.h"
 
-#include "psa/crypto.h"
+#include "mbedtls/ecp.h"
+#include "mbedtls/ecdsa.h"
+#include "mbedtls/sha256.h"
 
 #include "esp_tee_sec_storage.h"
 #include "example_tee_srv.h"
 
 #define SHA256_DIGEST_SZ         (32)
-#if CONFIG_SECURE_TEE_SEC_STG_SUPPORT_SECP384R1_SIGN
+#if SOC_ECDSA_SUPPORT_CURVE_P384
 #define MAX_ECDSA_KEY_LEN        (48)
 #else
 #define MAX_ECDSA_KEY_LEN        (32)
-#endif /* CONFIG_SECURE_TEE_SEC_STG_SUPPORT_SECP384R1_SIGN */
+#endif
 
 #define AES256_GCM_TAG_LEN       (16)
-#define AES256_GCM_IV_LEN        (12)
 #define MAX_AES_PLAINTEXT_LEN    (256)
-
-#define ECDSA_SECP256R1_KEY_LEN  (32)
 
 static const char *TAG = "tee_sec_stg";
 
@@ -97,34 +96,57 @@ static esp_err_t verify_ecdsa_secp256r1_sign(const uint8_t *digest, size_t len, 
 
     esp_err_t err = ESP_FAIL;
 
-    psa_key_id_t key_id = 0;
-    psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
-    psa_set_key_type(&key_attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
-    psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_EXPORT | PSA_KEY_USAGE_VERIFY_HASH);
-    psa_set_key_algorithm(&key_attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+    mbedtls_mpi r, s;
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi_init(&s);
 
-    uint8_t pub_key[2 * ECDSA_SECP256R1_KEY_LEN + 1];
-    pub_key[0] = 0x04;
-    memcpy(pub_key + 1, pubkey->pub_x, ECDSA_SECP256R1_KEY_LEN);
-    memcpy(pub_key + 1 + ECDSA_SECP256R1_KEY_LEN, pubkey->pub_y, ECDSA_SECP256R1_KEY_LEN);
+    mbedtls_ecdsa_context ecdsa_context;
+    mbedtls_ecdsa_init(&ecdsa_context);
 
-    psa_status_t status = psa_import_key(&key_attributes, pub_key, sizeof(pub_key), &key_id);
-    if (status != PSA_SUCCESS) {
+    int ret = mbedtls_ecp_group_load(&ecdsa_context.MBEDTLS_PRIVATE(grp), MBEDTLS_ECP_DP_SECP256R1);
+    if (ret != 0) {
         goto exit;
     }
 
-    status = psa_verify_hash(key_id, PSA_ALG_ECDSA(PSA_ALG_SHA_256), digest, len, sign->signature, 2 * ECDSA_SECP256R1_KEY_LEN);
-    if (status != PSA_SUCCESS) {
-        ESP_LOGE(TAG, "Failed to verify hash: %ld", status);
+    size_t plen = mbedtls_mpi_size(&ecdsa_context.MBEDTLS_PRIVATE(grp).P);
+
+    ret = mbedtls_mpi_read_binary(&r, sign->sign_r, plen);
+    if (ret != 0) {
         goto exit;
     }
+
+    ret = mbedtls_mpi_read_binary(&s, sign->sign_s, plen);
+    if (ret != 0) {
+        goto exit;
+    }
+
+    ret = mbedtls_mpi_read_binary(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(X), pubkey->pub_x, plen);
+    if (ret != 0) {
+        goto exit;
+    }
+
+    ret = mbedtls_mpi_read_binary(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(Y), pubkey->pub_y, plen);
+    if (ret != 0) {
+        goto exit;
+    }
+
+    ret = mbedtls_mpi_lset(&ecdsa_context.MBEDTLS_PRIVATE(Q).MBEDTLS_PRIVATE(Z), 1);
+    if (ret != 0) {
+        goto exit;
+    }
+
+    ret = mbedtls_ecdsa_verify(&ecdsa_context.MBEDTLS_PRIVATE(grp), digest, len, &ecdsa_context.MBEDTLS_PRIVATE(Q), &r, &s);
+    if (ret != 0) {
+        goto exit;
+    }
+
     err = ESP_OK;
 
 exit:
-    if (key_id) {
-        psa_destroy_key(key_id);
-    }
-    psa_reset_key_attributes(&key_attributes);
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+    mbedtls_ecdsa_free(&ecdsa_context);
+
     return err;
 }
 
@@ -144,10 +166,8 @@ static int get_msg_sha256(int argc, char **argv)
     const char *msg = (const char *)cmd_get_msg_sha256_args.msg->sval[0];
 
     uint8_t msg_digest[SHA256_DIGEST_SZ];
-    size_t msg_len = strlen(msg);
-    size_t digest_len = 0;
-    psa_status_t status = psa_hash_compute(PSA_ALG_SHA_256, (const uint8_t *)msg, msg_len, msg_digest, sizeof(msg_digest), &digest_len);
-    if (status != PSA_SUCCESS) {
+    int ret = mbedtls_sha256((const unsigned char *)msg, strlen(msg), msg_digest, false);
+    if (ret != 0) {
         ESP_LOGE(TAG, "Failed to calculate message hash!");
         return ESP_FAIL;
     }
@@ -204,7 +224,7 @@ static int tee_sec_stg_gen_key(int argc, char **argv)
 
     err = esp_tee_sec_storage_clear_key(cfg.id);
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
-        ESP_LOGE(TAG, "Failed to clear key %s!", cfg.id);
+        ESP_LOGE(TAG, "Failed to clear key %d!", cfg.id);
         goto exit;
     }
 
@@ -349,7 +369,6 @@ static int tee_sec_stg_encrypt(int argc, char **argv)
 
     esp_err_t err = ESP_FAIL;
     uint8_t tag[AES256_GCM_TAG_LEN];
-    uint8_t iv[AES256_GCM_IV_LEN];
     const char *key_id = (const char *)tee_sec_stg_encrypt_args.key_str_id->sval[0];
 
     const char *plaintext = tee_sec_stg_encrypt_args.plaintext->sval[0];
@@ -386,7 +405,7 @@ static int tee_sec_stg_encrypt(int argc, char **argv)
         .input_len = plaintext_buf_len
     };
 
-    err = esp_tee_sec_storage_aead_encrypt(&ctx, iv, sizeof(iv), tag, sizeof(tag), ciphertext_buf);
+    err = esp_tee_sec_storage_aead_encrypt(&ctx, tag, sizeof(tag), ciphertext_buf);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to encrypt data: %s", esp_err_to_name(err));
         goto exit;
@@ -402,11 +421,7 @@ static int tee_sec_stg_encrypt(int argc, char **argv)
     char tag_hexstr[AES256_GCM_TAG_LEN * 2 + 1];
     hexbuf_to_hexstr(tag, sizeof(tag), tag_hexstr, sizeof(tag_hexstr));
 
-    char iv_hexstr[AES256_GCM_IV_LEN * 2 + 1];
-    hexbuf_to_hexstr(iv, sizeof(iv), iv_hexstr, sizeof(iv_hexstr));
-
     ESP_LOGI(TAG, "Ciphertext -\n%s", ciphertext);
-    ESP_LOGI(TAG, "IV -\n%s", iv_hexstr);
     ESP_LOGI(TAG, "Tag -\n%s", tag_hexstr);
 
     free(plaintext_buf);
@@ -437,7 +452,6 @@ void register_srv_sec_stg_encrypt(void)
 static struct {
     struct arg_str *key_str_id;
     struct arg_str *ciphertext;
-    struct arg_str *iv;
     struct arg_str *tag;
     struct arg_end *end;
 } tee_sec_stg_decrypt_args;
@@ -452,10 +466,6 @@ static int tee_sec_stg_decrypt(int argc, char **argv)
 
     esp_err_t err = ESP_FAIL;
     const char *key_id = (const char *)tee_sec_stg_decrypt_args.key_str_id->sval[0];
-
-    const char *iv_hexstr = tee_sec_stg_decrypt_args.iv->sval[0];
-    uint8_t iv[AES256_GCM_IV_LEN];
-    hexstr_to_hexbuf(iv_hexstr, strlen(iv_hexstr), iv, sizeof(iv));
 
     const char *tag_hexstr = tee_sec_stg_decrypt_args.tag->sval[0];
     uint8_t tag[AES256_GCM_TAG_LEN];
@@ -495,7 +505,7 @@ static int tee_sec_stg_decrypt(int argc, char **argv)
         .input_len = ciphertext_buf_len
     };
 
-    err = esp_tee_sec_storage_aead_decrypt(&ctx, iv, sizeof(iv), tag, sizeof(tag), plaintext_buf);
+    err = esp_tee_sec_storage_aead_decrypt(&ctx, tag, sizeof(tag), plaintext_buf);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to decrypt data: %s", esp_err_to_name(err));
         goto exit;
@@ -522,9 +532,8 @@ void register_srv_sec_stg_decrypt(void)
 {
     tee_sec_stg_decrypt_args.key_str_id = arg_str1(NULL, NULL, "<key_id>", "TEE Secure storage key ID");
     tee_sec_stg_decrypt_args.ciphertext = arg_str1(NULL, NULL, "<ciphertext>", "Ciphertext to be decrypted");
-    tee_sec_stg_decrypt_args.iv = arg_str1(NULL, NULL, "<iv>", "AES-GCM initialization vector");
     tee_sec_stg_decrypt_args.tag = arg_str1(NULL, NULL, "<tag>", "AES-GCM authentication tag");
-    tee_sec_stg_decrypt_args.end = arg_end(4);
+    tee_sec_stg_decrypt_args.end = arg_end(3);
 
     const esp_console_cmd_t tee_sec_stg = {
         .command = "tee_sec_stg_decrypt",

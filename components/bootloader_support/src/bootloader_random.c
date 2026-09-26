@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2010-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2010-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,9 +7,11 @@
 #include "esp_log.h"
 #include "bootloader_random.h"
 #include "esp_cpu.h"
-#include "hal/rng_ll.h"
+#include "soc/wdev_reg.h"
 
-#include "hal/rtc_timer_hal.h"
+#if SOC_LP_TIMER_SUPPORTED
+#include "hal/lp_timer_hal.h"
+#endif
 
 #ifndef BOOTLOADER_BUILD
 #include "esp_random.h"
@@ -45,17 +47,17 @@
     assert(buffer != NULL);
 
     for (size_t i = 0; i < length; i++) {
-#if !SOC_RTC_TIMER_V1
-        random = rng_ll_read_data();
+#if SOC_LP_TIMER_SUPPORTED
+        random = REG_READ(WDEV_RND_REG);
         start = esp_cpu_get_cycle_count();
         do {
-            random ^= rng_ll_read_data();
+            random ^= REG_READ(WDEV_RND_REG);
             now = esp_cpu_get_cycle_count();
         } while (now - start < RNG_CPU_WAIT_CYCLE_NUM);
 
         // XOR the RT slow clock, which is asynchronous, to add some entropy and improve
         // the distribution
-        uint32_t current_rtc_timer_counter = (rtc_timer_hal_get_cycle_count(0) & 0xFF);
+        uint32_t current_rtc_timer_counter = (lp_timer_hal_get_cycle_count() & 0xFF);
         random = random ^ current_rtc_timer_counter;
 
         buffer_bytes[i] = random & 0xFF;
@@ -68,10 +70,10 @@
                as-is, we repeatedly read the RNG register and XOR all
                values.
             */
-            random = rng_ll_read_data();
+            random = REG_READ(WDEV_RND_REG);
             start = esp_cpu_get_cycle_count();
             do {
-                random ^= rng_ll_read_data();
+                random ^= REG_READ(WDEV_RND_REG);
                 now = esp_cpu_get_cycle_count();
             } while (now - start < RNG_CPU_WAIT_CYCLE_NUM);
         }

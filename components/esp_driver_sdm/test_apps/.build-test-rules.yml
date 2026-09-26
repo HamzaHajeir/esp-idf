@@ -7,5 +7,3 @@ components/esp_driver_sdm/test_apps/sigma_delta:
     - esp_driver_gpio
     - esp_driver_sdm
     - esp_hal_gpio
-    - esp_hw_support
-    - soc

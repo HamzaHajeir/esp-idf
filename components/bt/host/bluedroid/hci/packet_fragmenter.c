@@ -37,7 +37,6 @@
 #define START_PACKET_BOUNDARY 2
 #define CONTINUATION_PACKET_BOUNDARY 1
 #define L2CAP_HEADER_SIZE       4
-#define L2CAP_LENGTH_SIZE       2
 
 // TODO(zachoverflow): find good value for this
 #define NUMBER_OF_BUCKETS 42
@@ -73,18 +72,12 @@ static void fragment_and_dispatch(BT_HDR *packet)
     uint16_t continuation_handle;
     uint16_t max_data_size, max_packet_size, remaining_length;
     uint16_t event = packet->event & MSG_EVT_MASK;
-    uint8_t *stream;
+    uint8_t *stream = packet->data + packet->offset;
 
     assert(packet != NULL);
-    stream = packet->data + packet->offset;
 
     // We only fragment ACL packets
     if (event != MSG_STACK_TO_HC_HCI_ACL) {
-        callbacks->fragmented(packet, true);
-        return;
-    }
-    if (packet->len < HCI_ACL_PREAMBLE_SIZE) {
-        HCI_TRACE_ERROR("ACL packet too short for preamble (len=%u)", packet->len);
         callbacks->fragmented(packet, true);
         return;
     }
@@ -150,15 +143,9 @@ static void reassemble_and_dispatch(BT_HDR *packet)
         uint16_t l2cap_length;
         uint16_t acl_length __attribute__((unused));
 
-        /* All ACL packets need at least the 4-byte HCI ACL preamble (handle + length) */
-        if (packet->len < HCI_ACL_PREAMBLE_SIZE) {
-            HCI_TRACE_ERROR("ACL packet too short (len=%u)\n", packet->len);
-            osi_free(packet);
-            return;
-        }
-
         STREAM_TO_UINT16(handle, stream);
         STREAM_TO_UINT16(acl_length, stream);
+        STREAM_TO_UINT16(l2cap_length, stream);
 
         assert(acl_length == packet->len - HCI_ACL_PREAMBLE_SIZE);
 
@@ -174,18 +161,6 @@ static void reassemble_and_dispatch(BT_HDR *packet)
                 osi_free(partial_packet);
             }
 
-            /* START packets must also contain the L2CAP header (length field) */
-            if (packet->len < HCI_ACL_PREAMBLE_SIZE + L2CAP_LENGTH_SIZE) {
-                HCI_TRACE_ERROR("ACL START packet too short for L2CAP header (len=%u)\n", packet->len);
-                osi_free(packet);
-                return;
-            }
-
-            STREAM_TO_UINT16(l2cap_length, stream);
-            /* A zero-length L2CAP information payload is valid per Core Spec v6.2
-             * Vol 3 Part A 3.1 (B-frame payload is 0..65535 octets); do not drop
-             * it. The downstream length math handles l2cap_length == 0 correctly
-             * (full_length == header-only == 8). */
             /* Check for integer overflow in length calculation */
             if (l2cap_length > (UINT16_MAX - L2CAP_HEADER_SIZE - HCI_ACL_PREAMBLE_SIZE)) {
                 HCI_TRACE_ERROR("L2CAP length too large: %u", l2cap_length);

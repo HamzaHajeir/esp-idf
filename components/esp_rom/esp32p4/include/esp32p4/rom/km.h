@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,6 +8,7 @@
 #define _KM_H
 
 #include "soc/soc_caps.h"
+#if SOC_KEY_MANAGER_SUPPORTED
 
 #include <stdint.h>
 #include "soc/soc.h"
@@ -56,6 +57,7 @@ int esp_rom_km_huk_risk(void);
 
 #ifdef __cplusplus
 }
+#endif
 #endif
 
 #endif /* _KM_H */

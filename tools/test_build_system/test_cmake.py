@@ -1,11 +1,10 @@
-# SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import json
 import logging
 import os
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,36 +19,24 @@ from test_build_system_helpers import run_cmake_and_build
 from test_build_system_helpers import run_idf_py
 
 
-# This test verifies ESP-IDF can be used as a library in custom CMake projects.
-# We use cmake configure only (not full build) and test representative targets from each arch.
+# This test checks multiple targets in one test function. It would be better to have each target
+# tested in a isolated test case, but that would mean doing idf_copy each time, and copying takes most of the time
 @pytest.mark.usefixtures('idf_copy')
-def test_build_custom_cmake_project(test_app_copy: Path, request: pytest.FixtureRequest) -> None:
+def test_build_custom_cmake_project(test_app_copy: Path) -> None:
+    # Test is compatible with any target. Random targets in the list are selected for performance reasons
     idf_path = Path(os.environ['IDF_PATH'])
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        idf_as_lib_path = idf_path / 'examples' / 'build_system' / 'cmakev2' / 'features' / 'idf_as_lib'
-        base_cmake_args = ['-G', 'Ninja', '-DESP_PLATFORM=1']
-        target_var = 'IDF_TARGET'
-    else:
-        idf_as_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'
-        base_cmake_args = ['-G', 'Ninja']
-        target_var = 'TARGET'
-
-    # Test representative targets: Xtensa (esp32), RISC-V (esp32c3), and newest (esp32p4)
-    for target in ['esp32', 'esp32c3', 'esp32p4']:
-        logging.info(f'Test CMake configuration of ESP-IDF as a library for {target}')
-        # Use run_cmake (configure only) - compile_commands.json is generated during configure
-        run_cmake(
-            str(idf_as_lib_path),
-            *base_cmake_args,
+    for target in ['esp32', 'esp32c2', 'esp32c3', 'esp32c6', 'esp32h2', 'esp32p4', 'esp32s2', 'esp32s3']:
+        logging.info(f'Test build ESP-IDF as a library to a custom CMake projects for {target}')
+        run_cmake_and_build(
+            str(idf_path / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'),
+            '-G',
+            'Ninja',
             '-DCMAKE_TOOLCHAIN_FILE={}'.format(idf_path / 'tools' / 'cmake' / f'toolchain-{target}.cmake'),
-            f'-D{target_var}={target}',
+            f'-DTARGET={target}',
         )
         assert file_contains((test_app_copy / 'build' / 'compile_commands.json'), '"command"')
         shutil.rmtree(test_app_copy / 'build')
-        sdkconfig = idf_as_lib_path / 'sdkconfig'
-        if sdkconfig.exists():
-            sdkconfig.unlink()
+        os.remove(idf_path / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib' / 'sdkconfig')
 
 
 @pytest.mark.skipif(
@@ -58,25 +45,16 @@ def test_build_custom_cmake_project(test_app_copy: Path, request: pytest.Fixture
 )
 @pytest.mark.usefixtures('idf_copy')
 @pytest.mark.usefixtures('test_app_copy')
-def test_build_custom_cmake_project_host(request: pytest.FixtureRequest) -> None:
+def test_build_custom_cmake_project_host() -> None:
     logging.info('Test build ESP-IDF as a library to a custom CMake projects for host')
     idf_path = Path(os.environ['IDF_PATH'])
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        idf_as_lib_path = idf_path / 'examples' / 'build_system' / 'cmakev2' / 'features' / 'idf_as_lib'
-    else:
-        idf_as_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'
-    run_cmake_and_build(str(idf_as_lib_path), '-G', 'Ninja')
+    run_cmake_and_build(str(idf_path / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'), '-G', 'Ninja')
 
 
-def test_build_cmake_library_with_toolchain_flags(test_app_copy: Path, request: pytest.FixtureRequest) -> None:
+@pytest.mark.buildv2_skip('import_lib example uses cmakev1, not yet updated for buildv2 (IDF-14185)')
+def test_build_cmake_library_with_toolchain_flags(test_app_copy: Path) -> None:
     logging.info('Building a project with CMake library imported with modified toolchain flags')
     idf_path = Path(os.environ['IDF_PATH'])
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        import_lib_path = idf_path / 'examples' / 'build_system' / 'cmakev2' / 'features' / 'import_lib'
-    else:
-        import_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'import_lib'
     # Enable Picolibc to verify that all flags are passed correctly to the external project.
     # In case something is missing, the build will fail on linking stage.
     # Note: To enable Picolibc, IDF_EXPERIMENTAL_FEATURES must also be set for now.
@@ -84,76 +62,13 @@ def test_build_cmake_library_with_toolchain_flags(test_app_copy: Path, request: 
         '\n'.join(['CONFIG_IDF_EXPERIMENTAL_FEATURES=y', 'CONFIG_LIBC_PICOLIBC=y'])
     )
 
+    import_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'import_lib'
     run_cmake_and_build(
         str(import_lib_path),
         '-G',
         'Ninja',
         f'-DSDKCONFIG_DEFAULTS={import_lib_path / "sdkconfig.defaults"};{test_app_copy / "sdkconfig.defaults"}',
     )
-
-
-def _run_cmake_from_dir(cmd: list[str], cwd: Path) -> None:
-    logging.debug('running {} in {}'.format(' '.join(cmd), cwd))
-    try:
-        subprocess.run(
-            cmd,
-            cwd=cwd,
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='backslashreplace',
-        )
-    except subprocess.CalledProcessError as e:
-        logging.error('The following cmake command has failed: {}'.format(' '.join(cmd)))
-        logging.error(f'Working directory: {cwd}')
-        logging.error(f'Stdout: {e.stdout}')
-        logging.error(f'Stderr: {e.stderr}')
-        raise
-
-
-@pytest.mark.skipif(
-    sys.platform == 'win32',
-    reason='Symlink build directories are not exercised on Windows CI runners',
-)
-def test_build_cmake_library_symlink_build_dir(test_app_copy: Path, request: pytest.FixtureRequest) -> None:
-    """Reconfigure import_lib with CMAKE_BINARY_DIR as realpath then as a symlink.
-
-    First configure uses -B <physical dir> so CMAKE_C_FLAGS records
-    @<realpath>/toolchain/cflags. Second uses -B <symlink> so
-    IDF_TOOLCHAIN_BUILD_DIR keeps the symlink spelling. Without REALPATH
-    normalization, add_flags does not recognize the cached @ref and writes it
-    into the response file (gcc then recurses).
-
-    import_lib's ExternalProject also passes -DCMAKE_TOOLCHAIN_FILE, which is
-    the same path-mismatch surface as a nested IDF/external cmake.
-    """
-    logging.info('Configuring import_lib with realpath then symlink build dir')
-    idf_path = Path(os.environ['IDF_PATH'])
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        import_lib_path = idf_path / 'examples' / 'build_system' / 'cmakev2' / 'features' / 'import_lib'
-    else:
-        import_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'import_lib'
-
-    real_build = test_app_copy / 'build_real'
-    real_build.mkdir()
-    link_build = test_app_copy / 'build'
-    link_build.symlink_to(real_build.resolve(), target_is_directory=True)
-
-    # Do not use run_cmake() as cwd: chdir into a symlink makes Linux getcwd()
-    # return the physical path, which hides the second-configure spelling.
-    cmake_base = ['cmake', '-G', 'Ninja', '-S', str(import_lib_path)]
-    _run_cmake_from_dir(cmake_base + ['-B', str(real_build)], test_app_copy)
-    _run_cmake_from_dir(cmake_base + ['-B', str(link_build)], test_app_copy)
-
-    # Response files must not contain @refs (recursion into toolchain response files).
-    toolchain_dir = link_build / 'toolchain'
-    for resp_name in ('cflags', 'cxxflags', 'asmflags', 'ldflags'):
-        resp_file = toolchain_dir / resp_name
-        assert resp_file.is_file(), f'missing response file {resp_file}'
-        for line in resp_file.read_text(encoding='utf-8').splitlines():
-            assert not line.startswith('@'), f'recursive @response-file ref in {resp_name}: {line}'
 
 
 def check_flag_in_compile_commands(build_dir: Path, flag_to_find: str) -> None:
@@ -188,37 +103,22 @@ def check_flag_in_compile_commands(build_dir: Path, flag_to_find: str) -> None:
                 assert False, f'{flag_to_find} not found in {command}'
 
 
-def test_build_cmake_library_psram_workaround(test_app_copy: Path, request: pytest.FixtureRequest) -> None:
+@pytest.mark.buildv2_skip('import_lib example uses cmakev1, not yet updated for buildv2 (IDF-14185)')
+def test_build_cmake_library_psram_workaround(test_app_copy: Path) -> None:
     logging.info(
         'Building a project with CMake library imported and PSRAM workaround, all files compile with workaround'
     )
     idf_path = Path(os.environ['IDF_PATH'])
-    is_buildv2 = request.config.getoption('buildv2', False)
     (test_app_copy / 'sdkconfig.defaults').write_text(
         '\n'.join(['CONFIG_SPIRAM=y', 'CONFIG_SPIRAM_CACHE_WORKAROUND=y'])
     )
-    if is_buildv2:
-        # Use buildv2_test_app and add esp_psram via CMakeLists placeholder
-        replace_in_file(
-            test_app_copy / 'main' / 'CMakeLists.txt',
-            '# placeholder_inside_idf_component_register',
-            'REQUIRES esp_psram',
-        )
-        run_cmake(
-            '..',
-            '-G',
-            'Ninja',
-            '-DSDKCONFIG_DEFAULTS={}'.format(test_app_copy / 'sdkconfig.defaults'),
-        )
-    else:
-        import_lib_path = idf_path / 'examples' / 'build_system' / 'cmake' / 'import_lib'
-        run_cmake(
-            '-G',
-            'Ninja',
-            '-DCOMPONENTS=main;esp_psram',
-            '-DSDKCONFIG_DEFAULTS={}'.format(test_app_copy / 'sdkconfig.defaults'),
-            str(import_lib_path),
-        )
+    run_cmake(
+        '-G',
+        'Ninja',
+        '-DCOMPONENTS=main;esp_psram',
+        '-DSDKCONFIG_DEFAULTS={}'.format(test_app_copy / 'sdkconfig.defaults'),
+        str(idf_path / 'examples' / 'build_system' / 'cmake' / 'import_lib'),
+    )
     check_flag_in_compile_commands(test_app_copy, '-mfix-esp32-psram-cache-issue')
 
 
@@ -247,60 +147,38 @@ def test_build_cmake_library_psram_strategies(idf_py: IdfPyFunc, test_app_copy: 
         (test_app_copy / 'sdkconfig').unlink()
 
 
-def test_defaults_unspecified_build_args(idf_copy: Path, request: pytest.FixtureRequest) -> None:
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        logging.info('PROJECT_DIR set correctly by build system v2')
-        idf_as_lib_path = idf_copy / 'examples' / 'build_system' / 'cmakev2' / 'features' / 'idf_as_lib'
-        cmake_args = [
-            '..',
-            '-G',
-            'Ninja',
-            '-DCMAKE_TOOLCHAIN_FILE={}'.format(str(idf_copy / 'tools' / 'cmake' / 'toolchain-esp32.cmake')),
-            '-DESP_PLATFORM=1',
-            '-DIDF_TARGET=esp32',
-        ]
-    else:
-        logging.info('Defaults set properly for unspecified idf_build_process args')
-        idf_as_lib_path = idf_copy / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'
-        cmake_args = [
-            '..',
-            '-G',
-            'Ninja',
-            '-DCMAKE_TOOLCHAIN_FILE={}'.format(str(idf_copy / 'tools' / 'cmake' / 'toolchain-esp32.cmake')),
-            '-DTARGET=esp32',
-        ]
+def test_defaults_unspecified_build_args(idf_copy: Path) -> None:
+    logging.info('Defaults set properly for unspecified idf_build_process args')
+    idf_as_lib_path = idf_copy / 'examples' / 'build_system' / 'cmake' / 'idf_as_lib'
     append_to_file(
         idf_as_lib_path / 'CMakeLists.txt',
         '\n'.join(['idf_build_get_property(project_dir PROJECT_DIR)', 'message("Project directory: ${project_dir}")']),
     )
-    ret = run_cmake(*cmake_args, workdir=idf_as_lib_path)
+    ret = run_cmake(
+        '..',
+        '-G',
+        'Ninja',
+        '-DCMAKE_TOOLCHAIN_FILE={}'.format(str(idf_copy / 'tools' / 'cmake' / 'toolchain-esp32.cmake')),
+        '-DTARGET=esp32',
+        workdir=idf_as_lib_path,
+    )
     assert f'Project directory: {str(idf_as_lib_path.as_posix())}' in ret.stderr
 
 
-def test_build_example_on_host(default_idf_env: EnvDict, request: pytest.FixtureRequest) -> None:
+def test_build_example_on_host(default_idf_env: EnvDict) -> None:
     logging.info('Test if it can build the example to run on host')
     idf_path = Path(default_idf_env.get('IDF_PATH'))
-    is_buildv2 = request.config.getoption('buildv2', False)
-    if is_buildv2:
-        idf_as_lib_path = Path(idf_path, 'examples', 'build_system', 'cmakev2', 'features', 'idf_as_lib')
-        cmake_configure_args = [
-            '..',
-            f'-DCMAKE_TOOLCHAIN_FILE={idf_path}/tools/cmake/toolchain-esp32.cmake',
-            '-DESP_PLATFORM=1',
-            '-DIDF_TARGET=esp32',
-            '-GNinja',
-        ]
-    else:
-        idf_as_lib_path = Path(idf_path, 'examples', 'build_system', 'cmake', 'idf_as_lib')
-        cmake_configure_args = [
-            '..',
-            f'-DCMAKE_TOOLCHAIN_FILE={idf_path}/tools/cmake/toolchain-esp32.cmake',
-            '-DTARGET=esp32',
-            '-GNinja',
-        ]
+    idf_as_lib_path = Path(idf_path, 'examples', 'build_system', 'cmake', 'idf_as_lib')
     try:
-        run_cmake(*cmake_configure_args, workdir=idf_as_lib_path)
+        target = 'esp32'
+        run_cmake(
+            '..',
+            f'-DCMAKE_TOOLCHAIN_FILE={idf_path}/tools/cmake/toolchain-{target}.cmake',
+            f'-DTARGET={target}',
+            '-GNinja',
+            workdir=idf_as_lib_path,
+        )
+
         run_cmake('--build', '.', workdir=idf_as_lib_path)
     finally:
         shutil.rmtree(idf_as_lib_path / 'build', ignore_errors=True)
@@ -351,9 +229,7 @@ def test_cmake_preset_basic_functionality(test_app_copy: Path, default_idf_env: 
 
     # Test default preset auto-selection
     ret = run_idf_py('reconfigure')
-    # This informational note is emitted via the shared esp_pylib logger's note(), which writes
-    # to stdout (warnings/errors go to stderr).
-    assert "CMake presets file found but no preset name given; using 'default' preset" in ret.stdout
+    assert "CMake presets file found but no preset name given; using 'default' preset" in ret.stderr
     assert (test_app_copy / 'build' / 'default').is_dir()
     assert (test_app_copy / 'build' / 'default' / 'sdkconfig').is_file()
     # Verify that sdkconfig is NOT in the project root, even when no preset is specified but auto-selected
@@ -505,14 +381,3 @@ def test_cmake_preset_sdkconfig_defaults_integration(test_app_copy: Path) -> Non
     sdkconfig_content = sdkconfig_path.read_text()
     assert 'CONFIG_LWIP_IPV6=y' in sdkconfig_content
     assert 'CONFIG_ESP_TASK_WDT_TIMEOUT_S=15' in sdkconfig_content
-
-
-def test_cmake_llvm_optimizations_framework(idf_copy: Path) -> None:
-    logging.info('Test CMake configuration of the LLVM optimization framework')
-    test_project = idf_copy / 'tools' / 'cmake' / 'tests' / 'llvm_optimizations'
-    # The standalone test project fakes the compiler ID and CONFIG_* variables to
-    # verify component/source scope flag selection, custom options, non-leakage
-    # to unselected sources, exported IDF_LLVM_OPT_* for stock CMake, and the
-    # non-Clang no-op. run_cmake raises on failure.
-    # Windows runners default to NMake; nmake is absent. Ninja is on PATH.
-    run_cmake(str(test_project), '-G', 'Ninja')

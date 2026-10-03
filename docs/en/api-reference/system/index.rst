@@ -9,9 +9,7 @@ System API
     app_image_format
     bootloader_image_format
     app_trace
-    esp_trace
     esp_function_with_shared_stack
-    :SOC_CACHE_CNT_SUPPORTED: cache_cnt
     chip_revision
     console
     efuse
@@ -39,6 +37,7 @@ System API
     sleep_modes
     soc_caps
     system_time
+    :SOC_ASYNC_MEMCPY_SUPPORTED: async_memcpy
     :esp32: himem
     ulp
     wdts

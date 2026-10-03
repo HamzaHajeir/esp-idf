@@ -6,8 +6,7 @@ menu "FreeRTOS"
 
         config FREERTOS_SMP
             bool "Run the Amazon SMP FreeRTOS kernel instead (FEATURE UNDER DEVELOPMENT)"
-            # TODO: IDF-8113: Enable support on all targets
-            depends on IDF_TARGET_ESP32
+            depends on !IDF_TARGET_ESP32P4 && !IDF_TARGET_ESP32H4  #TODO: IDF-8113: Enable P4/H4 support on AMZ SMP
             default  "n"
             help
                 Amazon has released an SMP version of the FreeRTOS Kernel which can be found via the following link:
@@ -24,6 +23,7 @@ menu "FreeRTOS"
         config FREERTOS_UNICORE
             # Todo: Replace with CONFIG_NUMBER_OF_CORES (IDF-9156)
             bool "Run FreeRTOS only on first core"
+            default "y" if IDF_TARGET_ESP32S2 || IDF_TARGET_LINUX
             select ESP_SYSTEM_SINGLE_CORE_MODE
             help
                 This version of FreeRTOS normally takes control of all cores of the CPU. Select this if you only want
@@ -331,17 +331,12 @@ menu "FreeRTOS"
                 when no tasks need to run. To skip unnecessary wake-up initialize a timer with the
                 "skip_unhandled_events" option as true.
 
-                While the OS tick interrupt is suppressed during tickless idle, tick hooks are not invoked
-                for those suppressed ticks. This applies to esp_register_freertos_tick_hook() callbacks and
-                to configUSE_TICK_HOOK.
-
                 If disabled, automatic light sleep support will be disabled.
 
         config FREERTOS_IDLE_TIME_BEFORE_SLEEP
             # Todo: Rename to CONFIG_FREERTOS_EXPECTED_IDLE_TIME_BEFORE_SLEEP (IDF-4986)
             int "configEXPECTED_IDLE_TIME_BEFORE_SLEEP"
             depends on FREERTOS_USE_TICKLESS_IDLE
-            default 8 if !PM_SLP_IRAM_OPT && (FREERTOS_HZ > 200)
             default 3
             range 2 4294967295
             # Minimal value is 2 because of a check in FreeRTOS.h (search configEXPECTED_IDLE_TIME_BEFORE_SLEEP)
@@ -421,11 +416,14 @@ menu "FreeRTOS"
                 hook function in their application.
 
         config FREERTOS_CHECK_MUTEX_GIVEN_BY_OWNER
-            # TODO(IDF-15523): Remove this hidden compatibility option entirely.
-            # This feature is innately supported in FreeRTOS SMP, and IDF FreeRTOS always enables it.
+            # This feature is innately supported in FreeRTOS SMP, and hence not available as a config option when
+            # FreeRTOS SMP is enabled.
             depends on !FREERTOS_SMP
-            bool
+            bool "Check that mutex semaphore is given by owner task"
             default y
+            help
+                If enabled, assert that when a mutex semaphore is given, the task giving the semaphore is the task
+                which is currently holding the mutex.
 
         config FREERTOS_ISR_STACKSIZE
             int "ISR stack size"
@@ -570,21 +568,6 @@ menu "FreeRTOS"
                 If enabled, context of port*_CRITICAL calls (ISR or Non-ISR) would be checked to be in compliance with
                 Vanilla FreeRTOS. e.g Calling port*_CRITICAL from ISR context would cause assert failure
 
-        config FREERTOS_PORT_THREAD_SAFE_CLAIM
-            bool "Enable xPortThreadSafeClaim/xPortThreadSafeDisclaim APIs"
-            default y if SOC_BRANCH_PREDICTOR_SUPPORTED
-            default n
-            help
-                Enables the xPortThreadSafeClaim() and xPortThreadSafeDisclaim() APIs, which allow a caller to
-                declare that it has already ensured thread safety (e.g. by disabling interrupts and stalling all
-                other cores), causing subsequent vPortEnterCritical/vPortExitCritical calls to become no-ops for
-                the duration of the claim.
-
-                This feature adds a branch check to every port-layer critical-section enter/exit path. On chips
-                with a hardware branch predictor (SOC_BRANCH_PREDICTOR_SUPPORTED) the branch is predicted-not-taken
-                and has negligible overhead. On older chips without a branch predictor the branch has a measurable
-                per-critical-section cost, so this option defaults to disabled.
-
     endmenu # Port
 
     menu "Extra"
@@ -611,30 +594,6 @@ menu "FreeRTOS"
                 If you have a task that needs a large amount of stack and does not call on ROM code in any way
                 (no direct calls, but also no Bluetooth/WiFi), you can try enable this to
                 cause xTaskCreateStatic to allow tasks stack in external memory.
-
-        config FREERTOS_PLACE_TASK_STACKS_IN_EXT_RAM
-            bool "Place dynamic task stacks in PSRAM by default"
-            depends on FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
-            default n
-            help
-                When enabled, task stacks allocated by xTaskCreate() / xTaskCreatePinnedToCore() are
-                placed in PSRAM (with internal RAM as fallback). TCBs are still allocated from internal RAM.
-
-                Restrictions that still require user attention:
-
-                - Flash operations cannot be called from tasks a PSRAM stack as they will
-                  run while cache is disabled. This includes all filesystem access and NVS.
-                  The recommended approach here is to use esp-flash-dispatcher,
-
-                  idf.py add-dependency "espressif/esp_flash_dispatcher"
-
-                  which automatically routes all flash API calls to a dedicated task
-                  placed in internal RAM.
-                - Deep-sleep requests issued from a task with a PSRAM stack are rejected at runtime. Auto-light-sleep
-                  is unaffected because it runs from the idle task, whose stack is always in internal RAM.
-                - Components that spawn tasks via xTaskCreate and require cache-disabled-safe stacks
-                  should use xTaskCreateWithCaps(..., MALLOC_CAP_INTERNAL) instead.
-                - xTaskCreateStatic is unaffected; the caller always decides where the stack lives.
 
     endmenu  # Extra
 

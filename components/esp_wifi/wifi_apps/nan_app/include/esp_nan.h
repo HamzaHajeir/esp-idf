@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,10 +21,6 @@ extern "C" {
     .master_pref = 2, \
     .scan_time = 3, \
     .warm_up_sec = 5, \
-    .disable_random_mac = false, \
-    .reset_current_nvs_creds = false, \
-    .use_nvs_for_caching = false, \
-    .group_mgmt_prot = false, \
 };
 
 #define NDP_STATUS_ACCEPTED     1
@@ -33,22 +29,6 @@ extern "C" {
 #define NAN_MAX_PEERS_RECORD    15
 #define ESP_NAN_PUBLISH         2
 #define ESP_NAN_SUBSCRIBE       1
-#ifndef NAN_IPV6_IDENTIFIER_LEN
-#define NAN_IPV6_IDENTIFIER_LEN    8
-#endif
-
-#define IS_ZERO_NAN_IPV6_IDENTIFIER(a)   (!((a)[0] | (a)[1] | (a)[2] | (a)[3] | \
-                                     (a)[4] | (a)[5] | (a)[6] | (a)[7]))
-
-#define ESP_NAN_SET_IPV6_LINKLOCAL_FROM_IDENTIFIER(_target_addr, _identifier) \
-    do {                                                                       \
-        (_target_addr).type = IPADDR_TYPE_V6;                                  \
-        (_target_addr).u_addr.ip6.addr[0] = htonl(0xFE800000);                 \
-        (_target_addr).u_addr.ip6.addr[1] = 0;                                 \
-        memcpy(&(_target_addr).u_addr.ip6.addr[2],                             \
-               (_identifier),                                                   \
-               NAN_IPV6_IDENTIFIER_LEN);                                       \
-    } while (0)
 
 /** Parameters of a peer service record */
 struct nan_peer_record {
@@ -90,7 +70,7 @@ esp_err_t esp_wifi_nan_sync_stop(void);
   *
   * @attention  This API should be called by the Subscriber after a match occurs with a Publisher.
   *
-  * @param      req  NAN Datapath Request parameters
+  * @param      req  NAN Datapath Request parameters.
   *
   * @return
   *    - non-zero NAN Datapath identifier: If NAN datapath req was accepted by publisher
@@ -104,7 +84,7 @@ uint8_t esp_wifi_nan_datapath_req(wifi_nan_datapath_req_t *req);
   * @attention  This API should be called if ndp_resp_needed is set 1 in wifi_nan_publish_cfg_t and
   *             a WIFI_EVENT_NDP_INDICATION event is received due to an incoming NDP request.
   *
-  * @param      resp  NAN Datapath Response parameters
+  * @param      resp  NAN Datapath Response parameters.
   *
   * @return
   *    - ESP_OK: succeed

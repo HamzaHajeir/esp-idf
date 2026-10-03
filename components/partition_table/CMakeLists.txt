@@ -134,12 +134,7 @@ if(${target} STREQUAL "linux" AND EXISTS ${partition_csv})
     # target. This is a hack, since that target name is an implementation detail
     # of the build system.
 
-    if(IDF_BUILD_V2)
-        # Build system v2 does not support __idf_build_target target, so add to ALL target.
-        add_custom_target(partition-table-linux-build ALL DEPENDS partition-table)
-    else()
-        add_dependencies(__idf_build_target partition-table)
-    endif()
+    add_dependencies(__idf_build_target partition-table)
 endif()
 
 # Add signing steps

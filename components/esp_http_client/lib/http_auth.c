@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,12 +18,9 @@
 
 #include "http_utils.h"
 #include "http_auth.h"
-
-#include "psa/crypto.h"
+#include "http_crypto.h"
 
 #define MD5_MAX_LEN (33)
-#define SHA256_LEN (32)
-#define SHA256_HEX_LEN (65)
 #define HTTP_AUTH_BUF_LEN (1024)
 
 static const char *TAG = "HTTP_AUTH";
@@ -73,6 +70,7 @@ static int md5_printf(char *md, const char *fmt, ...)
  */
 static int sha256_sprintf(char *sha, const char *fmt, ...)
 {
+
     unsigned char *buf;
     unsigned char digest[SHA256_LEN];
     int len, i;
@@ -85,22 +83,9 @@ static int sha256_sprintf(char *sha, const char *fmt, ...)
     }
 
     int ret = 0;
-    psa_status_t status;
-    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
 
-    status = psa_hash_setup(&operation, PSA_ALG_SHA_256);
-    if (status != PSA_SUCCESS) {
-        goto exit;
-    }
-
-    status = psa_hash_update(&operation, buf, len);
-    if (status != PSA_SUCCESS) {
-        goto exit;
-    }
-
-    size_t hash_length;
-    status = psa_hash_finish(&operation, digest, sizeof(digest), &hash_length);
-    if (status != PSA_SUCCESS || hash_length != SHA256_LEN) {
+    esp_err_t err = http_crypto_sha256(buf, len, digest);
+    if (err != ESP_OK) {
         goto exit;
     }
 
@@ -112,7 +97,6 @@ static int sha256_sprintf(char *sha, const char *fmt, ...)
 
 exit:
     free(buf);
-    psa_hash_abort(&operation);
     va_end(ap);
     return ret;
 }
@@ -157,7 +141,8 @@ char *http_auth_digest(const char *username, const char *password, esp_http_auth
 
     ESP_LOGD(TAG, "%s %s %s %s", "Digest", username, auth_data->realm, password);
     if ((strcasecmp(auth_data->algorithm, "md5-sess") == 0) ||
-            (strcasecmp(auth_data->algorithm, "SHA-256-sess") == 0)) {
+            (strcasecmp(auth_data->algorithm, "SHA256") == 0) ||
+            (strcasecmp(auth_data->algorithm, "SHA-256") == 0)) {
         if (digest_func(ha1, "%s:%s:%016llx", ha1, auth_data->nonce, auth_data->cnonce) <= 0) {
             goto _digest_exit;
         }
@@ -201,18 +186,11 @@ char *http_auth_digest(const char *username, const char *password, esp_http_auth
         if (rc < 0) {
             ESP_LOGE(TAG, "asprintf() returned: %d", rc);
             ret = ESP_FAIL;
-            free(auth_str);
-            auth_str = NULL;
             goto _digest_exit;
         }
-        /* http_utils_append_string() realloc()s auth_str; on failure it returns NULL
-         * without freeing the original buffer, so keep a handle to free it here. */
-        char *prev_auth_str = auth_str;
         auth_str = http_utils_append_string(&auth_str, temp_auth_str, strlen(temp_auth_str));
         if (!auth_str) {
             ret = ESP_FAIL;
-            free(prev_auth_str);
-            free(temp_auth_str);
             goto _digest_exit;
         }
         free(temp_auth_str);

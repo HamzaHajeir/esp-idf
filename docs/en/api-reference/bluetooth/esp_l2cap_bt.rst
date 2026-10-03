@@ -1,10 +1,5 @@
-Bluetooth® Classic L2CAP API
+Classic Bluetooth® L2CAP API
 ============================
-
-Overview
---------
-
-Bluetooth Classic L2CAP (Logical Link Control and Adaptation Layer Protocol) API provides functions for data transmission between Bluetooth devices. It supports both client and server roles, allowing the creation of L2CAP connections for reliable, high-throughput communication.
 
 Application Examples
 --------------------

@@ -50,10 +50,6 @@ set(private_include_dirs "")
 set(private_requirements "")
 set(ldfragments "")
 
-# ---------------------------------------------------- Set Private Requirements ----------------------------------------
-
-list(APPEND private_requirements esp_hal_systimer)
-
 # ---------------------------------------------------- Set Sources -----------------------------------------------------
 
 # Add common source files
@@ -82,8 +78,7 @@ list(APPEND srcs
 
 if(arch STREQUAL "linux")
     list(APPEND srcs
-        "${kernel_impl}/portable/${arch}/utils/wait_for_event.c"
-        "${kernel_impl}/portable/${arch}/utils/linux_port_coop_syscalls.c")
+        "${kernel_impl}/portable/${arch}/utils/wait_for_event.c")
     if(kernel_impl STREQUAL "FreeRTOS-Kernel")
         list(APPEND srcs
             "${kernel_impl}/portable/${arch}/port_idf.c")
@@ -103,6 +98,17 @@ endif()
 list(APPEND srcs
     "esp_additions/idf_additions_event_groups.c"
     "esp_additions/idf_additions.c")
+
+if(arch STREQUAL "linux")
+    # Check if we need to address the FreeRTOS EINTR coexistence with linux system calls if we're building without
+    # lwIP enabled, we need to use linux system select which will receive EINTR event on every FreeRTOS interrupt, we
+    # workaround this problem by wrapping select() to bypass and silence the EINTR events
+    set(BYPASS_EINTR_ISSUE 0)
+    if(NOT CONFIG_LWIP_ENABLE)
+        set(BYPASS_EINTR_ISSUE 1)
+        list(APPEND srcs "esp_additions/FreeRTOSSimulator_wrappers.c")
+    endif()
+endif()
 
 # ------------------------------------------------ Set Public Includes -------------------------------------------------
 
@@ -176,9 +182,9 @@ idf_component_register(SRCS ${srcs}
 if(arch STREQUAL "linux")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC "projCOVERAGE_TEST=0")
     target_link_libraries(${COMPONENT_LIB} PUBLIC pthread)
-    # dl is needed for dlsym(RTLD_NEXT, ...) used by the cooperative syscall
-    # interposition layer (linux_port_coop_syscalls.c)
-    target_link_libraries(${COMPONENT_LIB} PRIVATE dl)
+    if(BYPASS_EINTR_ISSUE)
+        target_link_libraries(${COMPONENT_LIB} PRIVATE dl)
+    endif()
 
     # Disable strict prototype warnings in upstream code
     # (struct event * event_create() is missing 'void')
@@ -187,11 +193,6 @@ if(arch STREQUAL "linux")
         PROPERTIES COMPILE_OPTIONS
         "-Wno-strict-prototypes"
         )
-    if(APPLE)
-        target_link_libraries(${COMPONENT_LIB} INTERFACE "-u _app_main")
-    else()
-        target_link_libraries(${COMPONENT_LIB} INTERFACE "-u app_main")
-    endif()
 else()
     idf_component_get_property(COMPONENT_DIR freertos COMPONENT_DIR)
 
@@ -223,10 +224,20 @@ else()
         idf_component_optional_requires(PUBLIC esp_trace)
     endif()
 
+    if(CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME)
+        # [refactor-todo]: app_startup.c esp_startup_start_app_other_cores() calls esp_gdbstub_init() (called on CPU0).
+        # This should be resolved when link-time registration of startup functions is added.
+        idf_component_optional_requires(PRIVATE esp_gdbstub)
+    endif()
+
     if(CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER)
         # [refactor-todo]: esp_timer is required by FreeRTOS when we use esp_timer_get_time() to do profiling
         # Introduce a port wrapper function to avoid including esp_timer.h into the public header
         idf_component_optional_requires(PUBLIC esp_timer)
+    endif()
+
+    if(CONFIG_SPIRAM)
+        idf_component_optional_requires(PRIVATE esp_psram)
     endif()
 
     if(CONFIG_PM_TRACE)

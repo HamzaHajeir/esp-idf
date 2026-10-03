@@ -15,7 +15,6 @@ Overview
    ble-qualification
    Low Power Mode Introduction <../low-power-mode/low-power-mode-ble>
    ble-multiconnection-guide
-   :SOC_BLE_50_SUPPORTED: bluedroid-dual-identity-host-dev
 
 ***************
 Get Started
@@ -47,4 +46,3 @@ Profile
 
    :SOC_BLE_MESH_SUPPORTED: ../esp-ble-mesh/ble-mesh-index
    :SOC_BLUFI_SUPPORTED: blufi
-   :SOC_BLE_AUDIO_SUPPORTED: ../esp-ble-audio/ble-audio-index

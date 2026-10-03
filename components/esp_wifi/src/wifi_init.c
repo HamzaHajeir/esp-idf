@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,10 +40,6 @@
 
 #if CONFIG_ESP_WIFI_ENABLE_ROAMING_APP
 #include "esp_roaming.h"
-#endif
-
-#if SOC_MODEM_CLOCK_IS_INDEPENDENT
-#include "esp_private/esp_modem_clock.h"
 #endif
 
 static bool s_wifi_inited = false;
@@ -154,28 +150,6 @@ static esp_err_t init_wifi_mac_sleep_retention(void *arg)
 }
 #endif
 
-#if CONFIG_MAC_BB_PD && SOC_PM_MODEM_RETENTION_BY_REGDMA
-esp_err_t esp_wifi_internal_mac_sleep_retention_attach(void)
-{
-    esp_err_t err = sleep_retention_module_attach(SLEEP_RETENTION_MODULE_WIFI_MAC);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "failed to attach sleep retention linked list for wifi mac retention");
-    }
-    esp_wifi_internal_set_mac_sleep(true);
-    return err;
-}
-
-esp_err_t esp_wifi_internal_mac_sleep_retention_detach(void)
-{
-    esp_wifi_internal_set_mac_sleep(false);
-    esp_err_t err = sleep_retention_module_detach(SLEEP_RETENTION_MODULE_WIFI_MAC);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "failed to detach sleep retention linked list for wifi mac retention");
-    }
-    return err;
-}
-#endif
-
 #if CONFIG_MAC_BB_PD
 static void esp_wifi_mac_pd_mem_init(void)
 {
@@ -184,19 +158,17 @@ static void esp_wifi_mac_pd_mem_init(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "failed to allocate sleep retention linked list for wifi mac retention");
     }
-#else
-    esp_wifi_internal_set_mac_sleep(true);
 #endif
+    esp_wifi_internal_set_mac_sleep(true);
 }
 static void esp_wifi_mac_pd_mem_deinit(void)
 {
+    esp_wifi_internal_set_mac_sleep(false);
 #if SOC_PM_MODEM_RETENTION_BY_REGDMA
     esp_err_t err = sleep_retention_module_free(SLEEP_RETENTION_MODULE_WIFI_MAC);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "failed to free sleep retention linked list for wifi mac retention");
     }
-#else
-    esp_wifi_internal_set_mac_sleep(false);
 #endif
 }
 #endif
@@ -277,18 +249,11 @@ static esp_err_t wifi_deinit_internal(void)
 #if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
     esp_wifi_internal_modem_state_configure(false);
     esp_pm_unregister_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
-#if ESP_MODEM_RF_FLAG_UPDATE_CB_REQUIRED
-    esp_unregister_mac_bb_pd_callback(esp_phy_modem_rf_flag_update);
 #endif
-#endif /* CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP */
 #ifdef CONFIG_ESP_PHY_ENABLED
-    esp_phy_modem_deinit(SLEEP_MODEM_WIFI);
+    esp_phy_modem_deinit();
 #endif
     s_wifi_inited = false;
-
-#if SOC_MODEM_CLOCK_IS_INDEPENDENT
-    modem_clock_configure_wifi_status(s_wifi_inited);
-#endif
 
     return err;
 }
@@ -409,7 +374,6 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
 #if SOC_PM_MODEM_RETENTION_BY_REGDMA
     sleep_retention_module_init_param_t init_param = {
         .cbs     = { .create = { .handle = init_wifi_mac_sleep_retention, .arg = NULL } },
-        .attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH
     };
     init_param.depends.bitmap[SLEEP_RETENTION_MODULE_WIFI_BB >> 5] |= BIT(SLEEP_RETENTION_MODULE_WIFI_BB % 32);
     init_param.depends.bitmap[SLEEP_RETENTION_MODULE_CLOCK_MODEM >> 5] |= BIT(SLEEP_RETENTION_MODULE_CLOCK_MODEM % 32);
@@ -475,18 +439,12 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
         esp_wifi_mac_pd_mem_init();
 #endif
 #ifdef CONFIG_ESP_PHY_ENABLED
-        esp_phy_modem_init(SLEEP_MODEM_WIFI);
+        esp_phy_modem_init();
 #endif
 #if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
-        if (sleep_modem_wifi_modem_state_is_enabled()) {
+        if (sleep_modem_wifi_modem_state_enabled()) {
             esp_pm_register_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
             esp_wifi_internal_modem_state_configure(true); /* require WiFi to enable automatically receives the beacon */
-#if ESP_MODEM_RF_FLAG_UPDATE_CB_REQUIRED
-            if (esp_register_mac_bb_pd_callback(esp_phy_modem_rf_flag_update) != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to register modem RF flag update callback");
-                goto _deinit;
-            }
-#endif
         }
 #endif
 #if CONFIG_IDF_TARGET_ESP32
@@ -495,13 +453,8 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
 
 #ifdef CONFIG_PM_ENABLE
         if (s_wifi_modem_sleep_lock == NULL) {
-            esp_pm_lock_type_t lock_type =
-#if SOC_MODEM_APB_CLOCK_IS_INDEPENDENT
-                ESP_PM_NO_LIGHT_SLEEP;
-#else
-                ESP_PM_APB_FREQ_MAX;
-#endif
-            result = esp_pm_lock_create(lock_type, 0, "wifi", &s_wifi_modem_sleep_lock);
+            result = esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "wifi",
+                                        &s_wifi_modem_sleep_lock);
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to create pm lock (0x%x)", result);
                 goto _deinit;
@@ -538,10 +491,6 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
 
     s_wifi_inited = true;
 
-#if SOC_MODEM_CLOCK_IS_INDEPENDENT
-    modem_clock_configure_wifi_status(s_wifi_inited);
-#endif
-
     return result;
 
 _deinit:
@@ -577,13 +526,13 @@ esp_err_t esp_wifi_disconnect(void)
 }
 
 #ifdef CONFIG_PM_ENABLE
-void wifi_pm_sleep_lock_acquire(void)
+void wifi_apb80m_request(void)
 {
     assert(s_wifi_modem_sleep_lock);
     esp_pm_lock_acquire(s_wifi_modem_sleep_lock);
 }
 
-void wifi_pm_sleep_lock_release(void)
+void wifi_apb80m_release(void)
 {
     assert(s_wifi_modem_sleep_lock);
     esp_pm_lock_release(s_wifi_modem_sleep_lock);
@@ -760,24 +709,6 @@ void nan_ndp_resp_timeout_process(void *p)
     /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
 }
 #endif /* CONFIG_ESP_WIFI_NAN_SYNC_ENABLE */
-
-#if CONFIG_IDF_TARGET_ESP32C5
-#if CONFIG_ESP32C5_REV_MIN_FULL <= 100
-void esp32c5_eco3_rom_ptr_init(void)
-{
-    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
-}
-#endif
-#endif
-
-#if CONFIG_IDF_TARGET_ESP32C61
-#if CONFIG_ESP32C61_REV_MIN_FULL <= 100
-void esp32c61_eco4_rom_ptr_init(void)
-{
-    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
-}
-#endif
-#endif
 
 #if CONFIG_IDF_TARGET_ESP32C2
 #if CONFIG_ESP32C2_REV_MIN_FULL < 200

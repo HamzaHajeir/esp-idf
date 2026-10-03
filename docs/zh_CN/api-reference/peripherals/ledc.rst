@@ -1,6 +1,8 @@
 LED PWM 控制器
 ==============
 
+{IDF_TARGET_LEDC_MAX_FADE_RANGE_NUM: default="1", esp32c6="16", esp32h2="16", esp32p4="16", esp32c5="16", esp32c61="16", esp32h21="16"}
+
 :link_to_translation:`en:[English]`
 
 概述
@@ -167,7 +169,7 @@ LED PWM 控制器可在无需 CPU 干预的情况下自动改变占空比，实�
          - 48 MHz
          - 支持动态调频 (DFS) 功能
 
-.. only:: esp32c6 or esp32c61 or esp32p4 or esp32s31
+.. only:: esp32c6 or esp32c61 or esp32p4
 
     .. list-table:: {IDF_TARGET_NAME} LEDC 时钟源特性
        :widths: 10 10 30
@@ -312,7 +314,7 @@ LED PWM 控制器硬件可逐渐改变占空比的数值。要使用此功能，
 
 .. only:: SOC_LEDC_GAMMA_CURVE_FADE_SUPPORTED
 
-    {IDF_TARGET_NAME} 的硬件额外支持无需 CPU 介入的连续渐变。此功能可以更加有效便捷得实现一个带伽马校正的渐变。
+    {IDF_TARGET_NAME} 的硬件额外支持多达 {IDF_TARGET_LEDC_MAX_FADE_RANGE_NUM} 次，无需 CPU 介入的连续渐变。此功能可以更加有效便捷得实现一个带伽马校正的渐变。
 
     众所周知，人眼所感知的亮度与 PWM 占空比并非成线性关系。为了能使人感观上认为一盏灯明暗的变化是线性的，我们对其 PWM 信号的占空比控制必须为非线性的，俗称伽马校正。LED PWM 控制器可以通过多段线型拟合来模仿伽马曲线渐变。 你需要自己在应用程序中分配一段用以保存渐变参数的内存块，并提供开始和结束的占空比，伽马校正公式，以及期望的线性渐变段数信息，:cpp:func:`ledc_fill_multi_fade_param_list` 就能快速生成所有分段线性渐变的参数。或者你也可以自己直接构造一个 :cpp:type:`ledc_fade_param_config_t` 的数组。在获得所有渐变参数后，通过将 :cpp:type:`ledc_fade_param_config_t` 数组的指针和渐变区间数传入 :cpp:func:`ledc_set_multi_fade`，一次连续渐变的配置就完成了。
 
@@ -389,7 +391,7 @@ LEDC 驱动不使用电源管理锁来防止系统进入 Light-sleep 。相反�
 
     高速模式的优点是可平稳地改变定时器设置。也就是说，高速模式下如定时器设置改变，此变更会自动应用于定时器的下一次溢出中断。而更新低速定时器时，设置变更应由软件显式触发。LED PWM 驱动的设置将在硬件层面被修改，比如在调用函数 :cpp:func:`ledc_timer_config` 时。
 
-    更多关于速度模式的详细信息请参阅 **{IDF_TARGET_NAME} 技术参考手册** > **LED PWM 控制器 (LEDC)** [`PDF <{IDF_TARGET_TRM_CN_URL}#ledpwm>`__]。
+    更多关于速度模式的详细信息请参阅 **{IDF_TARGET_NAME} 技术参考手册** > **LED PWM 控制器 (LEDC)** [`PDF <{IDF_TARGET_TRM_EN_URL}#ledpwm>`__]。
 
     .. _ledc-api-supported-range-frequency-duty-resolution:
 
@@ -400,7 +402,7 @@ LEDC 驱动不使用电源管理锁来防止系统进入 Light-sleep 。相反�
 频率和占空比分辨率支持范围
 -------------------------------------------------
 
-LED PWM 控制器主要用于驱动 LED。该控制器 PWM 占空比设置的分辨率范围较广。比如，PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位。这意味着占空比可为 0 至 100% 之间的任意值，分辨率为 ~0.012%（2 ** 13 = 8192 LED 亮度的离散电平）。然而，这些参数取决于为 LED PWM 控制器定时器计时的时钟信号，LED PWM 控制器为通道提供时钟（具体可参考 :ref:`定时器配置 <ledc-api-configure-timer>` 和 **{IDF_TARGET_NAME} 技术参考手册** > **LED PWM 计时器 (LEDC)** [`PDF <{IDF_TARGET_TRM_CN_URL}#ledpwm>`__]）。
+LED PWM 控制器主要用于驱动 LED。该控制器 PWM 占空比设置的分辨率范围较广。比如，PWM 频率为 5 kHz 时，占空比分辨率最大可为 13 位。这意味着占空比可为 0 至 100% 之间的任意值，分辨率为 ~0.012%（2 ** 13 = 8192 LED 亮度的离散电平）。然而，这些参数取决于为 LED PWM 控制器定时器计时的时钟信号，LED PWM 控制器为通道提供时钟（具体可参考 :ref:`定时器配置 <ledc-api-configure-timer>` 和 **{IDF_TARGET_NAME} 技术参考手册** > **LED PWM 计时器 (LEDC)** [`PDF <{IDF_TARGET_TRM_EN_URL}#ledpwm>`__]）。
 
 LED PWM 控制器可用于生成频率较高的信号，足以为数码相机模组等其他设备提供时钟。此时，最大频率可为 40 MHz，占空比分辨率为 1 位。也就是说，占空比固定为 50%，无法调整。
 

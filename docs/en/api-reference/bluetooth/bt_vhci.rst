@@ -40,7 +40,7 @@ The following HCI VS commands are exclusively for Espressif's Bluetooth Host (ES
     .. doxygendefine:: ESP_BT_VS_SET_LE_VENDOR_EVTS_MASK_OCF
 
 
-.. only:: esp32c5 or esp32c6 or esp32h2 or esp32h21 or esp32c61 or esp32h4 or esp32s31
+.. only:: esp32c5 or esp32c6 or esp32h2 or esp32c61
 
     .. doxygendefine:: ESP_BT_VS_CONFIG_DUP_EXC_LIST_OCF
     .. doxygendefine:: ESP_BT_VS_SET_ADV_REPORT_FLOW_CTRL_OCF
@@ -56,9 +56,6 @@ The following HCI VS commands are exclusively for Espressif's Bluetooth Host (ES
     .. doxygendefine:: ESP_BT_VS_SET_LE_VENDOR_EVTS_MASK_OCF
     .. doxygendefine:: ESP_BT_VS_SET_CONST_PEER_SCA_OCF
 
-.. only:: esp32s31
-
-    .. doxygendefine:: ESP_BT_VS_SET_MIN_ENC_KEY_SIZE_OCF
 
 HCI VS Events for Espressif's Bluetooth Host
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -85,20 +82,12 @@ The following HCI VS events are exclusively for Espressif's Bluetooth Host (ESP-
     .. doxygendefine:: ESP_BT_VS_LE_ADV_LOST_EVT_SUBCODE
 
 
-.. only:: esp32c6 or esp32h2 or esp32h21 or esp32c5 or esp32c61 or esp32h4
+.. only:: esp32c6 or esp32h2 or esp32c5 or esp32c61
 
     .. doxygendefine:: ESP_BT_VS_LE_CONN_SCAN_REQ_RXED_EVT_SUBCODE
     .. doxygendefine:: ESP_BT_VS_LE_CHAN_UPDATE_COMP_EVT_SUBCODE
     .. doxygendefine:: ESP_BT_VS_LE_SLEEP_WAKEUP_EVT_SUBCODE
     .. doxygendefine:: ESP_BT_VS_LE_ADV_LOST_EVT_SUBCODE
-
-.. only:: esp32s31
-
-    .. doxygendefine:: ESP_BT_VS_LE_CONN_SCAN_REQ_RXED_EVT_SUBCODE
-    .. doxygendefine:: ESP_BT_VS_LE_CHAN_UPDATE_COMP_EVT_SUBCODE
-    .. doxygendefine:: ESP_BT_VS_LE_SLEEP_WAKEUP_EVT_SUBCODE
-    .. doxygendefine:: ESP_BT_VS_LE_ADV_LOST_EVT_SUBCODE
-    .. doxygendefine:: ESP_BT_VS_LEGACY_REM_AUTH_EVT_SUBCODE
 
 
 HCI VS Commands for Espressif's Internal-Use Debugging
@@ -136,15 +125,6 @@ The following HCI VS debugging commands are implemented in Bluetooth Low Energy 
     .. doxygendefine:: ESP_BT_VS_SET_AFH_REPORTING_MODE_OCF
     .. doxygendefine:: ESP_BT_VS_MASK_RMT_CHANNEL_CLASSIFICATION_OCF
     .. doxygendefine:: ESP_BT_VS_WR_AUTO_RATE_INIT_OCF
-    .. doxygendefine:: ESP_BT_VS_RD_ACL_REAL_RSSI_OCF
-    .. doxygendefine:: ESP_BT_VS_RD_NEW_CONN_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_WR_NEW_CONN_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_RD_PAGE_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_WR_PAGE_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_RD_PSCAN_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_WR_PSCAN_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_RD_INQ_TX_PWR_LVL_OCF
-    .. doxygendefine:: ESP_BT_VS_WR_ISCAN_TX_PWR_LVL_OCF
 
 
 .. only:: esp32c3 or esp32s3
@@ -217,7 +197,7 @@ The following HCI VS debugging commands are implemented in Bluetooth Low Energy 
     .. doxygendefine:: ESP_BT_VS_CFG_TEST_RELATED_SUBCMD_MAX
 
 
-.. only::  esp32c6 or esp32h2 or esp32h21 or esp32c5 or esp32c61 or esp32h4 or esp32s31
+.. only::  esp32c6 or esp32h2 or esp32c5 or esp32c61
 
     .. doxygendefine:: ESP_BT_VS_CFG_TEST_RELATED_OCF
     .. doxygendefine:: ESP_BT_VS_CFG_TEST_ENABLE_SUBCMD
@@ -281,25 +261,9 @@ The following HCI VS debugging commands are implemented in Bluetooth Low Energy 
     .. doxygendefine:: ESP_BT_VS_CFG_TEST_GET_WAKEUP_TIMEOUT_SUBCMD
     .. doxygendefine:: ESP_BT_VS_CFG_TEST_RELATED_SUBCMD_MAX
 
-.. only:: esp32s31
 
-    The following HCI VS debugging commands are implemented in Bluetooth Classic controller pre-compiled libraries. These commands are not linked into the application binary, unless the corresponding initialization function is explicitly called from the application. They are intended for Espressif's internal use only. Application developers **should not** call in their applications.
 
-    .. doxygendefine:: ESP_BT_VS_WR_DM1_ENABLE_OCF
-    .. doxygendefine:: ESP_BT_VS_CLK_UPDATE_OCF
-    .. doxygendefine:: ESP_BT_VS_SET_AFH_OCF
-    .. doxygendefine:: ESP_BT_VS_SET_EVT_MASK_OCF
-    .. doxygendefine:: ESP_BT_VS_SET_AFH_REPORTING_MODE_OCF
-    .. doxygendefine:: ESP_BT_VS_MASK_RMT_CHANNEL_CLASSIFICATION_OCF
-    .. doxygendefine:: ESP_BT_VS_DTM_TX_TEST_START_OCF
-    .. doxygendefine:: ESP_BT_VS_DTM_RX_TEST_START_OCF
-    .. doxygendefine:: ESP_BT_VS_DTM_TX_TEST_END_OCF
-    .. doxygendefine:: ESP_BT_VS_DTM_RX_TEST_END_OCF
-    .. doxygendefine:: ESP_BT_VS_PCA_OCF
-    .. doxygendefine:: ESP_BT_VS_LMP_DBG_ENABLE_OCF
-    .. doxygendefine:: ESP_BT_VS_SEND_LMP_OCF
-    .. doxygendefine:: ESP_BT_VS_LMP_DBG_SAVE_OCF
-    .. doxygendefine:: ESP_BT_VS_DISCARD_PING_OCF
+.. only:: esp32 or esp32c5 or esp32c6 or esp32c61 or esp32h2
 
     HCI VS Events for Espressif's Internal-Use Debugging
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -313,16 +277,6 @@ The following HCI VS debugging commands are implemented in Bluetooth Low Energy 
         .. doxygendefine:: ESP_BT_VS_CH_CLASSIFICATION_REPORTING_MODE_EVT_SUBCODE
 
 
-    .. only:: esp32c5 or esp32c6 or esp32c61 or esp32h2 or esp32h21 or esp32h4
+    .. only:: esp32c5 or esp32c6 or esp32c61 or esp32h2
 
         .. doxygendefine:: ESP_BT_VS_LE_RUNNING_STATUS_EVT_SUBCODE
-
-    .. only:: esp32s31
-
-        .. doxygendefine:: ESP_BT_VS_LE_RUNNING_STATUS_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_AFH_CHG_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_CH_CLASSIFICATION_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_CH_CLASSIFICATION_REPORTING_MODE_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_LMP_RECEIVED_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_LMP_TX_CFM_EVT_SUBCODE
-        .. doxygendefine:: ESP_BT_VS_LMP_DBG_ENTERED_EVT_SUBCODE

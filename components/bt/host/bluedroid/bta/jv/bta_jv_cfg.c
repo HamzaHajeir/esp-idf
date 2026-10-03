@@ -19,7 +19,8 @@
 
 /******************************************************************************
  *
- *  This file contains compile-time configurable constants for Java I/F
+ *  This file contains compile-time configurable constants for advanced
+ *  audio
  *
  ******************************************************************************/
 
@@ -48,7 +49,7 @@ static UINT8 __attribute__ ((aligned(4))) bta_jv_sdp_db_data[BTA_JV_SDP_DB_SIZE]
 #endif
 
 /* JV configuration structure */
-tBTA_JV_CFG bta_jv_cfg = {
+/*const */tBTA_JV_CFG bta_jv_cfg = {
     BTA_JV_SDP_RAW_DATA_SIZE,   /* The size of p_sdp_raw_data */
     BTA_JV_SDP_DB_SIZE,         /* The size of p_sdp_db_data */
 #if BTA_DYNAMIC_MEMORY == FALSE
@@ -60,7 +61,7 @@ tBTA_JV_CFG bta_jv_cfg = {
 #endif
 };
 
-tBTA_JV_CFG *p_bta_jv_cfg = &bta_jv_cfg;
+tBTA_JV_CFG *p_bta_jv_cfg = (tBTA_JV_CFG *) &bta_jv_cfg;
 
 
 #endif  ///defined BTA_JV_INCLUDED && BTA_JV_INCLUDED == TRUE

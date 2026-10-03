@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -8,20 +8,16 @@
  * This example contains code to make ESP32 based device recognizable by USB-hosts as a USB Mass Storage Device.
  * It either allows the embedded application i.e. example to access the partition or Host PC accesses the partition over USB MSC.
  * They can't be allowed to access the partition at the same time.
- * SPI Flash and SDMMC can be enabled independently. Enabling both exposes two LUNs to the USB host.
  * For different scenarios and behaviour, Refer to README of this example.
  */
 
 #include <errno.h>
 #include <dirent.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include "sdkconfig.h"
 #include "esp_console.h"
 #include "esp_check.h"
-#ifdef CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
 #include "esp_partition.h"
-#endif
 #include "driver/gpio.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
@@ -33,10 +29,6 @@
 #if CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_INTERNAL_IO
 #include "sd_pwr_ctrl_by_on_chip_ldo.h"
 #endif // CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_INTERNAL_IO
-#endif
-
-#if !CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH && !CONFIG_EXAMPLE_STORAGE_MEDIA_SDMMC
-#error "Enable at least one storage media in menuconfig (SPI Flash LUN and/or SDMMC Card LUN)"
 #endif
 
 /*
@@ -53,22 +45,9 @@
 static const char *TAG = "example_main";
 static esp_console_repl_t *repl = NULL;
 
-#define EXAMPLE_MAX_LUNS            2
-#define BASE_PATH_SPIFLASH          "/data"
-#if CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
-#define BASE_PATH_SDMMC             "/sdcard"
-#else
-#define BASE_PATH_SDMMC             "/data"
-#endif
-
-typedef struct {
-    tinyusb_msc_storage_handle_t handle;
-    const char *name;
-    const char *base_path;
-} example_lun_t;
-
-static example_lun_t s_luns[EXAMPLE_MAX_LUNS];
-static size_t s_lun_count;
+/* Storage global variables */
+tinyusb_msc_storage_handle_t storage_hdl = NULL;
+tinyusb_msc_mount_point_t mp;
 
 static SemaphoreHandle_t _wait_console_smp = NULL;
 
@@ -146,6 +125,8 @@ static char const *string_desc_arr[] = {
 };
 /*********************************************************************** TinyUSB descriptors*/
 
+#define BASE_PATH "/data" // base path to mount the partition
+
 #define PROMPT_STR CONFIG_IDF_TARGET
 static int console_unmount(int argc, char **argv);
 static int console_read(int argc, char **argv);
@@ -156,25 +137,25 @@ static int console_exit(int argc, char **argv);
 const esp_console_cmd_t cmds[] = {
     {
         .command = "read",
-        .help = "read README.MD from each application-mounted LUN and print its contents",
+        .help = "read BASE_PATH/README.MD and print its contents",
         .hint = NULL,
         .func = &console_read,
     },
     {
         .command = "write",
-        .help = "create file README.MD on each application-mounted LUN if it does not exist",
+        .help = "create file BASE_PATH/README.MD if it does not exist",
         .hint = NULL,
         .func = &console_write,
     },
     {
         .command = "size",
-        .help = "show storage size and sector size of each application-mounted LUN",
+        .help = "show storage size and sector size",
         .hint = NULL,
         .func = &console_size,
     },
     {
         .command = "expose",
-        .help = "Expose all LUNs to Host",
+        .help = "Expose Storage to Host",
         .hint = NULL,
         .func = &console_unmount,
     },
@@ -192,181 +173,130 @@ const esp_console_cmd_t cmds[] = {
     }
 };
 
-static void example_lun_add(tinyusb_msc_storage_handle_t handle, const char *name, const char *base_path)
-{
-    s_luns[s_lun_count].handle = handle;
-    s_luns[s_lun_count].name = name;
-    s_luns[s_lun_count].base_path = base_path;
-    s_lun_count++;
-}
-
-static const char *example_lun_name(tinyusb_msc_storage_handle_t handle)
-{
-    for (size_t i = 0; i < s_lun_count; i++) {
-        if (s_luns[i].handle == handle) {
-            return s_luns[i].name;
-        }
-    }
-    return "unknown";
-}
-
-static void example_list_files(const char *base_path)
-{
-    ESP_LOGI(TAG, "ls %s:", base_path);
-    struct dirent *d;
-    DIR *dh = opendir(base_path);
-    if (!dh) {
-        if (errno == ENOENT) {
-            ESP_LOGE(TAG, "Directory doesn't exist %s", base_path);
-        } else {
-            ESP_LOGE(TAG, "Unable to read directory %s", base_path);
-        }
-        return;
-    }
-    while ((d = readdir(dh)) != NULL) {
-        printf("%s\n", d->d_name);
-    }
-    closedir(dh);
-}
-
-// Set mount point to the application and list files on each LUN
+// Set mount point to the application and list files in BASE_PATH by filesystem API
 static void _mount(void)
 {
     ESP_LOGI(TAG, "Mount storage...");
-    for (size_t i = 0; i < s_lun_count; i++) {
-        ESP_ERROR_CHECK(tinyusb_msc_set_storage_mount_point(s_luns[i].handle, TINYUSB_MSC_STORAGE_MOUNT_APP));
-        example_list_files(s_luns[i].base_path);
+    ESP_ERROR_CHECK(tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_APP));
+
+    // List all the files in this directory
+    ESP_LOGI(TAG, "\nls command output:");
+    struct dirent *d;
+    DIR *dh = opendir(BASE_PATH);
+    if (!dh) {
+        if (errno == ENOENT) {
+            // If the directory is not found
+            ESP_LOGE(TAG, "Directory doesn't exist %s", BASE_PATH);
+        } else {
+            // If the directory is not readable then throw error and exit
+            ESP_LOGE(TAG, "Unable to read directory %s", BASE_PATH);
+        }
+        return;
     }
+    // While the next entry is not readable we will print directory files
+    while ((d = readdir(dh)) != NULL) {
+        printf("%s\n", d->d_name);
+    }
+    return;
 }
 
 // unmount storage
 static int console_unmount(int argc, char **argv)
 {
-    int already_exposed = 0;
-    for (size_t i = 0; i < s_lun_count; i++) {
-        tinyusb_msc_mount_point_t mp;
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(s_luns[i].handle, &mp));
-        if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
-            ESP_LOGE(TAG, "%s storage is already exposed", s_luns[i].name);
-            already_exposed++;
-            continue;
-        }
-        ESP_LOGI(TAG, "Unmount %s storage...", s_luns[i].name);
-        ESP_ERROR_CHECK(tinyusb_msc_set_storage_mount_point(s_luns[i].handle, TINYUSB_MSC_STORAGE_MOUNT_USB));
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(storage_hdl, &mp));
+    if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
+        ESP_LOGE(TAG, "Storage is already exposed");
+        return -1;
     }
-    return (already_exposed == (int)s_lun_count) ? -1 : 0;
+    ESP_LOGI(TAG, "Unmount storage...");
+    ESP_ERROR_CHECK(tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_USB));
+    return 0;
 }
 
-// read README.MD from each application-mounted LUN and print its contents
+// read BASE_PATH/README.MD and print its contents
 static int console_read(int argc, char **argv)
 {
-    int ret = 0;
-    for (size_t i = 0; i < s_lun_count; i++) {
-        tinyusb_msc_mount_point_t mp;
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(s_luns[i].handle, &mp));
-        if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
-            ESP_LOGE(TAG, "%s storage exposed over USB. Application can't read from storage.", s_luns[i].name);
-            ret = -1;
-            continue;
-        }
-        char filename[64];
-        snprintf(filename, sizeof(filename), "%s/README.MD", s_luns[i].base_path);
-        ESP_LOGD(TAG, "read from %s:", filename);
-        FILE *ptr = fopen(filename, "r");
-        if (ptr == NULL) {
-            ESP_LOGE(TAG, "Filename not present - %s", filename);
-            ret = -1;
-            continue;
-        }
-        printf("[%s]\n", s_luns[i].name);
-        char buf[1024];
-        while (fgets(buf, 1000, ptr) != NULL) {
-            printf("%s", buf);
-        }
-        fclose(ptr);
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(storage_hdl, &mp));
+    if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
+        ESP_LOGE(TAG, "Storage exposed over USB. Application can't read from storage.");
+        return -1;
     }
-    return ret;
+    ESP_LOGD(TAG, "read from storage:");
+    const char *filename = BASE_PATH "/README.MD";
+    FILE *ptr = fopen(filename, "r");
+    if (ptr == NULL) {
+        ESP_LOGE(TAG, "Filename not present - %s", filename);
+        return -1;
+    }
+    char buf[1024];
+    while (fgets(buf, 1000, ptr) != NULL) {
+        printf("%s", buf);
+    }
+    fclose(ptr);
+    return 0;
 }
 
-// create file README.MD on each application-mounted LUN if it does not exist
+// create file BASE_PATH/README.MD if it does not exist
 static int console_write(int argc, char **argv)
 {
-    int ret = 0;
-    for (size_t i = 0; i < s_lun_count; i++) {
-        tinyusb_msc_mount_point_t mp;
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(s_luns[i].handle, &mp));
-        if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
-            ESP_LOGE(TAG, "%s storage exposed over USB. Application can't write to storage.", s_luns[i].name);
-            ret = -1;
-            continue;
-        }
-        char filename[64];
-        snprintf(filename, sizeof(filename), "%s/README.MD", s_luns[i].base_path);
-        ESP_LOGD(TAG, "write to %s:", filename);
-        FILE *fd = fopen(filename, "r");
-        if (!fd) {
-            ESP_LOGW(TAG, "%s doesn't exist yet, creating", filename);
-            fd = fopen(filename, "w");
-            fprintf(fd, "Mass Storage Devices are one of the most common USB devices. It use Mass Storage Class (MSC) that allow access to their internal data storage.\n");
-            fprintf(fd, "In this example, ESP chip will be recognised by host (PC) as Mass Storage Device.\n");
-            fprintf(fd, "Upon connection to USB host (PC), the example application will initialize the storage module and then the storage will be seen as removable device on PC.\n");
-            fclose(fd);
-        } else {
-            fclose(fd);
-        }
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(storage_hdl, &mp));
+    if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
+        ESP_LOGE(TAG, "storage exposed over USB. Application can't write to storage.");
+        return -1;
     }
-    return ret;
+    ESP_LOGD(TAG, "write to storage:");
+    const char *filename = BASE_PATH "/README.MD";
+    FILE *fd = fopen(filename, "r");
+    if (!fd) {
+        ESP_LOGW(TAG, "README.MD doesn't exist yet, creating");
+        fd = fopen(filename, "w");
+        fprintf(fd, "Mass Storage Devices are one of the most common USB devices. It use Mass Storage Class (MSC) that allow access to their internal data storage.\n");
+        fprintf(fd, "In this example, ESP chip will be recognised by host (PC) as Mass Storage Device.\n");
+        fprintf(fd, "Upon connection to USB host (PC), the example application will initialize the storage module and then the storage will be seen as removable device on PC.\n");
+        fclose(fd);
+    }
+    return 0;
 }
 
 // Show storage size and sector size
 static int console_size(int argc, char **argv)
 {
-    int ret = 0;
-    for (size_t i = 0; i < s_lun_count; i++) {
-        tinyusb_msc_mount_point_t mp;
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(s_luns[i].handle, &mp));
-        if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
-            ESP_LOGE(TAG, "%s storage exposed over USB. Application can't access storage", s_luns[i].name);
-            ret = -1;
-            continue;
-        }
-
-        uint32_t sec_count;
-        uint32_t sec_size;
-
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_sector_size(s_luns[i].handle, &sec_size));
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_capacity(s_luns[i].handle, &sec_count));
-
-        uint64_t total_bytes = (uint64_t)sec_size * sec_count;
-        if (total_bytes >= (1024 * 1024)) {
-            uint64_t total_mb = total_bytes / (1024 * 1024);
-            printf("%s Storage Capacity %lluMB\n", s_luns[i].name, total_mb);
-        } else {
-            uint64_t total_kb = total_bytes / 1024;
-            printf("%s Storage Capacity %lluKB\n", s_luns[i].name, total_kb);
-        }
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(storage_hdl, &mp));
+    if (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) {
+        ESP_LOGE(TAG, "storage exposed over USB. Application can't access storage");
+        return -1;
     }
-    return ret;
+
+    uint32_t sec_count;
+    uint32_t sec_size;
+
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_sector_size(storage_hdl, &sec_size));
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_capacity(storage_hdl, &sec_count));
+
+    // Calculate size in MB or KB
+    uint64_t total_bytes = (uint64_t)sec_size * sec_count;
+    if (total_bytes >= (1024 * 1024)) {
+        uint64_t total_mb = total_bytes / (1024 * 1024);
+        printf("Storage Capacity %lluMB\n", total_mb);
+    } else {
+        uint64_t total_kb = total_bytes / 1024;
+        printf("Storage Capacity %lluKB\n", total_kb);
+    }
+    return 0;
 }
 
 // Show storage status
 static int console_status(int argc, char **argv)
 {
-    for (size_t i = 0; i < s_lun_count; i++) {
-        tinyusb_msc_mount_point_t mp;
-        ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(s_luns[i].handle, &mp));
-        printf("%s storage exposed over USB: %s\n", s_luns[i].name, (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) ? "Yes" : "No");
-    }
+    ESP_ERROR_CHECK(tinyusb_msc_get_storage_mount_point(storage_hdl, &mp));
+    printf("storage exposed over USB: %s\n", (mp == TINYUSB_MSC_STORAGE_MOUNT_USB) ? "Yes" : "No");
     return 0;
 }
 
 // Exit from application
 static int console_exit(int argc, char **argv)
 {
-    for (size_t i = 0; i < s_lun_count; i++) {
-        ESP_ERROR_CHECK(tinyusb_msc_delete_storage(s_luns[i].handle));
-        s_luns[i].handle = NULL;
-    }
+    ESP_ERROR_CHECK(tinyusb_msc_delete_storage(storage_hdl));
     ESP_ERROR_CHECK(tinyusb_driver_uninstall());
 
     xSemaphoreGive(_wait_console_smp);
@@ -390,8 +320,7 @@ static void storage_mount_changed_cb(tinyusb_msc_storage_handle_t handle, tinyus
         // Verify that all the files are closed before unmounting
         break;
     case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
-        ESP_LOGI(TAG, "%s storage mounted to application: %s", example_lun_name(handle),
-                 (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) ? "Yes" : "No");
+        ESP_LOGI(TAG, "Storage mounted to application: %s", (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) ? "Yes" : "No");
         break;
     case TINYUSB_MSC_EVENT_MOUNT_FAILED:
     case TINYUSB_MSC_EVENT_FORMAT_REQUIRED:
@@ -415,9 +344,7 @@ static esp_err_t storage_init_spiflash(wl_handle_t *wl_handle)
 
     return wl_mount(data_partition, wl_handle);
 }
-#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
-
-#ifdef CONFIG_EXAMPLE_STORAGE_MEDIA_SDMMC
+#else  // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
 static esp_err_t storage_init_sdmmc(sdmmc_card_t **card)
 {
     esp_err_t ret = ESP_OK;
@@ -446,11 +373,6 @@ static esp_err_t storage_init_sdmmc(sdmmc_card_t **card)
         return ret;
     }
     host.pwr_ctrl_handle = pwr_ctrl_handle;
-#endif
-
-#if SOC_SDMMC_IO_UHS_POWER_EXTERNAL
-    //for uhs-i power
-    host.io_voltage = 1.8f;
 #endif
 
     // This initializes the slot without card detect (CD) and write protect (WP) signals.
@@ -521,7 +443,7 @@ clean:
 #endif // CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_INTERNAL_IO
     return ret;
 }
-#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SDMMC
+#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
 
 void app_main(void)
 {
@@ -544,23 +466,18 @@ void app_main(void)
 
 #ifdef CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
     static wl_handle_t wl_handle = WL_INVALID_HANDLE;
-    tinyusb_msc_storage_handle_t spiflash_hdl = NULL;
     ESP_ERROR_CHECK(storage_init_spiflash(&wl_handle));
+    // Set the storage medium to the wear leveling handle
     storage_cfg.medium.wl_handle = wl_handle;
-    storage_cfg.fat_fs.base_path = (char *)BASE_PATH_SPIFLASH;
-    ESP_ERROR_CHECK(tinyusb_msc_new_storage_spiflash(&storage_cfg, &spiflash_hdl));
-    example_lun_add(spiflash_hdl, "spiflash", BASE_PATH_SPIFLASH);
-#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
 
-#ifdef CONFIG_EXAMPLE_STORAGE_MEDIA_SDMMC
+    ESP_ERROR_CHECK(tinyusb_msc_new_storage_spiflash(&storage_cfg, &storage_hdl));
+#else // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
     static sdmmc_card_t *card = NULL;
-    tinyusb_msc_storage_handle_t sdmmc_hdl = NULL;
     ESP_ERROR_CHECK(storage_init_sdmmc(&card));
+    // Set the storage medium to the SD/MMC card
     storage_cfg.medium.card = card;
-    storage_cfg.fat_fs.base_path = (char *)BASE_PATH_SDMMC;
-    ESP_ERROR_CHECK(tinyusb_msc_new_storage_sdmmc(&storage_cfg, &sdmmc_hdl));
-    example_lun_add(sdmmc_hdl, "sdmmc", BASE_PATH_SDMMC);
-#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SDMMC
+    ESP_ERROR_CHECK(tinyusb_msc_new_storage_sdmmc(&storage_cfg, &storage_hdl));
+#endif  // CONFIG_EXAMPLE_STORAGE_MEDIA_SPIFLASH
 
     // Configure the callback for mount changed events
     ESP_ERROR_CHECK(tinyusb_msc_set_storage_callback(storage_mount_changed_cb, NULL));

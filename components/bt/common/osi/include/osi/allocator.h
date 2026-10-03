@@ -24,10 +24,6 @@
 #include "bt_common.h"
 #include "esp_heap_caps.h"
 
-#if HEAP_MEMORY_STATS
-int osi_mem_init(void);
-void osi_mem_deinit(void);
-#endif
 char *osi_strdup(const char *str);
 
 void *osi_malloc_func(size_t size);
@@ -113,7 +109,7 @@ do {                                                    \
 // Memory alloc function with print and assertion when fails
 #define osi_malloc(size)                  osi_malloc_func((size))
 #define osi_calloc(size)                  osi_calloc_func((size))
-#define osi_free(p)                       osi_free_func((p))
+#define osi_free(p)                       free((p))
 
 #endif /* HEAP_MEMORY_DEBUG */
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -80,26 +80,26 @@ typedef struct {
 esp_err_t esp_vfs_register_common(const char *base_path, size_t len, const esp_vfs_t *vfs, void *ctx, int *vfs_index);
 
 /**
- * Resolve which registered VFS should handle the given absolute path.
+ * Get vfs fd with given path.
  *
- * @param path Zero-terminated absolute path. Must not be NULL when calling
- *             `strlen` internally; callers should reject NULL paths first
- *             (typically with `EINVAL`) before invoking this helper.
+ * @param path file path prefix associated with the filesystem.
  *
- * @return Matching `vfs_entry_t`, or NULL if @p path is NULL or no VFS matches.
+ * @return Pointer to the `vfs_entry_t` corresponding to the given path, which cannot be NULL.
  */
 const vfs_entry_t *get_vfs_for_path(const char *path);
 
 /**
- * Get VFS entry for a given VFS table index.
+ * Get vfs fd with given vfs index.
  *
- * @param index VFS index (as stored on FDs / DIR handles).
+ * @param index VFS index.
  *
- * @return Pointer to the `vfs_entry_t` for @p index, or NULL if invalid / unused.
+ * @return Pointer to the `vfs_entry_t` corresponding to the given path, which cannot be NULL.
  */
 const vfs_entry_t *get_vfs_for_index(int index);
 
 const char* translate_path(const vfs_entry_t* vfs, const char* src_path);
+
+const vfs_entry_t* get_vfs_for_path(const char* path);
 
 const vfs_entry_t *get_vfs_for_fd(int fd);
 
@@ -111,7 +111,7 @@ int get_local_fd(const vfs_entry_t *vfs, int fd);
 
 const fd_table_t *get_fd_entry(int fd);
 
-size_t get_vfs_upper_bound(void);
+size_t get_vfs_count(void);
 
 void close_pending(int nfds);
 

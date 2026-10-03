@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include "esp_attr.h"
 #include "soc/usb_dwc_struct.h"
+#include "soc/usb_dwc_cfg.h"
 #include "hal/usb_dwc_types.h"
 #include "hal/misc.h"
 
@@ -108,17 +109,6 @@ extern "C" {
 #define USB_DWC_LL_INTR_CHAN_XFERCOMPL      (1 << 0)
 
 /*
- * OTG mode configuration values for the GHWCFG2 register
- */
-#define USB_DWC_LL_GHWCFG_OTG_MODE_HNP_SRP_OTG 0
-#define USB_DWC_LL_GHWCFG_OTG_MODE_SRP_OTG     1
-#define USB_DWC_LL_GHWCFG_OTG_MODE_OTG         2
-#define USB_DWC_LL_GHWCFG_OTG_MODE_SRP_DEVICE  3
-#define USB_DWC_LL_GHWCFG_OTG_MODE_DEVICE      4
-#define USB_DWC_LL_GHWCFG_OTG_MODE_SRP_HOST    5
-#define USB_DWC_LL_GHWCFG_OTG_MODE_HOST        6
-
-/*
  * QTD (Queue Transfer Descriptor) structure used in Scatter/Gather DMA mode.
  * Each QTD describes one transfer. Scatter gather mode will automatically split
  * a transfer into multiple MPS packets. Each QTD is 64bits in size
@@ -213,14 +203,14 @@ static inline void usb_dwc_ll_gusbcfg_force_host_mode(usb_dwc_dev_t *hw)
     hw->gusbcfg_reg.forcehstmode = 1;
 }
 
-static inline void usb_dwc_ll_gusbcfg_set_hnp_cap(usb_dwc_dev_t *hw, bool hnp_cap)
+static inline void usb_dwc_ll_gusbcfg_dis_hnp_cap(usb_dwc_dev_t *hw)
 {
-    hw->gusbcfg_reg.hnpcap = hnp_cap;
+    hw->gusbcfg_reg.hnpcap = 0;
 }
 
-static inline void usb_dwc_ll_gusbcfg_set_srp_cap(usb_dwc_dev_t *hw, bool srp_cap)
+static inline void usb_dwc_ll_gusbcfg_dis_srp_cap(usb_dwc_dev_t *hw)
 {
-    hw->gusbcfg_reg.srpcap = srp_cap;
+    hw->gusbcfg_reg.srpcap = 0;
 }
 
 static inline void usb_dwc_ll_gusbcfg_set_timeout_cal(usb_dwc_dev_t *hw, uint8_t tout_cal)
@@ -319,17 +309,6 @@ static inline void usb_dwc_ll_gintsts_clear_intrs(usb_dwc_dev_t *hw, uint32_t in
     hw->gintsts_reg.val = intr_msk;
 }
 
-/**
- * @brief Reads the pending interrupts, i.e. those which are both asserted and unmasked
- *
- * @param hw Start address of the DWC_OTG registers
- * @return uint32_t Mask of pending interrupts
- */
-static inline uint32_t usb_dwc_ll_gintsts_read_pending_intrs(usb_dwc_dev_t *hw)
-{
-    return hw->gintsts_reg.val & hw->gintmsk_reg.val;
-}
-
 // --------------------------- GINTMSK Register --------------------------------
 
 static inline void usb_dwc_ll_gintmsk_en_intrs(usb_dwc_dev_t *hw, uint32_t intr_mask)
@@ -370,62 +349,9 @@ static inline uint32_t usb_dwc_ll_gsnpsid_get_id(usb_dwc_dev_t *hw)
 
 // --------------------------- GHWCFGx Register --------------------------------
 
-static inline void usb_dwc_ll_ghwcfg_get_hnp_srp_cap(usb_dwc_dev_t *hw, bool *hnp_cap, bool *srp_cap)
-{
-    const uint32_t otg_mode = hw->ghwcfg2_reg.otgmode;
-
-    if (otg_mode == USB_DWC_LL_GHWCFG_OTG_MODE_HNP_SRP_OTG) {
-        *hnp_cap = true;
-        *srp_cap = true;
-    } else if (otg_mode == USB_DWC_LL_GHWCFG_OTG_MODE_SRP_OTG ||
-               otg_mode == USB_DWC_LL_GHWCFG_OTG_MODE_SRP_DEVICE ||
-               otg_mode == USB_DWC_LL_GHWCFG_OTG_MODE_SRP_HOST) {
-        *hnp_cap = false;
-        *srp_cap = true;
-    } else {
-        *hnp_cap = false;
-        *srp_cap = false;
-    }
-}
-
 static inline unsigned usb_dwc_ll_ghwcfg_get_fifo_depth(usb_dwc_dev_t *hw)
 {
     return hw->ghwcfg3_reg.dfifodepth;
-}
-
-/**
- * @brief Get transfer size counter width
- *
- * For each transfer, the USB-DWC core keeps track of number of bytes for the particular transfer.
- * Hence, maximum transfer size is limited by (2^xfer_size_width - 1) bytes
- *
- * Minimum transfer size counter width is 11. So value of 0 of xfersizewidth field in the register must be interpreted as 11.
- *
- * @see USB-DWC databook Table 5-26
- * @param[in] hw Start address of the DWC_OTG registers
- * @return Effective bitwidth of the transfer size counter
- */
-static inline unsigned usb_dwc_ll_ghwcfg_get_xfer_size_width(usb_dwc_dev_t *hw)
-{
-    return hw->ghwcfg3_reg.xfersizewidth + 11;
-}
-
-/**
- * @brief Get packet counter width
- *
- * For each transfer, the USB-DWC core keeps track of the number of packets needed for the particular transfer
- * and its endpoint's Maximum Packet Size.
- * Hence, maximum transfer size is limited by MPS * (2^packet_counter_width - 1)
- *
- * Minimum packet counter width is 4. So value of 0 of pktsizewidth field in the register must be interpreted as 4.
- *
- * @see USB-DWC databook Table 5-26
- * @param[in] hw Start address of the DWC_OTG registers
- * @return Effective bitwidth of the packet counter
- */
-static inline unsigned usb_dwc_ll_ghwcfg_get_packet_size_width(usb_dwc_dev_t *hw)
-{
-    return hw->ghwcfg3_reg.pktsizewidth + 4;
 }
 
 static inline unsigned usb_dwc_ll_ghwcfg_get_hsphy_type(usb_dwc_dev_t *hw)
@@ -967,10 +893,6 @@ static inline usb_dwc_host_chan_regs_t *usb_dwc_ll_chan_get_regs(usb_dwc_dev_t *
 //Note: 0x2 is reserved
 #define USB_DWC_LL_QTD_STATUS_BUFFER       0x3     //AHB error occurred.
 #define USB_DWC_LL_QTD_STATUS_NOT_EXECUTED 0x4     //QTD as never processed
-
-// Per the DWC_otg programming guide Section 6 (Scatter/Gather qTD structure), the non-isochronous
-// descriptor's "Total bytes to transfer" field is a 17-bit value (0 to 128K-1 bytes).
-#define USB_DWC_LL_QTD_NON_ISO_MAX_XFER_SIZE ((1U << 17) - 1)
 
 /**
  * @brief Set a QTD for a non isochronous IN transfer

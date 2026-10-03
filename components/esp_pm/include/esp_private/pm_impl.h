@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -84,10 +84,8 @@ void esp_pm_impl_switch_mode(pm_mode_t mode, pm_mode_switch_t lock_or_unlock, pm
 void esp_pm_impl_init(void);
 
 /**
- * @brief Release the per-core RTOS PM lock so DFS can drop frequency while idle.
- *
- * Safe to call more than once per idle entry: subsequent calls are no-ops until
- * an ISR / leave_idle() re-acquires the lock.
+ * @brief Hook function for the idle task
+ * Must be called from the IDLE task on each CPU before entering waiti state.
  */
 void esp_pm_impl_idle_hook(void);
 
@@ -111,17 +109,6 @@ void esp_pm_impl_dump_stats(FILE* out);
  * @brief Hook function implementing `waiti` instruction, should be invoked from idle task context
  */
 void esp_pm_impl_waiti(void);
-
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-/**
- * @brief Execute a planned tickless WAITI from the idle task, if any.
- *
- * Handles RTOS PM lock release around WFI. Call once from esp_vApplicationIdleHook();
- *
- * @return true if tickless WAITI ran (idle hook should return early)
- */
-bool esp_pm_impl_tickless_waiti(void);
-#endif
 
 /**
  * @brief Callback function type for peripherals to skip light sleep.
@@ -152,6 +139,15 @@ esp_err_t esp_pm_register_skip_light_sleep_callback(skip_light_sleep_cb_t cb);
   *   - ESP_ERR_INVALID_STATE if the given callback hasn't been registered before
   */
 esp_err_t esp_pm_unregister_skip_light_sleep_callback(skip_light_sleep_cb_t cb);
+
+
+/**
+ * @brief Initialize flash frequency limit
+ *
+ * This function initializes the flash frequency limit.
+ * @note This function is only available when CONFIG_PM_WORKAROUND_FREQ_LIMIT_ENABLED is enabled.
+ */
+void esp_pm_flash_freq_limit_init(void);
 
 #ifdef CONFIG_PM_PROFILING
 #define WITH_PROFILING

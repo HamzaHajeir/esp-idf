@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,9 +11,6 @@
 #include "esp_log.h"
 #include "esp_openthread_alarm.h"
 #include "esp_openthread_common_macro.h"
-#if CONFIG_OPENTHREAD_RCP_CUSTOM
-#include "esp_openthread_transport_priv.h"
-#endif
 #include "esp_openthread_lock.h"
 #include "esp_openthread_radio.h"
 #include "esp_openthread_spi_slave.h"
@@ -23,6 +20,7 @@
 #include "esp_partition.h"
 #include "common/code_utils.hpp"
 #include "common/logging.hpp"
+#include "core/instance/instance.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "openthread/cli.h"
@@ -36,18 +34,15 @@ static esp_openthread_platform_workflow_t *s_workflow_list = NULL;
 esp_err_t esp_openthread_platform_workflow_register(esp_openthread_update_func update_func,
                                                     esp_openthread_process_func process_func, const char *name)
 {
-    assert(name != NULL);
-    size_t name_len = strlen(name);
-    ESP_RETURN_ON_FALSE(name_len > 0 && name_len < WORKFLOW_MAX_NAMELEN, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG,
-                        "Workflow name '%s' is invalid", name);
-
+    uint8_t name_len = strnlen(name, WORKFLOW_MAX_NAMELEN - 1);
     esp_openthread_platform_workflow_t *current_workflow = s_workflow_list;
     esp_openthread_platform_workflow_t *before_workflow = NULL;
     esp_openthread_platform_workflow_t *add_workflow =
-        static_cast<esp_openthread_platform_workflow_t *>(calloc(1, sizeof(esp_openthread_platform_workflow_t)));
+        static_cast<esp_openthread_platform_workflow_t *>(malloc(sizeof(esp_openthread_platform_workflow_t)));
     ESP_RETURN_ON_FALSE(add_workflow != NULL, ESP_ERR_NO_MEM, OT_PLAT_LOG_TAG,
                         "Failed to alloc memory for esp_openthread_workflow");
-    memcpy(add_workflow->name, name, name_len + 1);
+    strncpy(add_workflow->name, name, name_len);
+    add_workflow->name[name_len] = '\0';
     add_workflow->update_func = update_func;
     add_workflow->process_func = process_func;
     add_workflow->next = NULL;
@@ -73,9 +68,6 @@ esp_err_t esp_openthread_platform_workflow_register(esp_openthread_update_func u
 
 void esp_openthread_platform_workflow_unregister(const char *name)
 {
-    if (name == NULL) {
-        return;
-    }
     esp_openthread_platform_workflow_t *current_workflow = s_workflow_list;
     esp_openthread_platform_workflow_t *before_workflow = NULL;
     while (current_workflow) {
@@ -118,12 +110,6 @@ static esp_err_t esp_openthread_host_interface_init(const esp_openthread_platfor
     case HOST_CONNECTION_MODE_RCP_USB:
         ESP_RETURN_ON_ERROR(esp_openthread_host_rcp_usb_init(config), OT_PLAT_LOG_TAG,
                           "esp_openthread_host_rcp_usb_init failed");
-        break;
-#endif
-#if CONFIG_OPENTHREAD_RCP_CUSTOM
-    case HOST_CONNECTION_MODE_RCP_TRANSPORT:
-        ESP_RETURN_ON_ERROR(esp_openthread_host_rcp_transport_init(config), OT_PLAT_LOG_TAG,
-                            "esp_openthread_host_rcp_transport_init failed");
         break;
 #endif
 #if CONFIG_OPENTHREAD_CONSOLE_TYPE_UART
@@ -180,6 +166,11 @@ exit:
     return ret;
 }
 
+otInstance *esp_openthread_get_instance(void)
+{
+    return (otInstance *)&ot::Instance::Get();
+}
+
 esp_err_t esp_openthread_platform_deinit(void)
 {
     ESP_RETURN_ON_FALSE(s_openthread_platform_initialized, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG,
@@ -188,26 +179,11 @@ esp_err_t esp_openthread_platform_deinit(void)
     esp_openthread_task_queue_deinit();
     esp_openthread_radio_deinit();
 
-    esp_openthread_host_connection_mode_t host_mode = get_host_connection_mode();
-    switch (host_mode) {
-#if CONFIG_OPENTHREAD_RCP_SPI
-    case HOST_CONNECTION_MODE_RCP_SPI:
+    if (get_host_connection_mode() == HOST_CONNECTION_MODE_RCP_SPI){
         esp_openthread_spi_slave_deinit();
-        break;
-#endif
-#if CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_CONSOLE_TYPE_UART
-    case HOST_CONNECTION_MODE_RCP_UART:
-    case HOST_CONNECTION_MODE_CLI_UART:
+    } else if (get_host_connection_mode() == HOST_CONNECTION_MODE_CLI_UART ||
+        get_host_connection_mode() == HOST_CONNECTION_MODE_RCP_UART) {
         esp_openthread_uart_deinit();
-        break;
-#endif
-#if CONFIG_OPENTHREAD_RCP_CUSTOM
-    case HOST_CONNECTION_MODE_RCP_TRANSPORT:
-        esp_openthread_host_rcp_transport_deinit();
-        break;
-#endif
-    default:
-        break;
     }
 
     esp_openthread_lock_deinit();
@@ -226,17 +202,13 @@ void esp_openthread_platform_update(esp_openthread_mainloop_context_t *mainloop)
 
 esp_err_t esp_openthread_platform_process(otInstance *instance, const esp_openthread_mainloop_context_t *mainloop)
 {
-    esp_err_t error = ESP_OK;
     esp_openthread_platform_workflow_t *current_workflow = s_workflow_list;
     while (current_workflow) {
-        esp_err_t ret = current_workflow->process_func(instance, mainloop);
-        if (ret != ESP_OK) {
-            ESP_LOGE(OT_PLAT_LOG_TAG, "process %s failed", current_workflow->name);
-            error = ret;
-        }
+        ESP_RETURN_ON_ERROR(current_workflow->process_func(instance, mainloop), OT_PLAT_LOG_TAG, "process %s failed",
+                            current_workflow->name);
         current_workflow = current_workflow->next;
     }
-    return error;
+    return ESP_OK;
 }
 
 uint32_t esp_openthread_get_alloc_caps(void)
@@ -245,6 +217,6 @@ uint32_t esp_openthread_get_alloc_caps(void)
 #if CONFIG_OPENTHREAD_PLATFORM_MALLOC_CAP_SPIRAM
     (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
-    (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    (MALLOC_CAP_DEFAULT | MALLOC_CAP_8BIT);
 #endif
 }

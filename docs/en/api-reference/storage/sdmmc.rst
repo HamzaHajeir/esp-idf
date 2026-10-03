@@ -53,23 +53,8 @@ Using API with SD Memory Cards
     :SOC_GPSPI_SUPPORTED: - To initialize the SDSPI host, call the host driver functions, e.g., :cpp:func:`sdspi_host_init`, :cpp:func:`sdspi_host_init_slot`.
     - To initialize the card, call :cpp:func:`sdmmc_card_init` and pass to it the parameters ``host`` - the host driver information, and ``card`` - a pointer to the structure :cpp:class:`sdmmc_card_t` which will be filled with information about the card when the function completes.
     - To read and write sectors of the card, use :cpp:func:`sdmmc_read_sectors` and :cpp:func:`sdmmc_write_sectors` respectively and pass to it the parameter ``card`` - a pointer to the card information structure.
-    - When the card is no longer used, call :cpp:func:`sdmmc_card_deinit` to release resources allocated by :cpp:func:`sdmmc_card_init`.
-    - Then call the host driver function to disable the host peripheral and free the resources allocated by the host driver (``sdmmc_host_deinit`` for SDMMC or ``sdspi_host_deinit`` for SDSPI). If the application allocated the :cpp:class:`sdmmc_card_t` structure, free it after deinitializing the card and host.
 
-:cpp:func:`sdmmc_card_deinit` frees :cpp:member:`sdmmc_host_t::dma_aligned_buffer` only when :c:macro:`SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF` is set. If the application provides a pre-allocated buffer without setting this flag, the application retains ownership of the buffer and must free it after calling :cpp:func:`sdmmc_card_deinit`.
-
-Unaligned Buffer Performance
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When buffers passed to :cpp:func:`sdmmc_read_sectors` or :cpp:func:`sdmmc_write_sectors` are not DMA-capable (e.g., allocated in PSRAM), the driver copies data through a temporary DMA-capable buffer. By default, this is done one block at a time using single-block transfer commands.
-
-To improve throughput in this scenario, set the :cpp:member:`sdmmc_host_t::unaligned_multi_block_rw_max_chunk_size` field to a value greater than 1. This enables multi-block transfer commands (CMD18/CMD25), which can significantly reduce transfer overhead. The trade-off is higher heap usage (buffer size = N × block size, where N is the configured value and the block size is typically 512 bytes). When this field is 0 (default), the driver falls back to single-block transfers (equivalent to 1). Values greater than 1 are recommended to be a multiple of the block size (e.g., 2, 4, 8, 16 or 32) for best performance.
-
-.. note::
-
-    Keep this value at 0 or 1 if your card or configuration does not support multi-block read/write commands (CMD18 and CMD25).
-
-Alternatively, a pre-allocated DMA-capable buffer can be provided via the :cpp:member:`sdmmc_host_t::dma_aligned_buffer` field. This avoids per-transfer heap allocations and allows the driver to reuse the same buffer across transfers. The buffer must be at least one sector in size (typically 512 bytes) and should ideally be a multiple of the sector size.
+    - If the card is not used anymore, call the host driver function to disable the host peripheral and free the resources allocated by the driver (``sdmmc_host_deinit`` for SDMMC or ``sdspi_host_deinit`` for SDSPI).
 
 .. only:: not SOC_SDMMC_HOST_SUPPORTED
 
@@ -126,7 +111,7 @@ Alternatively, a pre-allocated DMA-capable buffer can be provided via the :cpp:m
 
     .. only:: SOC_SDMMC_HOST_SUPPORTED and SOC_SDIO_SLAVE_SUPPORTED
 
-        There is a component `ESSL <https://components.espressif.com/components/espressif/esp_serial_slave_link>`_ (ESP Serial Slave Link) to use if you are communicating with an ESP32 SDIO slave. See example :example:`peripherals/sdio/basic/host`.
+        There is a component `ESSL <https://components.espressif.com/components/espressif/esp_serial_slave_link>`_ (ESP Serial Slave Link) to use if you are communicating with an ESP32 SDIO slave. See example :example:`peripherals/sdio/host`.
 
     Combo (Memory + IO) Cards
     ^^^^^^^^^^^^^^^^^^^^^^^^^

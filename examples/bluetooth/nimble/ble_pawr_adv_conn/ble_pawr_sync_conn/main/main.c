@@ -1,10 +1,8 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -14,6 +12,7 @@
 #include "host/util/util.h"
 
 #define TAG                     "NimBLE_BLE_PAwR_CONN"
+#define TARGET_NAME             "Nimble_PAwR_CONN"
 #define BLE_PAWR_RSP_SLOT_INDEX  (2)
 #define BLE_PAWR_RSP_DATA_LEN   (10)
 static uint8_t sub_data_pattern[BLE_PAWR_RSP_DATA_LEN] = {0};
@@ -24,21 +23,6 @@ static void start_scan(void);
 static struct ble_hs_adv_fields fields;
 static bool synced = false;
 uint8_t device_addr[6];
-static char remote_device_name[32] = "Nimble_PAwR_CONN";
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_ble_pawr_conn_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 static struct ble_gap_conn_desc desc;
 char *
@@ -116,12 +100,7 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
             return 0;
         }
 
-        if (fields.name != NULL && fields.name_len == strlen(remote_device_name) &&
-            memcmp(fields.name, remote_device_name, fields.name_len) == 0) {
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-            ESP_LOGI(TAG, "Found device: addr: %02x:%02x:%02x:%02x:%02x:%02x, name: %s",
-                     addr[5], addr[4], addr[3], addr[2], addr[1], addr[0], remote_device_name);
-#endif
+        if (fields.name_len && !memcmp(fields.name, TARGET_NAME, strlen(TARGET_NAME))) {
             create_periodic_sync(disc);
         }
         return 0;
@@ -147,22 +126,9 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
         // create a special data for checking manually in ADV side
 
         sub_data_pattern[0] = event->periodic_report.subevent;
-        uint8_t addr_type;
-        rc = ble_hs_id_infer_auto(0, &addr_type);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "Failed to infer address type; rc=%d", rc);
-            os_mbuf_free_chain(data);
-            return 0;
-        }
-        rc = ble_hs_id_copy_addr(addr_type, device_addr, NULL);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "Failed to copy address; rc=%d", rc);
-            os_mbuf_free_chain(data);
-            return 0;
-        }
+        rc = ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, device_addr, NULL);
         sub_data_pattern[1] = param.response_slot;
         memcpy(&sub_data_pattern[2],device_addr,BLE_DEV_ADDR_LEN);
-        sub_data_pattern[8] = addr_type;
 
         os_mbuf_append(data, sub_data_pattern, BLE_PAWR_RSP_DATA_LEN);
 
@@ -199,7 +165,7 @@ gap_event_cb(struct ble_gap_event *event, void *arg)
             // choose subevents in range 0 to (num_subevents - 1)
             uint8_t subevents[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
             int result = ble_gap_periodic_adv_sync_subev(event->periodic_sync.sync_handle, 0, sizeof(subevents), subevents);
-            if (result == 0) {
+            if (result == ESP_OK) {
                 ESP_LOGI(TAG, "[Subevent Sync OK] sync handle:%d, sync_subevents:%d\n", event->periodic_sync.sync_handle, sizeof(subevents));
             } else {
                 ESP_LOGE(TAG, "Failed to sync subevents, rc = 0x%x", result);
@@ -250,36 +216,18 @@ start_scan(void)
     int rc;
     struct ble_gap_ext_disc_params disc_params;
 
-    /* Cancel any active scan first to reset the duplicate filter. */
-    if (ble_gap_disc_active()) {
-        ble_gap_disc_cancel();
-    }
-
     /* Perform a passive scan.  I.e., don't send follow-up scan requests to
      * each advertiser.
      */
     memset(&disc_params, 0, sizeof(disc_params));
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    /* Full scan under CI to improve discovery reliability in multi-board labs. */
-    disc_params.itvl = BLE_GAP_SCAN_ITVL_MS(50);
-    disc_params.window = BLE_GAP_SCAN_ITVL_MS(50);
-#else
     disc_params.itvl = BLE_GAP_SCAN_ITVL_MS(600);
     disc_params.window = BLE_GAP_SCAN_ITVL_MS(300);
-#endif
     disc_params.passive = 1;
 
     /* Tell the controller to filter duplicates; we don't want to process
      * repeated advertisements from the same device.
      */
-    uint8_t own_addr_type;
-    int rc_addr = ble_hs_id_infer_auto(0, &own_addr_type);
-    if (rc_addr != 0) {
-        ESP_LOGE(TAG, "error determining address type; rc=%d\n", rc_addr);
-        return;
-    }
-
-    rc = ble_gap_ext_disc(own_addr_type, 0, 0, 1, 0, 0,  NULL, &disc_params,
+    rc = ble_gap_ext_disc(BLE_OWN_ADDR_PUBLIC, 0, 0, 1, 0, 0,  NULL, &disc_params,
                           gap_event_cb, NULL);
     if (rc != 0) {
         ESP_LOGE(TAG, "Error initiating GAP discovery procedure; rc=%d\n", rc);
@@ -290,7 +238,6 @@ static void
 on_reset(int reason)
 {
     ESP_LOGE(TAG, "Resetting state; reason=%d\n", reason);
-    synced = false;
 }
 
 static void
@@ -332,14 +279,6 @@ app_main(void)
         ESP_LOGE(TAG, "Failed to init nimble %d ", ret);
         return;
     }
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(remote_device_name, esp_ble_pawr_conn_get_example_name(), sizeof(remote_device_name) - 1);
-    remote_device_name[sizeof(remote_device_name) - 1] = '\0';
-    ESP_LOGI(TAG, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             remote_device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID,
-             CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
 
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = on_reset;

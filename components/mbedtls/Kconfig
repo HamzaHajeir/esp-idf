@@ -3,20 +3,18 @@ menu "mbedTLS"
     menu "Core Configuration"
 
         config MBEDTLS_VER_4_X_SUPPORT
-            bool
-            default y
+            bool "Enable the Platform Security Architecture (PSA) cryptography API for ESP-IDF"
+            default n
+            help
+                Enable the Platform Security Architecture (PSA) cryptography API for ESP-IDF.
+                This option migrates from mbedtls API to PSA Crypto API. This increases code size.
 
         choice MBEDTLS_COMPILER_OPTIMIZATION
             prompt "Compiler optimization level"
-            default MBEDTLS_COMPILER_OPTIMIZATION_PERF if COMPILER_OPTIMIZATION_PERF
-            default MBEDTLS_COMPILER_OPTIMIZATION_SIZE
+            default MBEDTLS_COMPILER_OPTIMIZATION_NONE
             help
-                This option selects the compiler optimization level for mbedTLS.
-                By default, mbedTLS is optimized for size (-Os). If the project optimization
-                level (CONFIG_COMPILER_OPTIMIZATION) is set to "Optimize for performance (-O2)",
-                mbedTLS also defaults to -O2. You can override the default with this option.
-                The "No optimization" setting adds no flags, so mbedTLS compiles with the
-                project optimization level.
+                This option allows you to select the compiler optimization level for mbedTLS.
+                The default is set to the optimization level used by the rest of the ESP-IDF project.
             config MBEDTLS_COMPILER_OPTIMIZATION_NONE
                 bool "No optimization"
             config MBEDTLS_COMPILER_OPTIMIZATION_SIZE
@@ -35,61 +33,26 @@ menu "mbedTLS"
                 which is added through vfs component for ESP32 based targets or by
                 the host system when the target is Linux.
 
-        config MBEDTLS_PSA_ITS_CUSTOM_STORAGE_BACKEND
-            bool "Enable custom storage backend for PSA ITS"
-            default n
-            help
-                Enable support for registering a custom storage backend that
-                handles PSA ITS operations for keys in a reserved UID range.
-                When enabled, users can call esp_psa_its_register_custom_backend()
-                to route storage operations for UIDs in the configured range to
-                their own implementation. UIDs outside the range continue using
-                the default NVS backend.
-
-        config MBEDTLS_PSA_ITS_CUSTOM_BACKEND_UID_MIN
-            hex "Minimum UID for custom backend range"
-            depends on MBEDTLS_PSA_ITS_CUSTOM_STORAGE_BACKEND
-            default 0x30000000
-            range 0x00000001 0x3FFFFFFF
-            help
-                The minimum UID value (inclusive) that will be routed to the
-                custom storage backend. Must be within the PSA user key ID
-                range (0x00000001 - 0x3FFFFFFF).
-
-        config MBEDTLS_PSA_ITS_CUSTOM_BACKEND_UID_MAX
-            hex "Maximum UID for custom backend range"
-            depends on MBEDTLS_PSA_ITS_CUSTOM_STORAGE_BACKEND
-            default 0x3FFFFFFF
-            range MBEDTLS_PSA_ITS_CUSTOM_BACKEND_UID_MIN 0x3FFFFFFF
-            help
-                The maximum UID value (inclusive) that will be routed to the
-                custom storage backend. Must be >= the minimum UID and within
-                the PSA user key ID range (0x00000001 - 0x3FFFFFFF); the lower
-                bound is enforced by Kconfig.
-
         config MBEDTLS_THREADING_C
             bool "Enable the threading abstraction layer"
-            default y
+            default n
             help
                 If you do intend to use contexts between threads, you will need to enable
                 this layer to prevent race conditions.
 
-        choice MBEDTLS_THREADING_IMPLEMENTATION
-            prompt "Threading implementation"
+        config MBEDTLS_THREADING_ALT
+            bool "Enable threading alternate implementation"
             depends on MBEDTLS_THREADING_C
-            default MBEDTLS_THREADING_PTHREAD
+            default y
+            help
+                Enable threading alt to allow your own alternate threading implementation.
 
-            config MBEDTLS_THREADING_ALT
-                bool "Enable threading alternate implementation"
-                help
-                    Enable threading alt to allow your own alternate threading implementation.
-
-            config MBEDTLS_THREADING_PTHREAD
-                bool "Enable threading pthread implementation"
-                help
-                    Enable the pthread wrapper layer for the threading layer.
-
-        endchoice
+        config MBEDTLS_THREADING_PTHREAD
+            bool "Enable threading pthread implementation"
+            depends on MBEDTLS_THREADING_C
+            default n
+            help
+                Enable the pthread wrapper layer for the threading layer.
 
         config MBEDTLS_ERROR_STRINGS
             bool "Enable error code to error string conversion"
@@ -390,14 +353,14 @@ menu "mbedTLS"
         config MBEDTLS_PK_PARSE_C
             bool "Enables generic public key parsing functions"
             default y
-            depends on MBEDTLS_ASN1_PARSE_C && MBEDTLS_PK_C
+            depends on MBEDTLS_ASN1_PARSE_C && MBEDTLS_PK_C && MBEDTLS_OID_C
             help
                 Enable generic public key parsing functions.
 
         config MBEDTLS_PK_WRITE_C
             bool "Enables generic public key writing functions"
             default y
-            depends on MBEDTLS_PK_C && MBEDTLS_ASN1_WRITE_C
+            depends on MBEDTLS_PK_C && MBEDTLS_OID_C && MBEDTLS_ASN1_WRITE_C
             help
                 Enable generic public key writing functions.
 
@@ -432,7 +395,8 @@ menu "mbedTLS"
         config MBEDTLS_X509_CREATE_C
             bool "X.509 certificate creation"
             default n
-            depends on MBEDTLS_PK_WRITE_C && MBEDTLS_MD_C
+            depends on MBEDTLS_BIGNUM_C && MBEDTLS_OID_C && \
+                MBEDTLS_PK_WRITE_C && MBEDTLS_MD_C
             help
                 Support for creating X.509 certificates and CSRs.
 
@@ -479,6 +443,13 @@ menu "mbedTLS"
             help
                 Enable ASN.1 writing functions.
 
+        config MBEDTLS_OID_C
+            bool "Enable OID support"
+            default y
+            help
+                Enable support for Object Identifier (OID) parsing and printing.
+                This is used by X.509 and PKCS#11.
+
         config MBEDTLS_CERTIFICATE_BUNDLE
             bool "Enable trusted root certificate bundle"
             default y
@@ -521,11 +492,6 @@ menu "mbedTLS"
                     Name of the custom certificate directory or file. This path is evaluated
                     relative to the project root directory.
 
-                    Certificates must be either PEM encoded with a .pem extension, or DER
-                    encoded with a .der extension. Files with any other extension are not
-                    parsed: pointing this option directly at such a file fails the build,
-                    while such files inside a directory are skipped with a warning.
-
             config MBEDTLS_CERTIFICATE_BUNDLE_DEPRECATED_LIST
                 bool "Add deprecated root certificates"
                 depends on MBEDTLS_CERTIFICATE_BUNDLE && !MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_NONE
@@ -555,22 +521,20 @@ menu "mbedTLS"
 
         config MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY
             bool "Support cross-signed certificate verification in certificate bundle"
-            default y
+            default n
             depends on MBEDTLS_CERTIFICATE_BUNDLE
             select MBEDTLS_X509_TRUSTED_CERT_CALLBACK
             help
                 Enable support for cross-signed certificate verification in the certificate bundle.
                 This feature uses an internal callback to verify the cross-signed certificates.
-
-                Enabling this feature increases peak heap usage during the TLS handshake by
-                approximately 1 KB. This is a transient allocation (a candidate CA certificate
-                built during certificate verification) that is freed once the handshake completes,
-                and the exact amount scales with the maximum supported RSA key size.
+                This feature is kept disabled by default as enabling this feature increases
+                heap usage by approximately 700 bytes.
     endmenu
 
     config MBEDTLS_TLS_ENABLED
         bool "Enable TLS protocol support"
         default y
+        select MBEDTLS_CIPHER_C
         select MBEDTLS_SHA256_C
         select MBEDTLS_MD_C
         select MBEDTLS_SSL_PROTO_TLS1_2
@@ -591,6 +555,7 @@ menu "mbedTLS"
         config MBEDTLS_SSL_PROTO_TLS1_3
             bool "Support TLS 1.3 protocol"
             depends on MBEDTLS_TLS_ENABLED
+            select MBEDTLS_HKDF_C
             select MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
             default n
 
@@ -660,6 +625,9 @@ menu "mbedTLS"
             config MBEDTLS_TLS_CLIENT_ONLY
                 bool "Client"
                 select MBEDTLS_TLS_CLIENT
+
+            config MBEDTLS_TLS_DISABLED
+                bool "None"
         endchoice
 
         config MBEDTLS_SSL_CID_PADDING_GRANULARITY
@@ -730,6 +698,13 @@ menu "mbedTLS"
                 help
                     Enable to support symmetric key PSK (pre-shared-key) TLS key exchange modes.
 
+            config MBEDTLS_KEY_EXCHANGE_DHE_PSK
+                bool "Enable DHE-PSK based ciphersuite modes"
+                depends on MBEDTLS_PSK_MODES && MBEDTLS_DHM_C
+                default y
+                help
+                    Enable to support Diffie-Hellman PSK (pre-shared-key) TLS authentication modes.
+
             config MBEDTLS_KEY_EXCHANGE_ECDHE_PSK
                 bool "Enable ECDHE-PSK based ciphersuite modes"
                 depends on MBEDTLS_PSK_MODES && MBEDTLS_ECDH_C
@@ -740,7 +715,7 @@ menu "mbedTLS"
             config MBEDTLS_KEY_EXCHANGE_RSA_PSK
                 bool "Enable RSA-PSK based ciphersuite modes"
                 depends on MBEDTLS_PSK_MODES
-                default n
+                default y
                 help
                     Enable to support RSA PSK (pre-shared-key) TLS authentication modes.
 
@@ -749,6 +724,13 @@ menu "mbedTLS"
                 default y
                 help
                     Enable to support ciphersuites with prefix TLS-RSA-WITH-
+
+            config MBEDTLS_KEY_EXCHANGE_DHE_RSA
+                bool "Enable DHE-RSA based ciphersuite modes"
+                default y
+                depends on MBEDTLS_DHM_C
+                help
+                    Enable to support ciphersuites with prefix TLS-DHE-RSA-WITH-
 
             config MBEDTLS_KEY_EXCHANGE_ELLIPTIC_CURVE
                 bool "Support Elliptic Curve based ciphersuites"
@@ -773,6 +755,20 @@ menu "mbedTLS"
                 default y
                 help
                     Enable to support ciphersuites with prefix TLS-ECDHE-ECDSA-WITH-
+
+            config MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA
+                bool "Enable ECDH-ECDSA based ciphersuite modes"
+                depends on MBEDTLS_KEY_EXCHANGE_ELLIPTIC_CURVE && MBEDTLS_ECDH_C && MBEDTLS_ECDSA_C
+                default y
+                help
+                    Enable to support ciphersuites with prefix TLS-ECDH-ECDSA-WITH-
+
+            config MBEDTLS_KEY_EXCHANGE_ECDH_RSA
+                bool "Enable ECDH-RSA based ciphersuite modes"
+                depends on MBEDTLS_KEY_EXCHANGE_ELLIPTIC_CURVE && MBEDTLS_ECDH_C
+                default y
+                help
+                    Enable to support ciphersuites with prefix TLS-ECDH-RSA-WITH-
 
             config MBEDTLS_KEY_EXCHANGE_ECJPAKE
                 bool "Enable ECJPAKE based ciphersuite modes"
@@ -901,6 +897,15 @@ menu "mbedTLS"
                 Disabling this option will save some code size.
     endmenu
 
+    config MBEDTLS_CIPHER_C
+        bool "Cipher abstraction layer"
+        default y
+        help
+            Enable the cipher abstraction layer. This enables generic cipher wrappers
+            for the block ciphers and stream ciphers.
+            If you are not using the cipher abstraction layer, you can disable this
+            option to save some code size.
+
     menu "Symmetric Ciphers"
         config MBEDTLS_AES_C
             bool "AES block cipher"
@@ -912,7 +917,7 @@ menu "mbedTLS"
 
         config MBEDTLS_ARIA_C
             bool "ARIA block cipher"
-            default n
+            default y
 
         config MBEDTLS_CAMELLIA_SMALL_MEMORY
             bool "Use small memory implementation of Camellia"
@@ -929,6 +934,22 @@ menu "mbedTLS"
 
                 3DES is vulnerable to the Sweet32 attack and should only be enabled
                 if absolutely necessary.
+
+        config MBEDTLS_BLOWFISH_C
+            bool "Blowfish block cipher (read help)"
+            default n
+            help
+                Enables the Blowfish block cipher (not used for TLS sessions.)
+
+                The Blowfish cipher is not used for mbedTLS TLS sessions but can be
+                used for other purposes. Read up on the limitations of Blowfish (including
+                Sweet32) before enabling.
+
+        config MBEDTLS_XTEA_C
+            bool "XTEA block cipher"
+            default n
+            help
+                Enables the XTEA block cipher.
 
         config MBEDTLS_CCM_C
             bool "CCM (Counter with CBC-MAC) block cipher modes"
@@ -978,7 +999,7 @@ menu "mbedTLS"
         config MBEDTLS_GCM_C
             bool "GCM (Galois/Counter) block cipher modes"
             default y
-            depends on (MBEDTLS_AES_C || MBEDTLS_CAMELLIA_C || MBEDTLS_ARIA_C)
+            depends on (MBEDTLS_AES_C || MBEDTLS_CAMELLIA_C || MBEDTLS_ARIA_C) && MBEDTLS_CIPHER_C
             help
                 Enable Galois/Counter Mode for AES and/or Camellia ciphers.
 
@@ -987,9 +1008,52 @@ menu "mbedTLS"
         config MBEDTLS_NIST_KW_C
             bool "NIST key wrapping (KW) and KW padding (KWP)"
             default n
-            depends on MBEDTLS_AES_C
+            depends on MBEDTLS_AES_C && MBEDTLS_CIPHER_C
             help
                 Enable NIST key wrapping and key wrapping padding.
+
+        config MBEDTLS_CIPHER_PADDING
+            bool "Cipher padding"
+            default y
+            depends on MBEDTLS_CIPHER_MODE_CBC || MBEDTLS_CIPHER_MODE_CFB || MBEDTLS_CIPHER_MODE_OFB
+            help
+                Enable padding for block ciphers.
+
+                Padding is only used for block ciphers in CBC, CFB, CTR and OFB modes.
+                If you are using a stream cipher or a block cipher in ECB mode, you can
+                disable this option to save code size.
+
+        config MBEDTLS_CIPHER_PADDING_PKCS7
+            bool "PKCS#7 padding"
+            default y
+            depends on MBEDTLS_CIPHER_PADDING && \
+                (MBEDTLS_CIPHER_MODE_CBC || MBEDTLS_CIPHER_MODE_CFB || MBEDTLS_CIPHER_MODE_OFB)
+            help
+                Enable PKCS#7 padding for block ciphers.
+
+        config MBEDTLS_CIPHER_PADDING_ONE_AND_ZEROS
+            bool "One and zeros padding"
+            default y
+            depends on MBEDTLS_CIPHER_PADDING && \
+                (MBEDTLS_CIPHER_MODE_CBC || MBEDTLS_CIPHER_MODE_CFB || MBEDTLS_CIPHER_MODE_OFB)
+            help
+                Enable one and zeros padding for block ciphers.
+
+        config MBEDTLS_CIPHER_PADDING_ZEROS_AND_LEN
+            bool "Zeros and length padding"
+            default y
+            depends on MBEDTLS_CIPHER_PADDING && \
+                (MBEDTLS_CIPHER_MODE_CBC || MBEDTLS_CIPHER_MODE_CFB || MBEDTLS_CIPHER_MODE_OFB)
+            help
+                Enable zeros and length padding for block ciphers.
+
+        config MBEDTLS_CIPHER_PADDING_ZEROS
+            bool "Zeros padding"
+            default y
+            depends on MBEDTLS_CIPHER_PADDING && \
+                (MBEDTLS_CIPHER_MODE_CBC || MBEDTLS_CIPHER_MODE_CFB || MBEDTLS_CIPHER_MODE_OFB)
+            help
+                Enable zeros padding for block ciphers.
 
         config MBEDTLS_AES_ROM_TABLES
             bool "Store AES tables in ROM"
@@ -1018,6 +1082,7 @@ menu "mbedTLS"
         config MBEDTLS_CMAC_C
             bool "Enable CMAC mode for block ciphers"
             default y
+            select MBEDTLS_CIPHER_C
             depends on (MBEDTLS_AES_C || MBEDTLS_DES_C)
             help
                 Enable the CMAC (Cipher-based Message Authentication Code) mode for
@@ -1025,9 +1090,29 @@ menu "mbedTLS"
     endmenu
 
     menu "Asymmetric Ciphers"
+        config MBEDTLS_BIGNUM_C
+            bool "Enable multiple precision integer (bignum) support"
+            default y
+            help
+                Enable support for multiple precision integer (bignum) operations.
+
+                This is required for RSA, DSA, DHM, ECDH and ECDSA.
+
+                If you don't need any of these algorithms, you can disable this option
+                to save code size.
+
+        config MBEDTLS_GENPRIME
+            bool "Enable hardware prime number generation"
+            default y
+            depends on MBEDTLS_BIGNUM_C
+            help
+                Enable prime number generation.
+
         config MBEDTLS_RSA_C
             bool "RSA public key cryptosystem"
             default y
+            select MBEDTLS_BIGNUM_C
+            select MBEDTLS_OID_C
             help
                 Enable RSA. Needed to use RSA-xxx TLS ciphersuites.
 
@@ -1035,6 +1120,20 @@ menu "mbedTLS"
             bool  "Enable Elliptic Curve Ciphers(ECC) support"
             default y
         menu "Supported Curves"
+            config MBEDTLS_ECP_DP_SECP192R1_ENABLED
+                bool "Enable SECP192R1 curve"
+                depends on MBEDTLS_ECP_C
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
+                help
+                        Enable support for SECP192R1 Elliptic Curve.
+
+            config MBEDTLS_ECP_DP_SECP224R1_ENABLED
+                bool "Enable SECP224R1 curve"
+                depends on MBEDTLS_ECP_C
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
+                help
+                        Enable support for SECP224R1 Elliptic Curve.
+
             config MBEDTLS_ECP_DP_SECP256R1_ENABLED
                 bool "Enable SECP256R1 curve"
                 depends on MBEDTLS_ECP_C
@@ -1045,49 +1144,63 @@ menu "mbedTLS"
             config MBEDTLS_ECP_DP_SECP384R1_ENABLED
                 bool "Enable SECP384R1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         Enable support for SECP384R1 Elliptic Curve.
 
             config MBEDTLS_ECP_DP_SECP521R1_ENABLED
                 bool "Enable SECP521R1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         Enable support for SECP521R1 Elliptic Curve.
+
+            config MBEDTLS_ECP_DP_SECP192K1_ENABLED
+                bool "Enable SECP192K1 curve"
+                depends on MBEDTLS_ECP_C
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
+                help
+                        Enable support for SECP192K1 Elliptic Curve.
+
+            config MBEDTLS_ECP_DP_SECP224K1_ENABLED
+                bool "Enable SECP224K1 curve"
+                depends on MBEDTLS_ECP_C
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
+                help
+                        Enable support for SECP224K1 Elliptic Curve.
 
             config MBEDTLS_ECP_DP_SECP256K1_ENABLED
                 bool "Enable SECP256K1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         Enable support for SECP256K1 Elliptic Curve.
 
             config MBEDTLS_ECP_DP_BP256R1_ENABLED
                 bool "Enable BP256R1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         support for DP Elliptic Curve.
 
             config MBEDTLS_ECP_DP_BP384R1_ENABLED
                 bool "Enable BP384R1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         support for DP Elliptic Curve.
 
             config MBEDTLS_ECP_DP_BP512R1_ENABLED
                 bool "Enable BP512R1 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         support for DP Elliptic Curve.
 
             config MBEDTLS_ECP_DP_CURVE25519_ENABLED
                 bool "Enable CURVE25519 curve"
                 depends on MBEDTLS_ECP_C
-                default y
+                default y if !(MBEDTLS_ATCA_HW_ECDSA_SIGN || MBEDTLS_ATCA_HW_ECDSA_VERIFY)
                 help
                         Enable support for CURVE25519 Elliptic Curve.
         endmenu
@@ -1122,10 +1235,10 @@ menu "mbedTLS"
                         Define this option only if you enable MBEDTLS_ECP_RESTARTABLE or if you
                         want to access ECDH context fields directly.
 
-            # TODO: IDF-15031
             config MBEDTLS_DHM_C
                 bool "Diffie-Hellman-Merkle key exchange (DHM)"
-                default n
+                default y
+                select MBEDTLS_BIGNUM_C
                 depends on MBEDTLS_ECP_C
                 help
                         Enable DHM. Needed to use DHE-xxx TLS ciphersuites.
@@ -1193,6 +1306,20 @@ menu "mbedTLS"
     endmenu
 
     menu "Hash functions"
+        config MBEDTLS_HKDF_C
+            bool "HKDF algorithm (RFC 5869)"
+            default n
+            depends on MBEDTLS_MD_C
+            help
+                Enable support for the Hashed Message Authentication Code
+                (HMAC)-based key derivation function (HKDF).
+
+        config MBEDTLS_POLY1305_C
+            bool "Poly1305 MAC algorithm"
+            default n
+            help
+                Enable support for Poly1305 MAC algorithm.
+
         config MBEDTLS_RIPEMD160_C
             bool "Enable RIPEMD-160 hash algorithm"
             default n
@@ -1260,7 +1387,7 @@ menu "mbedTLS"
 
         config MBEDTLS_SHA3_C
             bool "Enable the SHA3 cryptographic hash algorithm"
-            default n
+            default y
             help
                 Enabling MBEDTLS_SHA3_C adds support for SHA3.
                 Enabling this configuration option increases the flash footprint
@@ -1297,7 +1424,6 @@ menu "mbedTLS"
             help
                 Enable hardware accelerated ECDSA peripheral to verify signature
                 on curve SECP192R1 and SECP256R1 in mbedTLS.
-                Note that SECP192R1 support is disabled by default.
 
         menu "Enable Software Countermeasure for ECDSA signing using on-chip ECDSA peripheral"
             depends on MBEDTLS_HARDWARE_ECDSA_SIGN
@@ -1338,7 +1464,6 @@ menu "mbedTLS"
             help
                 Enable hardware accelerated ECDSA peripheral to sign data
                 on curve SECP192R1 and SECP256R1 in mbedTLS.
-                Note that SECP192R1 support is disabled by default.
 
                 Note that for signing, the private key has to be burnt in an efuse key block
                 with key purpose set to ECDSA_KEY.
@@ -1359,7 +1484,6 @@ menu "mbedTLS"
             help
                 Enable hardware accelerated ECC point multiplication and point verification for points
                 on curve SECP192R1 and SECP256R1 in mbedTLS
-                Note that SECP192R1 support is disabled by default.
 
         config MBEDTLS_ECC_OTHER_CURVES_SOFT_FALLBACK
             bool "Fallback to software implementation for curves not supported in hardware"
@@ -1388,7 +1512,7 @@ menu "mbedTLS"
         config MBEDTLS_HARDWARE_MPI
             bool "Enable hardware MPI (bignum) acceleration"
             default y
-            depends on !SPIRAM_CACHE_WORKAROUND_STRATEGY_DUPLDST && SOC_MPI_SUPPORTED
+            depends on !SPIRAM_CACHE_WORKAROUND_STRATEGY_DUPLDST && SOC_MPI_SUPPORTED && MBEDTLS_BIGNUM_C
             help
                 Enable hardware accelerated multiple precision integer operations.
 
@@ -1401,7 +1525,7 @@ menu "mbedTLS"
             bool "Fallback to software implementation for larger MPI values"
             depends on MBEDTLS_HARDWARE_MPI
             default y if SOC_RSA_MAX_BIT_LEN <= 3072 # HW max 3072 bits
-            default y
+            default n
             help
                 Fallback to software implementation for RSA key lengths
                 larger than SOC_RSA_MAX_BIT_LEN. If this is not active
@@ -1429,33 +1553,6 @@ menu "mbedTLS"
                 priority level and any level from 1 to 3 can be selected (based on the availability).
                 Note: Higher value indicates high interrupt priority.
 
-        menu "Security hardening"
-
-            config MBEDTLS_CONSTANT_TIME_PRIME_GEN
-                bool "Constant-time prime generation"
-                default n
-                help
-                    Use mbedtls' constant-time small-factor test (a
-                    constant-time GCD against the product of all odd primes up
-                    to 997) when generating prime numbers, e.g. during RSA key
-                    generation.
-
-                    The constant-time implementation avoids a timing side
-                    channel in prime generation, but it makes RSA key
-                    generation roughly ten times slower, and its long
-                    non-yielding software computations can starve the idle
-                    task and trigger the task watchdog, so key generation code
-                    may need a larger watchdog timeout or the watchdog
-                    disabled.
-
-                    If disabled, the variable-time trial division that mbedtls
-                    used before versions 3.6.7/4.1.1 is used instead,
-                    restoring key generation performance.
-
-                    Please see issue: https://github.com/Mbed-TLS/mbedtls/issues/10830
-
-        endmenu # Security hardening
-
         config MBEDTLS_HARDWARE_AES
             bool "Enable hardware AES acceleration"
             default y
@@ -1465,15 +1562,6 @@ menu "mbedTLS"
 
                 Note that if the ESP32 CPU is running at 240MHz, hardware AES does not
                 offer any speed boost over software AES.
-
-        config MBEDTLS_AES_SOFT_FALLBACK
-            bool "Enable software fallback for AES"
-            default n
-            depends on MBEDTLS_HARDWARE_AES
-            help
-                Enable software fallback for AES.
-                This option is used to fallback to software implementation of AES if the
-                hardware AES does not support the requested operation.
 
         config MBEDTLS_HARDWARE_GCM
             bool "Enable partially hardware accelerated GCM"
@@ -1495,7 +1583,7 @@ menu "mbedTLS"
                 Enable this config to support fallback to software definitions for a non-AES
                 cipher GCM operation as we support hardware acceleration only for AES cipher.
                 Some of the non-AES ciphers used in a GCM operation are DES, ARIA, CAMELLIA,
-                CHACHA20.
+                CHACHA20, BLOWFISH.
 
                 If this config is disabled, performing a non-AES cipher GCM operation with
                 the config MBEDTLS_HARDWARE_AES enabled will result in calculation of an
@@ -1582,24 +1670,36 @@ menu "mbedTLS"
                 it also increases the binary size by ~1.2 KB as it pulls in the peripheral's block
                 mode code as well.
 
-        config MBEDTLS_SECURE_ELEMENT_DRIVER_ENABLED
-            bool "Enable secure element hardware support (e.g., ATECC608A)"
-            default n
+        config MBEDTLS_PK_RSA_ALT_SUPPORT
+            bool "Enable RSA alt support"
+            default y
             help
-                Enable PSA Crypto driver support for external secure elements.
-                This enables sign, verify, and key export operations via runtime-registered
-                callbacks from the secure element component (e.g., esp-cryptoauthlib).
-                The private key never leaves the secure element.
+                Support external private RSA keys (eg from a HSM) int the PK layer.
 
-        config MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL
-            bool "Enable hardware RSA digital signature peripheral acceleration"
+        config MBEDTLS_ATCA_HW_ECDSA_SIGN
+            bool "Enable hardware ECDSA sign acceleration when using ATECC608A"
             default n
-            depends on SOC_DIG_SIGN_SUPPORTED
             help
-                Enable hardware accelerated digital signature peripheral for RSA digital signature generation.
+                This option enables hardware acceleration for ECDSA sign function, only
+                when using ATECC608A cryptoauth chip.
+
+        config MBEDTLS_ATCA_HW_ECDSA_VERIFY
+            bool "Enable hardware ECDSA verify acceleration when using ATECC608A"
+            default n
+            help
+                This option enables hardware acceleration for ECDSA sign function, only
+                when using ATECC608A cryptoauth chip.
     endmenu
 
     menu "Entropy and Random Number Generation"
+        config MBEDTLS_ENTROPY_C
+            bool "Enable entropy support"
+            default y
+            depends on MBEDTLS_SHA256_C || MBEDTLS_SHA512_C
+            help
+                Enable support for entropy sources and provides a generic
+                entropy pool.
+
         config MBEDTLS_ENTROPY_FORCE_SHA256
             bool "Force SHA-256 for entropy"
             default n
@@ -1641,11 +1741,17 @@ menu "mbedTLS"
         config MBEDTLS_PKCS7_C
             bool "Enable PKCS number 7"
             default y
-            depends on MBEDTLS_ASN1_PARSE_C && MBEDTLS_PK_PARSE_C && \
-                MBEDTLS_X509_CRT_PARSE_C && MBEDTLS_X509_CRL_PARSE_C && MBEDTLS_MD_C
+            depends on MBEDTLS_ASN1_PARSE_C && MBEDTLS_OID_C && MBEDTLS_PK_PARSE_C && \
+                MBEDTLS_X509_CRT_PARSE_C && MBEDTLS_X509_CRL_PARSE_C && MBEDTLS_BIGNUM_C && MBEDTLS_MD_C
             help
                 Enable PKCS number 7 core for using PKCS number 7-formatted signatures.
 
+        config MBEDTLS_PKCS12_C
+            bool "Enable PKCS number 12"
+            default y
+            depends on MBEDTLS_ASN1_PARSE_C && (MBEDTLS_MD_C)
+            help
+                Enable PKCS number 12 core for using PKCS number 12-formatted signatures.
         config MBEDTLS_PKCS1_V15
             bool "Enable PKCS#1 v1.5 padding"
             default y
@@ -1665,7 +1771,7 @@ menu "mbedTLS"
         config MBEDTLS_CHACHAPOLY_C
             bool "ChaCha20-Poly1305 AEAD algorithm"
             default n
-            depends on MBEDTLS_CHACHA20_C
+            depends on MBEDTLS_CHACHA20_C && MBEDTLS_POLY1305_C
             help
                 Enable support for ChaCha20-Poly1305 AEAD algorithm.
 
@@ -1678,7 +1784,7 @@ menu "mbedTLS"
 
     config MBEDTLS_USE_CRYPTO_ROM_IMPL_BOOTLOADER
         bool "Use ROM implementation of the crypto algorithm in the bootloader"
-        depends on ESP_ROM_HAS_MBEDTLS_CRYPTO_LIB && ESP32C2_REV_MIN_200
+        depends on ESP_ROM_HAS_MBEDTLS_CRYPTO_LIB && !MBEDTLS_VER_4_X_SUPPORT
         default "n"
         select MBEDTLS_AES_C
         help
@@ -1689,7 +1795,7 @@ menu "mbedTLS"
 
     config MBEDTLS_USE_CRYPTO_ROM_IMPL
         bool "Use ROM implementation of the crypto algorithm"
-        depends on ESP_ROM_HAS_MBEDTLS_CRYPTO_LIB && ESP32C2_REV_MIN_200
+        depends on ESP_ROM_HAS_MBEDTLS_CRYPTO_LIB && !MBEDTLS_VER_4_X_SUPPORT
         default "n"
         select MBEDTLS_SHA512_C
         select MBEDTLS_AES_C
@@ -1703,11 +1809,12 @@ menu "mbedTLS"
             Enable this flag to use mbedtls crypto algorithm from ROM instead of ESP-IDF.
 
             This configuration option saves flash footprint in the application binary.
-            It is available for ESP32-C2 rev2.0 and later, where the ECO4 ROM contains
-            the mbedtls crypto algorithm library v3.6.0.
-            We have done the security analysis of the mbedtls revision in ROM and ensured
-            that affected symbols have been patched (removed). If future mbedtls revisions
-            include security issues that also affect the version in ROM, then we shall patch
-            the relevant symbols. This would increase the flash footprint and hence care must
-            be taken to keep some reserved space for the application binary in flash layout.
+            Note that the version of mbedtls crypto algorithm library in ROM(ECO1~ECO3) is v2.16.12,
+            and the version of mbedtls crypto algorithm library in ROM(ECO4) is v3.6.0.
+            We have done the security analysis of the mbedtls revision in ROM (ECO1~ECO4)
+            and ensured that affected symbols have been patched (removed). If in the future
+            mbedtls revisions there are security issues that also affects the version in
+            ROM (ECO1~ECO4) then we shall patch the relevant symbols. This would increase
+            the flash footprint and hence care must be taken to keep some reserved space
+            for the application binary in flash layout.
 endmenu  # mbedTLS

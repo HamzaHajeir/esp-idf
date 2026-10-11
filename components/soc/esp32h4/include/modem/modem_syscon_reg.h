@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "modem/reg_base.h"
 #ifdef __cplusplus
 extern "C" {

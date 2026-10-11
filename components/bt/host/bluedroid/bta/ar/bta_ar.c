@@ -146,11 +146,10 @@ void bta_ar_dereg_avdt(tBTA_SYS_ID sys_id)
         bta_ar_cb.p_avk_conn_cback = NULL;
         mask = BTA_AR_AVK_MASK;
     }
-    if (mask) {
-        bta_ar_cb.avdt_registered &= ~mask;
-        if (bta_ar_cb.avdt_registered == 0) {
-            AVDT_Deregister();
-        }
+    bta_ar_cb.avdt_registered &= ~mask;
+
+    if (bta_ar_cb.avdt_registered == 0) {
+        AVDT_Deregister();
     }
 }
 
@@ -171,7 +170,6 @@ void bta_ar_avdt_conn(tBTA_SYS_ID sys_id, BD_ADDR bd_addr)
     UINT8       event = BTA_AR_AVDT_CONN_EVT;
     tAVDT_CTRL  data;
 
-    memset(&data, 0, sizeof(tAVDT_CTRL));
     if (sys_id == BTA_ID_AV) {
         if (bta_ar_cb.p_avk_conn_cback) {
             (*bta_ar_cb.p_avk_conn_cback)(0, bd_addr, event, &data);
@@ -217,11 +215,10 @@ void bta_ar_dereg_avct(tBTA_SYS_ID sys_id)
 {
     UINT8   mask = bta_ar_id (sys_id);
 
-    if (mask) {
-        bta_ar_cb.avct_registered &= ~mask;
-        if (bta_ar_cb.avct_registered == 0) {
-            AVCT_Deregister();
-        }
+    bta_ar_cb.avct_registered &= ~mask;
+
+    if (bta_ar_cb.avct_registered == 0) {
+        AVCT_Deregister();
     }
 }
 
@@ -246,12 +243,8 @@ void bta_ar_reg_avrc(UINT16 service_uuid, char *service_name, char *provider_nam
 
     if (service_uuid == UUID_SERVCLASS_AV_REM_CTRL_TARGET) {
         if (bta_ar_cb.sdp_tg_handle == 0) {
-            UINT32 sdp_handle = SDP_CreateRecord();
-            if (sdp_handle == 0) {
-                return;
-            }
             bta_ar_cb.tg_registered = mask;
-            bta_ar_cb.sdp_tg_handle = sdp_handle;
+            bta_ar_cb.sdp_tg_handle = SDP_CreateRecord();
             AVRC_AddRecord(service_uuid, service_name, provider_name, categories, bta_ar_cb.sdp_tg_handle, browsing_en);
             bta_sys_add_uuid(service_uuid);
         }
@@ -261,12 +254,7 @@ void bta_ar_reg_avrc(UINT16 service_uuid, char *service_name, char *provider_nam
         bta_ar_cb.ct_categories [mask - 1] = categories;
         categories = bta_ar_cb.ct_categories[0] | bta_ar_cb.ct_categories[1];
         if (bta_ar_cb.sdp_ct_handle == 0) {
-            UINT32 sdp_handle = SDP_CreateRecord();
-            if (sdp_handle == 0) {
-                bta_ar_cb.ct_categories[mask - 1] = 0;
-                return;
-            }
-            bta_ar_cb.sdp_ct_handle = sdp_handle;
+            bta_ar_cb.sdp_ct_handle = SDP_CreateRecord();
             AVRC_AddRecord(service_uuid, service_name, provider_name, categories, bta_ar_cb.sdp_ct_handle, browsing_en);
             bta_sys_add_uuid(service_uuid);
         } else {
@@ -311,12 +299,12 @@ void bta_ar_dereg_avrc(UINT16 service_uuid, tBTA_SYS_ID sys_id)
             bta_ar_cb.ct_categories [mask - 1] = 0;
             categories = bta_ar_cb.ct_categories[0] | bta_ar_cb.ct_categories[1];
             if (!categories) {
-                /* no CT is still registered - cleanup */
+                /* no CT is still registered - cleaup */
                 SDP_DeleteRecord(bta_ar_cb.sdp_ct_handle);
                 bta_ar_cb.sdp_ct_handle = 0;
                 bta_sys_remove_uuid(service_uuid);
             } else {
-                /* change supported categories to the remaining one */
+                /* change supported categories to the remaning one */
                 p = temp;
                 UINT16_TO_BE_STREAM(p, categories);
                 SDP_AddAttribute(bta_ar_cb.sdp_ct_handle, ATTR_ID_SUPPORTED_FEATURES, UINT_DESC_TYPE,

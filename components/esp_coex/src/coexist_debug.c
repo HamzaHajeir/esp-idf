@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +19,9 @@
 #include "soc/gpio_sig_map.h"
 #include "esp_rom_gpio.h"
 #include "soc/soc.h"
-#include "esp_private/periph_ctrl.h"
+#if SOC_MODEM_CLOCK_IS_INDEPENDENT
+#include "esp_private/esp_modem_clock.h"
+#endif
 
 #if CONFIG_ESP_COEX_GPIO_DEBUG
 static char* TAG = "coexist debug";
@@ -190,9 +192,13 @@ esp_err_t esp_coexist_debug_matrix_init(int evt, int sig, bool rev)
 
 esp_err_t esp_coexist_gpio_debug_matrix_config(int event)
 {
-    coex_module_enable();
+#if SOC_MODEM_CLOCK_IS_INDEPENDENT
+    modem_clock_module_enable(PERIPH_COEX_MODULE);
+#endif
     esp_err_t ret = coex_gpio_debug_matrix_config(event);
-    coex_module_disable();
+#if SOC_MODEM_CLOCK_IS_INDEPENDENT
+    modem_clock_module_disable(PERIPH_COEX_MODULE);
+#endif
     return ret;
 }
 
@@ -259,10 +265,14 @@ esp_err_t esp_coexist_debug_init(void)
         gpio_set_level(s_io_nums[i], false);
     }
 
-    coex_module_enable();
+#if SOC_MODEM_CLOCK_IS_INDEPENDENT
+    modem_clock_module_enable(PERIPH_COEX_MODULE);
+#endif
     /* Init coexist hardware signal */
     ESP_ERROR_CHECK(coex_gpio_debug_matrix_init());
-    coex_module_disable();
+#if SOC_MODEM_CLOCK_IS_INDEPENDENT
+    modem_clock_module_disable(PERIPH_COEX_MODULE);
+#endif
 
     return ESP_OK;
 }

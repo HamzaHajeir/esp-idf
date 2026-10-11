@@ -67,13 +67,18 @@ function(fatfs_create_partition_image partition base_dir)
             ADDITIONAL_CLEAN_FILES
             ${image_file})
 
-        set(esp_partition_register_target_optional_args DEPENDS fatfs_${partition}_bin)
+        idf_component_get_property(main_args esptool_py FLASH_ARGS)
+        idf_component_get_property(sub_args esptool_py FLASH_SUB_ARGS)
+        # Last (optional) parameter is the encryption for the target. In our
+        # case, fatfs is not encrypt so pass FALSE to the function.
+        esptool_py_flash_target(${partition}-flash "${main_args}" "${sub_args}" ALWAYS_PLAINTEXT)
+        esptool_py_flash_to_partition(${partition}-flash "${partition}" "${image_file}")
 
+        add_dependencies(${partition}-flash fatfs_${partition}_bin)
         if(arg_FLASH_IN_PROJECT)
-            list(APPEND esp_partition_register_target_optional_args FLASH_IN_PROJECT)
+            esptool_py_flash_to_partition(flash "${partition}" "${image_file}")
+            add_dependencies(flash fatfs_${partition}_bin)
         endif()
-
-        esp_partition_register_target(${partition} "${image_file}" ${esp_partition_register_target_optional_args})
     else()
         set(message "Failed to create FATFS image for partition '${partition}'. "
                     "Check project configuration if using the correct partition table file.")

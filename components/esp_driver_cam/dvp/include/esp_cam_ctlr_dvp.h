@@ -40,10 +40,6 @@ typedef struct esp_cam_ctlr_dvp_config {
     uint32_t h_res;                             /*!< Input horizontal resolution, i.e. the number of pixels in a line */
     uint32_t v_res;                             /*!< Input vertical resolution, i.e. the number of lines in a frame */
     cam_ctlr_color_t input_data_color_type;     /*!< Input pixel format */
-    cam_ctlr_color_t output_data_color_type;    /*!< Output pixel format */
-    color_conv_std_rgb_yuv_t conv_std;          /*!< Conversion standard */
-    color_range_t input_range;                  /*!< Input color range */
-    color_range_t output_range;                 /*!< Output color range */
     uint32_t cam_data_width;                        /*!< Byte width, 8, 16 or 24 bit, default to 8 */
     struct {
         uint32_t bit_swap_en : 1;               /*!< Enable bit swap */
@@ -77,8 +73,8 @@ typedef struct esp_cam_ctlr_dvp_config {
         uint32_t external_xtal : 1;             /*!< Using external XTAL, if set, xclk_io and dvp output clock will be ignored */
     };                                          /*!< Boolean Flags */
 
-    uint32_t dma_burst_size;                    /*!< DVP DMA burst size, in bytes, must be a power of 2.
-                                                     Set to 0 to use the driver default. Set to 1 to disable the data burst. */
+    uint32_t dma_burst_size;                    /*!< DVP DMA burst transmission block size, set to 0 means to disable the data burst,
+                                                     other value must be power of 2, e.g., 4/8/16/32/64/128 */
     uint32_t xclk_freq;                         /*!< DVP output clock frequency in HZ, only valid if `external_xtal` is set to true */
 
     const esp_cam_ctlr_dvp_pin_config_t *pin;   /*!< DVP pin configuration, this will be ignored by "esp_cam_new_dvp_ctlr" if "pin_dont_init" is set */

@@ -16,7 +16,7 @@
 
 .. only:: SOC_UART_HAS_LP_UART
 
-    此外，{IDF_TARGET_NAME} 芯片还有一个满足低功耗需求的 LP UART 控制器。LP UART 是原 UART 的功能剪裁版本。它只支持基础 UART 功能，不支持 IrDA 或 RS485 协议，并且只有一块较小的 RAM 存储空间。想要全面了解的 UART 及 LP UART 功能区别，请参考 **{IDF_TARGET_NAME} 技术参考手册** > UART 控制器 (UART) > 主要特性 [`PDF <{IDF_TARGET_TRM_CN_URL}#uart>`__]。
+    此外，{IDF_TARGET_NAME} 芯片还有一个满足低功耗需求的 LP UART 控制器。LP UART 是原 UART 的功能剪裁版本。它只支持基础 UART 功能，不支持 IrDA 或 RS485 协议，并且只有一块较小的 RAM 存储空间。想要全面了解的 UART 及 LP UART 功能区别，请参考 **{IDF_TARGET_NAME} 技术参考手册** > UART 控制器 (UART) > 主要特性 [`PDF <{IDF_TARGET_TRM_EN_URL}#uart>`__]。
 
 .. only:: SOC_UHCI_SUPPORTED
 
@@ -107,8 +107,6 @@ UART 驱动程序函数通过 :cpp:type:`uart_port_t` 识别不同的 UART 控�
 
     此外，置位 :cpp:member:`uart_config_t::allow_pd` 会使能在进入睡眠模式前备份 UART 配置寄存器并在退出睡眠后恢复这些寄存器。这个功能使 UART 能够在系统唤醒后继续正常工作，即使其电源域在睡眠过程中被完全关闭。此选项需要用户在功耗和内存使用之间取得平衡。如果功耗不是一个问题，可以禁用这个选项来节省内存。
 
-如果 RX 信号可能出现抖动，可以设置 :cpp:member:`uart_config_t::rx_glitch_filt_thresh` 来过滤抖动以确保接收到正确的数据（注意：该功能在 ESP32 和 ESP32-S2 上不支持）。:cpp:member:`uart_config_t::rx_glitch_filt_thresh` 的单位是纳秒。默认值为 0，即表示不进行过滤。
-
 分步依次配置每个参数
 """""""""""""""""""""""""""""""
 
@@ -150,9 +148,6 @@ UART 驱动程序函数通过 :cpp:type:`uart_port_t` 识别不同的 UART 控�
   // Set UART pins(TX: IO4, RX: IO5, RTS: IO18, CTS: IO19, DTR: UNUSED, DSR: UNUSED)
   ESP_ERROR_CHECK(uart_set_pin({IDF_TARGET_UART_EXAMPLE_PORT}, 4, 5, 18, 19, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-.. note::
-
-    上方管脚编号仅为示例。许多开发板的板载 USB 至 UART 桥接到 UART0 的默认 TX/RX 管脚。若需要通过其他端口或其他管脚与 PC 通信，则需在这些管脚上另接 USB 至 UART 桥。
 
 .. _uart-api-running-uart-communication:
 
@@ -244,7 +239,7 @@ UART 控制器支持多种通信模式，使用函数 :cpp:func:`uart_set_mode` 
 使用中断
 ^^^^^^^^^^^^^^^^^
 
-根据特定的 UART 状态或检测到的错误，可以生成许多不同的中断。**{IDF_TARGET_NAME} 技术参考手册** > UART 控制器 (UART) > UART 中断 [`PDF <{IDF_TARGET_TRM_CN_URL}#uart>`__] 中提供了可用中断的完整列表。调用 :cpp:func:`uart_enable_intr_mask` 或 :cpp:func:`uart_disable_intr_mask` 能够分别启用或禁用特定中断。
+根据特定的 UART 状态或检测到的错误，可以生成许多不同的中断。**{IDF_TARGET_NAME} 技术参考手册** > UART 控制器 (UART) > UART 中断 [`PDF <{IDF_TARGET_TRM_EN_URL}#uart>`__] 中提供了可用中断的完整列表。调用 :cpp:func:`uart_enable_intr_mask` 或 :cpp:func:`uart_disable_intr_mask` 能够分别启用或禁用特定中断。
 
 UART 驱动提供了一种便利的方法来处理特定的中断，即将中断包装成相应的事件。这些事件定义在 :cpp:type:`uart_event_type_t` 中，FreeRTOS 队列功能可将这些事件报告给用户应用程序。
 

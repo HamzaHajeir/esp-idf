@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+// TODO: to be checked IDF-14666
+
 /**
  * ESP32S31 uses the CLIC controller as the interrupt controller (SOC_INT_CLIC_SUPPORTED = y)
  *

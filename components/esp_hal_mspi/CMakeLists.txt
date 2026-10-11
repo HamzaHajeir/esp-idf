@@ -2,18 +2,7 @@ idf_build_get_property(target IDF_TARGET)
 idf_build_get_property(esp_tee_build ESP_TEE_BUILD)
 
 set(srcs)
-set(includes "include")
-set(requires soc hal esp_hal_gpspi)
-set(priv_requires esp_hal_gpio)
-
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/${target}/include")
-    list(APPEND includes "${target}/include")
-endif()
-
-if(NOT "${target}" STREQUAL "linux")
-    # TODO: IDF-15106 remove esp_hal_clock dependency
-    list(APPEND requires "esp_hal_clock")
-endif()
+set(includes "include" "${target}/include")
 
 if(esp_tee_build)
     if(CONFIG_SECURE_TEE_EXT_FLASH_MEMPROT_SPI1)
@@ -35,11 +24,9 @@ elseif(NOT BOOTLOADER_BUILD)
 
 endif()
 
-list(APPEND srcs "${target}/mspi_periph.c")
-
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS ${includes}
-    REQUIRES ${requires}
-    PRIV_REQUIRES ${priv_requires}
+    REQUIRES soc hal esp_hal_gpspi
+    PRIV_REQUIRES esp_hal_gpio
 )

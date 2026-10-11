@@ -415,39 +415,37 @@ static inline void dw_gdma_ll_channel_set_dst_master_port(dw_gdma_dev_t *dev, ui
 {
     if (mem_addr == MIPI_DSI_BRG_MEM_BASE) {
         dev->ch[channel].ctl0.dms = DW_GDMA_LL_MASTER_PORT_MIPI_DSI;
-    } else if (mem_addr == MIPI_CSI_BRG_MEM_BASE) {
-        dev->ch[channel].ctl0.dms = DW_GDMA_LL_MASTER_PORT_MIPI_CSI;
     } else {
         dev->ch[channel].ctl0.dms = DW_GDMA_LL_MASTER_PORT_MEMORY;
     }
 }
 
 /**
- * @brief Set the source address increment mode
+ * @brief Enable the source address burst mode
  *
- * @note Controls whether the source address is increased by the data width after each transfer
+ * @note Increase the source address by the data width after each transfer
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param mode Address increment mode
+ * @param mode Address burst mode
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_src_addr_inc_mode(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_addr_inc_mode_t mode)
+static inline void dw_gdma_ll_channel_set_src_burst_mode(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_mode_t mode)
 {
     dev->ch[channel].ctl0.sinc = mode;
 }
 
 /**
- * @brief Set the destination address increment mode
+ * @brief Enable the destination address burst mode
  *
- * @note Controls whether the destination address is increased by the data width after each transfer
+ * @note Increase the destination address by the data width after each transfer
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param mode Address increment mode
+ * @param mode Address burst mode
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_dst_addr_inc_mode(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_addr_inc_mode_t mode)
+static inline void dw_gdma_ll_channel_set_dst_burst_mode(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_mode_t mode)
 {
     dev->ch[channel].ctl0.dinc = mode;
 }
@@ -483,12 +481,12 @@ static inline void dw_gdma_ll_channel_set_dst_trans_width(dw_gdma_dev_t *dev, ui
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param size Burst size (number of data items)
+ * @param items Number of data items
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_src_burst_size(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_size_t size)
+static inline void dw_gdma_ll_channel_set_src_burst_items(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_items_t items)
 {
-    dev->ch[channel].ctl0.src_msize = size;
+    dev->ch[channel].ctl0.src_msize = items;
 }
 
 /**
@@ -496,39 +494,39 @@ static inline void dw_gdma_ll_channel_set_src_burst_size(dw_gdma_dev_t *dev, uin
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param size Burst size (number of data items)
+ * @param items Number of data items
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_dst_burst_size(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_size_t size)
+static inline void dw_gdma_ll_channel_set_dst_burst_items(dw_gdma_dev_t *dev, uint8_t channel, dw_gdma_burst_items_t items)
 {
-    dev->ch[channel].ctl0.dst_msize = size;
+    dev->ch[channel].ctl0.dst_msize = items;
 }
 
 /**
- * @brief Set the source AXI burst length
+ * @brief Set the source burst length
  *
- * @note This controls how many times the DMA controller will ask for data from the source device in a single AXI burst transaction.
+ * @note This controls how many times the DMA controller will ask for data from the source device in a single burst transaction.
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param len AXI burst length
+ * @param len Burst length
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_src_axi_burst_len(dw_gdma_dev_t *dev, uint8_t channel, uint8_t len)
+static inline void dw_gdma_ll_channel_set_src_burst_len(dw_gdma_dev_t *dev, uint8_t channel, uint8_t len)
 {
     dev->ch[channel].ctl1.arlen_en = len > 0;
     HAL_FORCE_MODIFY_U32_REG_FIELD(dev->ch[channel].ctl1, arlen, len);
 }
 
 /**
- * @brief Set the destination AXI burst length
+ * @brief Set the destination burst length
  *
  * @param dev Pointer to the DW_GDMA registers
  * @param channel Channel number
- * @param len AXI burst length
+ * @param len Burst length
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_channel_set_dst_axi_burst_len(dw_gdma_dev_t *dev, uint8_t channel, uint8_t len)
+static inline void dw_gdma_ll_channel_set_dst_burst_len(dw_gdma_dev_t *dev, uint8_t channel, uint8_t len)
 {
     dev->ch[channel].ctl1.awlen_en = len > 0;
     HAL_FORCE_MODIFY_U32_REG_FIELD(dev->ch[channel].ctl1, awlen, len);
@@ -1072,80 +1070,80 @@ static inline void dw_gdma_ll_lli_set_trans_block_size(dw_gdma_link_list_item_t 
 }
 
 /**
- * @brief Set the source address increment mode
+ * @brief Enable the source address burst mode
  *
- * @note Controls whether the source address is increased by the data width after each transfer
+ * @note Increase the source address by the data width after each transfer
  *
  * @param lli Link list item
- * @param mode Address increment mode
+ * @param mode Address burst mode
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_src_addr_inc_mode(dw_gdma_link_list_item_t *lli, dw_gdma_addr_inc_mode_t mode)
+static inline void dw_gdma_ll_lli_set_src_burst_mode(dw_gdma_link_list_item_t *lli, dw_gdma_burst_mode_t mode)
 {
     lli->ctrl_lo.sinc = mode;
 }
 
 /**
- * @brief Set the destination address increment mode
+ * @brief Enable the destination address burst mode
  *
- * @note Controls whether the destination address is increased by the data width after each transfer
+ * @note Increase the destination address by the data width after each transfer
  *
  * @param lli Link list item
- * @param mode Address increment mode
+ * @param mode Address burst mode
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_dst_addr_inc_mode(dw_gdma_link_list_item_t *lli, dw_gdma_addr_inc_mode_t mode)
+static inline void dw_gdma_ll_lli_set_dst_burst_mode(dw_gdma_link_list_item_t *lli, dw_gdma_burst_mode_t mode)
 {
     lli->ctrl_lo.dinc = mode;
 }
 
 /**
- * @brief Set the burst size for the source master port
+ * @brief Set the number of data items that can be transferred in a single burst transaction for the source master port
  *
  * @param lli Link list item
- * @param size Burst size (number of data items)
+ * @param items Number of data items
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_src_burst_size(dw_gdma_link_list_item_t *lli, dw_gdma_burst_size_t size)
+static inline void dw_gdma_ll_lli_set_src_burst_items(dw_gdma_link_list_item_t *lli, dw_gdma_burst_items_t items)
 {
-    lli->ctrl_lo.src_msize = size;
+    lli->ctrl_lo.src_msize = items;
 }
 
 /**
- * @brief Set the burst size for the destination master port
+ * @brief Set the number of data items that can be transferred in a single burst transaction for the destination master port
  *
  * @param lli Link list item
- * @param size Burst size (number of data items)
+ * @param items Number of data items
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_dst_burst_size(dw_gdma_link_list_item_t *lli, dw_gdma_burst_size_t size)
+static inline void dw_gdma_ll_lli_set_dst_burst_items(dw_gdma_link_list_item_t *lli, dw_gdma_burst_items_t items)
 {
-    lli->ctrl_lo.dst_msize = size;
+    lli->ctrl_lo.dst_msize = items;
 }
 
 /**
- * @brief Set the source AXI burst length
+ * @brief Set the source burst length
  *
- * @note This controls how many times the DMA controller will ask for data from the source device in a single AXI burst transaction.
+ * @note This controls how many times the DMA controller will ask for data from the source device in a single burst transaction.
  *
  * @param lli Link list item
- * @param len AXI burst length
+ * @param len Burst length
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_src_axi_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
+static inline void dw_gdma_ll_lli_set_src_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
 {
     lli->ctrl_hi.arlen_en = len > 0;
     HAL_FORCE_MODIFY_U32_REG_FIELD(lli->ctrl_hi, arlen, len);
 }
 
 /**
- * @brief Set the destination AXI burst length
+ * @brief Set the destination burst length
  *
  * @param lli Link list item
- * @param len AXI burst length
+ * @param len Burst length
  */
 __attribute__((always_inline))
-static inline void dw_gdma_ll_lli_set_dst_axi_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
+static inline void dw_gdma_ll_lli_set_dst_burst_len(dw_gdma_link_list_item_t *lli, uint8_t len)
 {
     lli->ctrl_hi.awlen_en = len > 0;
     HAL_FORCE_MODIFY_U32_REG_FIELD(lli->ctrl_hi, awlen, len);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include "hal/color_types.h"
+#include "hal/dma2d_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,17 +21,6 @@ typedef enum {
     PPA_ENGINE_TYPE_SRM,            /*!< PPA Scaling-Rotating-Mirroring (SRM) engine, used to perform scale, rotate, mirror */
     PPA_ENGINE_TYPE_BLEND,          /*!< PPA Blending engine, used to perform blend or fill */
 } ppa_engine_type_t;
-
-/**
- * @brief Enumeration of the Color Look-Up Tables (CLUT) in the PPA module
- *
- * Each CLUT is attached to one specific data path of one specific PPA engine, and they are configured independently.
- */
-typedef enum {
-    PPA_CLUT_BLEND_BG,          /*!< The CLUT on the background input path of the blending engine */
-    PPA_CLUT_BLEND_FG,          /*!< The CLUT on the foreground input path of the blending engine */
-    PPA_CLUT_ID_MAX,            /*!< Number of the CLUTs in the PPA module, not a valid CLUT ID */
-} ppa_clut_id_t;
 
 /**
  * @brief Enumeration of PPA Scaling-Rotating-Mirroring available rotation angle (in the counterclockwise direction)
@@ -75,8 +65,9 @@ typedef enum {
     PPA_BLEND_COLOR_MODE_YUV422_YUYV = ESP_COLOR_FOURCC_YUYV,       /*!< PPA blend color mode: YUV422, only available on blend background input */
     PPA_BLEND_COLOR_MODE_YUV422_YVYU = ESP_COLOR_FOURCC_YVYU,       /*!< PPA blend color mode: YUV422, only available on blend background input */
     PPA_BLEND_COLOR_MODE_GRAY8 = ESP_COLOR_FOURCC_GREY,             /*!< PPA blend color mode: GRAY8, only available on blend background input or on output */
-    PPA_BLEND_COLOR_MODE_L8 = ESP_COLOR_FOURCC_CLUT8,               /*!< PPA blend color mode: L8, only available on blend input */
-    PPA_BLEND_COLOR_MODE_L4 = ESP_COLOR_FOURCC_CLUT4,               /*!< PPA blend color mode: L4, only available on blend input */
+    // TODO: Support CLUT to support L4/L8 color mode
+    // PPA_BLEND_COLOR_MODE_L8,               /*!< PPA blend color mode: L8, only available on blend input */
+    // PPA_BLEND_COLOR_MODE_L4,               /*!< PPA blend color mode: L4, only available on blend input */
 } ppa_blend_color_mode_t;
 
 /**
@@ -124,11 +115,11 @@ typedef enum {
  * @brief Enumeration of PPA supported data burst length
  */
 typedef enum {
-    PPA_DATA_BURST_LENGTH_8 = 8,                    /*!< Data burst length: 8 bytes */
-    PPA_DATA_BURST_LENGTH_16 = 16,                  /*!< Data burst length: 16 bytes */
-    PPA_DATA_BURST_LENGTH_32 = 32,                  /*!< Data burst length: 32 bytes */
-    PPA_DATA_BURST_LENGTH_64 = 64,                  /*!< Data burst length: 64 bytes */
-    PPA_DATA_BURST_LENGTH_128 = 128,                /*!< Data burst length: 128 bytes */
+    PPA_DATA_BURST_LENGTH_8 = DMA2D_DATA_BURST_LENGTH_8,        /*!< Data burst length: 8 bytes */
+    PPA_DATA_BURST_LENGTH_16 = DMA2D_DATA_BURST_LENGTH_16,      /*!< Data burst length: 16 bytes */
+    PPA_DATA_BURST_LENGTH_32 = DMA2D_DATA_BURST_LENGTH_32,      /*!< Data burst length: 32 bytes */
+    PPA_DATA_BURST_LENGTH_64 = DMA2D_DATA_BURST_LENGTH_64,      /*!< Data burst length: 64 bytes */
+    PPA_DATA_BURST_LENGTH_128 = DMA2D_DATA_BURST_LENGTH_128,    /*!< Data burst length: 128 bytes */
 } ppa_data_burst_length_t;
 
 #ifdef __cplusplus

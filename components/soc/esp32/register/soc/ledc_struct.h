@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -12,9 +12,9 @@
 extern "C" {
 #endif
 
-typedef struct ledc_dev_t {
-    volatile struct {
-        volatile struct {
+typedef volatile struct ledc_dev_s {
+    struct {
+        struct {
             union {
                 struct {
                     uint32_t timer_sel:  2;              /*There are four high speed timers  the two bits are used to select one of them for high speed channel.  2'b00: seletc hstimer0.   2'b01: select hstimer1.  2'b10: select hstimer2.    2'b11: select hstimer3.*/
@@ -59,8 +59,8 @@ typedef struct ledc_dev_t {
             } duty_rd;
         } channel[8];
     } channel_group[2];                                /*two channel groups : 0: high-speed channels; 1: low-speed channels*/
-    volatile struct {
-        volatile struct {
+    struct {
+        struct {
             union {
                 struct {
                     uint32_t duty_resolution:   5;     /*This register controls resolution of PWN duty by defining the bit width of timer's counter. The max bit width of the counter is 20.*/
@@ -82,7 +82,7 @@ typedef struct ledc_dev_t {
             } value;
         } timer[4];
     } timer_group[2];                                    /*two channel groups : 0: high-speed channels; 1: low-speed channels*/
-    volatile union {
+    union {
         struct {
             uint32_t hstimer0_ovf:        1;           /*The interrupt raw bit for high speed channel0  counter overflow.*/
             uint32_t hstimer1_ovf:        1;           /*The interrupt raw bit for high speed channel1  counter overflow.*/
@@ -112,7 +112,7 @@ typedef struct ledc_dev_t {
         };
         uint32_t val;
     } int_raw;
-    volatile union {
+    union {
         struct {
             uint32_t hstimer0_ovf:        1;            /*The interrupt status bit for high speed channel0  counter overflow event.*/
             uint32_t hstimer1_ovf:        1;            /*The interrupt status bit for high speed channel1  counter overflow event.*/
@@ -142,7 +142,7 @@ typedef struct ledc_dev_t {
         };
         uint32_t val;
     } int_st;
-    volatile union {
+    union {
         struct {
             uint32_t hstimer0_ovf:        1;           /*The interrupt enable bit for high speed channel0  counter overflow interrupt.*/
             uint32_t hstimer1_ovf:        1;           /*The interrupt enable bit for high speed channel1  counter overflow interrupt.*/
@@ -172,7 +172,7 @@ typedef struct ledc_dev_t {
         };
         uint32_t val;
     } int_ena;
-    volatile union {
+    union {
         struct {
             uint32_t hstimer0_ovf:        1;           /*Set this  bit to clear  high speed channel0  counter overflow interrupt.*/
             uint32_t hstimer1_ovf:        1;           /*Set this  bit to clear  high speed channel1  counter overflow interrupt.*/
@@ -202,7 +202,7 @@ typedef struct ledc_dev_t {
         };
         uint32_t val;
     } int_clr;
-    volatile union {
+    union {
         struct {
             uint32_t apb_clk_sel: 1;                   /*This bit decides the slow clock for LEDC low speed channels, so we want to replace the field name with slow_clk_sel*/
             uint32_t reserved1:  31;
@@ -239,7 +239,7 @@ typedef struct ledc_dev_t {
     uint32_t reserved_1f0;
     uint32_t reserved_1f4;
     uint32_t reserved_1f8;
-    volatile uint32_t date;                                     /*This register represents the version .*/
+    uint32_t date;                                     /*This register represents the version .*/
 } ledc_dev_t;
 extern ledc_dev_t LEDC;
 

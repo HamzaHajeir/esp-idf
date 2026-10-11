@@ -1,11 +1,10 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdarg.h>
 
-#include "esp_err.h"
 #include "esp_fault.h"
 #include "soc/soc_caps.h"
 
@@ -18,7 +17,6 @@
 #endif
 #if SOC_HMAC_SUPPORTED
 #include "esp_hmac.h"
-#include "hal/hmac_hal.h"
 #endif
 #if SOC_DIG_SIGN_SUPPORTED
 #include "esp_ds.h"
@@ -26,11 +24,7 @@
 #if SOC_ECC_SUPPORTED
 #include "ecc_impl.h"
 #endif
-#include "psa/initial_attestation.h"
 #include "esp_crypto_periph_clk.h"
-#include "nvs.h"
-
-#include "esp_efuse.h"
 
 #include "esp_tee.h"
 #include "esp_tee_memory_utils.h"
@@ -38,9 +32,6 @@
 
 #include "esp_tee_sec_storage.h"
 #include "esp_tee_ota_ops.h"
-#include "esp_attestation.h"
-
-#include "sdkconfig.h"
 
 static __attribute__((unused)) const char *TAG = "esp_tee_sec_srv";
 
@@ -64,18 +55,15 @@ int _ss_esp_aes_crypt_cbc(esp_aes_context *ctx,
                           const unsigned char *input,
                           unsigned char *output)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(iv, 16) &&
-                       esp_tee_buf_in_ree(input, length) &&
-                       esp_tee_buf_in_ree(output, length));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + length)) && esp_tee_ptr_in_ree((void *)(output + length))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_cbc(&ctx_local, mode, length, iv, input, output);
+    return esp_aes_crypt_cbc(ctx, mode, length, iv, input, output);
 }
 
 int _ss_esp_aes_crypt_cfb128(esp_aes_context *ctx,
@@ -86,19 +74,15 @@ int _ss_esp_aes_crypt_cfb128(esp_aes_context *ctx,
                              const unsigned char *input,
                              unsigned char *output)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(iv_off, sizeof(size_t)) &&
-                       esp_tee_buf_in_ree(iv, 16) &&
-                       esp_tee_buf_in_ree(input, length) &&
-                       esp_tee_buf_in_ree(output, length));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + length)) && esp_tee_ptr_in_ree((void *)(output + length))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_cfb128(&ctx_local, mode, length, iv_off, iv, input, output);
+    return esp_aes_crypt_cfb128(ctx, mode, length, iv_off, iv, input, output);
 }
 
 int _ss_esp_aes_crypt_cfb8(esp_aes_context *ctx,
@@ -108,18 +92,15 @@ int _ss_esp_aes_crypt_cfb8(esp_aes_context *ctx,
                            const unsigned char *input,
                            unsigned char *output)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(iv, 16) &&
-                       esp_tee_buf_in_ree(input, length) &&
-                       esp_tee_buf_in_ree(output, length));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + length)) && esp_tee_ptr_in_ree((void *)(output + length))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_cfb8(&ctx_local, mode, length, iv, input, output);
+    return esp_aes_crypt_cfb8(ctx, mode, length, iv, input, output);
 }
 
 int _ss_esp_aes_crypt_ctr(esp_aes_context *ctx,
@@ -130,20 +111,15 @@ int _ss_esp_aes_crypt_ctr(esp_aes_context *ctx,
                           const unsigned char *input,
                           unsigned char *output)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(nc_off, sizeof(size_t)) &&
-                       esp_tee_buf_in_ree(nonce_counter, 16) &&
-                       esp_tee_buf_in_ree(stream_block, 16) &&
-                       esp_tee_buf_in_ree(input, length) &&
-                       esp_tee_buf_in_ree(output, length));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + length)) && esp_tee_ptr_in_ree((void *)(output + length))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_ctr(&ctx_local, length, nc_off, nonce_counter, stream_block, input, output);
+    return esp_aes_crypt_ctr(ctx, length, nc_off, nonce_counter, stream_block, input, output);
 }
 
 int _ss_esp_aes_crypt_ecb(esp_aes_context *ctx,
@@ -151,17 +127,15 @@ int _ss_esp_aes_crypt_ecb(esp_aes_context *ctx,
                           const unsigned char input[16],
                           unsigned char output[16])
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(input, 16) &&
-                       esp_tee_buf_in_ree(output, 16));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + 16)) && esp_tee_ptr_in_ree((void *)(output + 16))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_ecb(&ctx_local, mode, input, output);
+    return esp_aes_crypt_ecb(ctx, mode, input, output);
 }
 
 int _ss_esp_aes_crypt_ofb(esp_aes_context *ctx,
@@ -171,82 +145,25 @@ int _ss_esp_aes_crypt_ofb(esp_aes_context *ctx,
                           const unsigned char *input,
                           unsigned char *output)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(ctx, sizeof(esp_aes_context)) &&
-                       esp_tee_buf_in_ree(iv_off, sizeof(size_t)) &&
-                       esp_tee_buf_in_ree(iv, 16) &&
-                       esp_tee_buf_in_ree(input, length) &&
-                       esp_tee_buf_in_ree(output, length));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + length)) && esp_tee_ptr_in_ree((void *)(output + length))));
 
     if (!valid_addr) {
         return -1;
     }
     ESP_FAULT_ASSERT(valid_addr);
 
-    esp_aes_context ctx_local = *ctx;
-    return esp_aes_crypt_ofb(&ctx_local, length, iv_off, iv, input, output);
+    return esp_aes_crypt_ofb(ctx, length, iv_off, iv, input, output);
 }
 #endif
 
 /* ---------------------------------------------- SHA ------------------------------------------------- */
 
 #if SOC_SHA_SUPPORTED
-static size_t get_sha_digest_size(esp_sha_type sha_type)
-{
-    switch (sha_type) {
-    case SHA1: return 20;
-    case SHA2_224: return 28;
-    case SHA2_256: return 32;
-#if SOC_SHA_SUPPORT_SHA384
-    case SHA2_384: return 48;
-#endif
-#if SOC_SHA_SUPPORT_SHA512
-    case SHA2_512: return 64;
-#endif
-    default: return 0;
-    }
-}
-
-static size_t get_sha_state_size(esp_sha_type sha_type)
-{
-    switch (sha_type) {
-    case SHA1: return 20;
-    case SHA2_224:
-    case SHA2_256: return 32;
-#if SOC_SHA_SUPPORT_SHA384
-    case SHA2_384: return 64;
-#endif
-#if SOC_SHA_SUPPORT_SHA512
-    case SHA2_512: return 64;
-#endif
-    default: return 0;
-    }
-}
-
-static size_t get_sha_block_size(esp_sha_type sha_type)
-{
-    switch (sha_type) {
-    case SHA1:
-    case SHA2_224:
-    case SHA2_256: return 64;
-#if SOC_SHA_SUPPORT_SHA384
-    case SHA2_384: return 128;
-#endif
-#if SOC_SHA_SUPPORT_SHA512
-    case SHA2_512: return 128;
-#endif
-    default: return 0;
-    }
-}
-
 void _ss_esp_sha(esp_sha_type sha_type, const unsigned char *input, size_t ilen, unsigned char *output)
 {
-    size_t digest_size = get_sha_digest_size(sha_type);
-    if (digest_size == 0) {
-        return;
-    }
-
-    bool valid_addr = (esp_tee_buf_in_ree(input, ilen) &&
-                       esp_tee_buf_in_ree(output, digest_size));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)input) && esp_tee_ptr_in_ree((void *)output)) &&
+                       (esp_tee_ptr_in_ree((void *)(input + ilen))));
 
     if (!valid_addr) {
         return;
@@ -259,9 +176,11 @@ void _ss_esp_sha(esp_sha_type sha_type, const unsigned char *input, size_t ilen,
 int _ss_esp_sha_dma(esp_sha_type sha_type, const void *input, uint32_t ilen,
                     const void *buf, uint32_t buf_len, bool is_first_block)
 {
-    bool valid_addr = esp_tee_buf_in_ree(input, ilen);
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)input) &&
+                       esp_tee_ptr_in_ree((void *)((char *)input + ilen)));
     if (buf_len) {
-        valid_addr &= esp_tee_buf_in_ree(buf, buf_len);
+        valid_addr &= (esp_tee_ptr_in_ree((void *)buf) &&
+                       esp_tee_ptr_in_ree((void *)((char *)buf + buf_len)));
     }
 
     if (!valid_addr) {
@@ -274,52 +193,16 @@ int _ss_esp_sha_dma(esp_sha_type sha_type, const void *input, uint32_t ilen,
 
 void _ss_esp_sha_read_digest_state(esp_sha_type sha_type, void *digest_state)
 {
-    size_t state_sz = get_sha_state_size(sha_type);
-    if (state_sz == 0) {
-        return;
-    }
-
-    bool valid_addr = esp_tee_buf_in_ree(digest_state, state_sz);
-
-    if (!valid_addr) {
-        return;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
     sha_hal_read_digest(sha_type, digest_state);
 }
 
 void _ss_esp_sha_write_digest_state(esp_sha_type sha_type, void *digest_state)
 {
-    size_t state_sz = get_sha_state_size(sha_type);
-    if (state_sz == 0) {
-        return;
-    }
-
-    bool valid_addr = esp_tee_buf_in_ree(digest_state, state_sz);
-
-    if (!valid_addr) {
-        return;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
     sha_hal_write_digest(sha_type, digest_state);
 }
 
 void _ss_esp_sha_block(esp_sha_type sha_type, const void *data_block, bool is_first_block)
 {
-    size_t block_sz = get_sha_block_size(sha_type);
-    if (block_sz == 0) {
-        return;
-    }
-
-    bool valid_addr = esp_tee_buf_in_ree(data_block, block_sz);
-
-    if (!valid_addr) {
-        return;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
     esp_sha_block(sha_type, data_block, is_first_block);
 }
 
@@ -344,15 +227,10 @@ int _ss_esp_sha_512_t_init_hash(uint16_t t)
 /* ---------------------------------------------- HMAC ------------------------------------------------- */
 
 #if SOC_HMAC_SUPPORTED
-void _ss_esp_crypto_hmac_enable_periph_clk(bool enable)
-{
-    esp_crypto_hmac_enable_periph_clk(enable);
-}
-
 esp_err_t _ss_esp_hmac_calculate(hmac_key_id_t key_id, const void *message, size_t message_len, uint8_t *hmac)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(message, message_len) &&
-                       esp_tee_buf_in_ree(hmac, 32));
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)message) && esp_tee_ptr_in_ree((void *)hmac)) &&
+                       esp_tee_ptr_in_ree((void *)((char *)message + message_len)));
 
 #if CONFIG_SECURE_TEE_SEC_STG_MODE_RELEASE
     valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_SEC_STG_EFUSE_HMAC_KEY_ID);
@@ -369,7 +247,7 @@ esp_err_t _ss_esp_hmac_calculate(hmac_key_id_t key_id, const void *message, size
 
 esp_err_t _ss_esp_hmac_jtag_enable(hmac_key_id_t key_id, const uint8_t *token)
 {
-    bool valid_addr = esp_tee_buf_in_ree((void *)token, 32);
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)token));
 
 #if CONFIG_SECURE_TEE_SEC_STG_MODE_RELEASE
     valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_SEC_STG_EFUSE_HMAC_KEY_ID);
@@ -390,40 +268,87 @@ esp_err_t _ss_esp_hmac_jtag_disable(void)
 }
 #endif
 
-/* ---------------------------------------------- DS ------------------------------------------------- */
-
 #if SOC_DIG_SIGN_SUPPORTED
-void _ss_esp_crypto_ds_enable_periph_clk(bool enable)
+esp_err_t _ss_esp_ds_sign(const void *message,
+                          const esp_ds_data_t *data,
+                          hmac_key_id_t key_id,
+                          void *signature)
 {
-    esp_crypto_ds_enable_periph_clk(enable);
-}
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)message) &&
+                       esp_tee_ptr_in_ree((void *)data) &&
+                       esp_tee_ptr_in_ree((void *)signature));
 
-uint32_t _ss_hmac_hal_config_key(hmac_hal_output_t config, uint32_t key_id)
-{
-    bool valid_arg = (config == HMAC_OUTPUT_DS) && (key_id < HMAC_KEY_MAX);
 #if CONFIG_SECURE_TEE_SEC_STG_MODE_RELEASE
-    valid_arg &= (key_id != (uint32_t)CONFIG_SECURE_TEE_SEC_STG_EFUSE_HMAC_KEY_ID);
+    valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_SEC_STG_EFUSE_HMAC_KEY_ID);
 #endif
-    valid_arg &= (key_id != (uint32_t)CONFIG_SECURE_TEE_PBKDF2_EFUSE_HMAC_KEY_ID);
+    valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_PBKDF2_EFUSE_HMAC_KEY_ID);
 
-    /* NOTE: Key Manager is not supported with ESP-TEE, so HMAC_KEY_KM fails the eFuse purpose check */
-    if (valid_arg) {
-        esp_efuse_purpose_t purpose = esp_efuse_get_key_purpose((esp_efuse_block_t)(EFUSE_BLK_KEY0 + key_id));
-        valid_arg &= (purpose == ESP_EFUSE_KEY_PURPOSE_HMAC_DOWN_DIGITAL_SIGNATURE ||
-                      purpose == ESP_EFUSE_KEY_PURPOSE_HMAC_DOWN_ALL);
+    if (!valid_addr) {
+        return ESP_ERR_INVALID_ARG;
     }
+    ESP_FAULT_ASSERT(valid_addr);
 
-    if (!valid_arg) {
-        return 1;
-    }
-    ESP_FAULT_ASSERT(valid_arg);
-
-    return hmac_hal_config_key(config, key_id);
+    return esp_ds_sign(message, data, key_id, signature);
 }
 
-void _ss_hmac_hal_clean(void)
+esp_err_t _ss_esp_ds_start_sign(const void *message,
+                                const esp_ds_data_t *data,
+                                hmac_key_id_t key_id,
+                                esp_ds_context_t **esp_ds_ctx)
 {
-    hmac_hal_clean();
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)message) &&
+                       esp_tee_ptr_in_ree((void *)data) &&
+                       esp_tee_ptr_in_ree((void *)esp_ds_ctx));
+
+#if CONFIG_SECURE_TEE_SEC_STG_MODE_RELEASE
+    valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_SEC_STG_EFUSE_HMAC_KEY_ID);
+#endif
+    valid_addr &= (key_id != (hmac_key_id_t)CONFIG_SECURE_TEE_PBKDF2_EFUSE_HMAC_KEY_ID);
+
+    if (!valid_addr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_FAULT_ASSERT(valid_addr);
+
+    return esp_ds_start_sign(message, data, key_id, esp_ds_ctx);
+}
+
+bool _ss_esp_ds_is_busy(void)
+{
+    return esp_ds_is_busy();
+}
+
+esp_err_t _ss_esp_ds_finish_sign(void *signature, esp_ds_context_t *esp_ds_ctx)
+{
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)signature) &&
+                       esp_tee_ptr_in_ree((void *)esp_ds_ctx));
+
+    valid_addr &= esp_tee_ptr_in_ree((void *)((char *)esp_ds_ctx + sizeof(esp_ds_data_t)));
+
+    if (!valid_addr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_FAULT_ASSERT(valid_addr);
+
+    return esp_ds_finish_sign(signature, esp_ds_ctx);
+}
+
+esp_err_t _ss_esp_ds_encrypt_params(esp_ds_data_t *data,
+                                    const void *iv,
+                                    const esp_ds_p_data_t *p_data,
+                                    const void *key)
+{
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)data) && esp_tee_ptr_in_ree((void *)p_data)) &&
+                       (esp_tee_ptr_in_ree((void *)iv) && esp_tee_ptr_in_ree((void *)key)));
+
+    valid_addr &= esp_tee_ptr_in_ree((void *)((char *)data + sizeof(esp_ds_data_t)));
+
+    if (!valid_addr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_FAULT_ASSERT(valid_addr);
+
+    return esp_ds_encrypt_params(data, iv, p_data, key);
 }
 #endif
 
@@ -436,16 +361,13 @@ void _ss_esp_crypto_mpi_enable_periph_clk(bool enable)
 }
 #endif
 
-/* ---------------------------------------------- ECC/ECDSA ------------------------------------------------- */
+/* ---------------------------------------------- ECC ------------------------------------------------- */
 
 #if SOC_ECC_SUPPORTED
 int _ss_esp_ecc_point_multiply(const ecc_point_t *point, const uint8_t *scalar, ecc_point_t *result, bool verify_first)
 {
-    bool valid_addr = (esp_tee_buf_in_ree(point, sizeof(ecc_point_t)) &&
-                       esp_tee_buf_in_ree(result, sizeof(ecc_point_t)));
-    if (valid_addr) {
-        valid_addr = esp_tee_buf_in_ree(scalar, MAX_SIZE);
-    }
+    bool valid_addr = (esp_tee_ptr_in_ree((void *)result)) &&
+                      esp_tee_ptr_in_ree((void *)((char *)result + sizeof(ecc_point_t)));
 
     if (!valid_addr) {
         return -1;
@@ -457,13 +379,6 @@ int _ss_esp_ecc_point_multiply(const ecc_point_t *point, const uint8_t *scalar, 
 
 int _ss_esp_ecc_point_verify(const ecc_point_t *point)
 {
-    bool valid_addr = esp_tee_buf_in_ree(point, sizeof(ecc_point_t));
-
-    if (!valid_addr) {
-        return -1;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
     return esp_ecc_point_verify(point);
 }
 #endif
@@ -472,11 +387,6 @@ int _ss_esp_ecc_point_verify(const ecc_point_t *point)
 void _ss_esp_crypto_ecc_enable_periph_clk(bool enable)
 {
     esp_crypto_ecc_enable_periph_clk(enable);
-}
-
-void _ss_esp_crypto_ecdsa_enable_periph_clk(bool enable)
-{
-    esp_crypto_ecdsa_enable_periph_clk(enable);
 }
 #endif
 
@@ -489,7 +399,8 @@ int _ss_esp_tee_ota_begin(void)
 
 int _ss_esp_tee_ota_write(uint32_t rel_offset, void *data, size_t size)
 {
-    bool valid_addr = esp_tee_buf_in_ree(data, size);
+    bool valid_addr = ((esp_tee_ptr_in_ree((void *)data)) &&
+                       (esp_tee_ptr_in_ree((void *)((char *)data + size))));
 
     if (!valid_addr) {
         return -1;
@@ -508,85 +419,10 @@ int _ss_esp_tee_ota_end(void)
 
 esp_err_t _ss_esp_tee_sec_storage_clear_key(const char *key_id)
 {
-    char id_buf[NVS_KEY_NAME_MAX_SIZE];
-    tee_snapshot_ree_str(&key_id, id_buf, sizeof(id_buf));
-
-    bool valid_arg = !esp_tee_sec_storage_is_key_tee_owned(key_id);
-    if (!valid_arg) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    ESP_FAULT_ASSERT(valid_arg);
-
     return esp_tee_sec_storage_clear_key(key_id);
 }
 
 esp_err_t _ss_esp_tee_sec_storage_gen_key(const esp_tee_sec_storage_key_cfg_t *cfg)
 {
-    if (!esp_tee_buf_in_ree(cfg, sizeof(esp_tee_sec_storage_key_cfg_t))) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_tee_sec_storage_key_cfg_t cfg_local = *cfg;
-    char id_buf[NVS_KEY_NAME_MAX_SIZE];
-    tee_snapshot_ree_str(&cfg_local.id, id_buf, sizeof(id_buf));
-
-    bool valid_arg = !(cfg_local.flags & SEC_STORAGE_FLAG_TEE_ONLY) &&
-                     !esp_tee_sec_storage_is_key_tee_owned(cfg_local.id);
-    if (!valid_arg) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    ESP_FAULT_ASSERT(valid_arg);
-
-    return esp_tee_sec_storage_gen_key(&cfg_local);
-}
-
-/* ---------------------------------------------- PSA Attestation ------------------------------------------------- */
-
-__attribute__((unused)) static psa_status_t esp_err_to_psa_status(esp_err_t err)
-{
-    switch (err) {
-    case ESP_OK:
-        return PSA_SUCCESS;
-    case ESP_ERR_INVALID_ARG:
-        return PSA_ERROR_INVALID_ARGUMENT;
-    case ESP_ERR_INVALID_SIZE:
-        return PSA_ERROR_BUFFER_TOO_SMALL;
-    default:
-        return PSA_ERROR_GENERIC_ERROR;
-    }
-}
-
-psa_status_t _ss_psa_initial_attest_get_token(const uint8_t *auth_challenge, size_t challenge_size,
-                                              uint8_t *token_buf, size_t token_buf_size, size_t *token_size)
-{
-#if CONFIG_SECURE_TEE_ATTESTATION
-    bool valid_addr = (esp_tee_buf_in_ree(auth_challenge, challenge_size) &&
-                       esp_tee_buf_in_ree(token_buf, token_buf_size) &&
-                       esp_tee_buf_in_ree(token_size, sizeof(size_t)));
-
-    if (!valid_addr) {
-        return PSA_ERROR_INVALID_ARGUMENT;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
-    return esp_err_to_psa_status(esp_att_generate_token(auth_challenge, challenge_size, token_buf, token_buf_size, token_size));
-#else
-    return PSA_ERROR_NOT_SUPPORTED;
-#endif
-}
-
-psa_status_t _ss_psa_initial_attest_get_token_size(size_t challenge_size, size_t *token_size)
-{
-#if CONFIG_SECURE_TEE_ATTESTATION
-    bool valid_addr = esp_tee_buf_in_ree(token_size, sizeof(size_t));
-
-    if (!valid_addr) {
-        return PSA_ERROR_INVALID_ARGUMENT;
-    }
-    ESP_FAULT_ASSERT(valid_addr);
-
-    return esp_err_to_psa_status(esp_att_get_token_size(challenge_size, token_size));
-#else
-    return PSA_ERROR_NOT_SUPPORTED;
-#endif
+    return esp_tee_sec_storage_gen_key(cfg);
 }

@@ -167,13 +167,6 @@
 
             如果 RMII 时钟模式配置为 :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_EXT_IN`，则可以通过 IO_MUX 将 {IDF_TARGET_SOC_REF_CLK_IN_GPIO} 选择为 ``REF_CLK`` 信号的输入管脚。
 
-    .. only:: esp32p4
-
-        .. warning::
-            如果 RMII 时钟模式配置为 :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_OUT`，EMAC 将通过整数分频器从 MPLL 获取 50 MHz RMII 参考时钟。当同时启用 PSRAM 时，两个外设共享 MPLL，PSRAM 会将 MPLL 锁定在由其速度配置决定的频率上。如果 PSRAM 速度配置为 80 MHz (:menuitem:`CONFIG_SPIRAM_SPEED`)，MPLL 将运行在 320 MHz，而 320 MHz 无法通过任何整数分频得到满足 ±50 ppm 容差要求的 50 MHz（最接近的候选值为 320 / 6 ≈ 53.33 MHz）。在此配置下，EMAC 初始化将失败。
-
-            如果必须使用 80 MHz 的 PSRAM 速度，请通过外部时钟源（PHY 或振荡器）提供 ``REF_CLK``，并配置为 :cpp:enumerator:`emac_rmii_clock_mode_t::EMAC_CLK_EXT_IN`。
-
     .. only:: not SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
 
         .. warning::
@@ -265,9 +258,9 @@ MAC 的相关配置可以在 :cpp:class:`eth_mac_config_t` 中找到，具体包
 
     .. list::
 
-        * **网络流量由短且频繁的帧主导时**：如果你的网络流量主要由短且频繁发送（或接收）的帧组成，可能会遇到吞吐量低于预期（尽管额定为 100 Mbps），以及接收过程中丢帧等问题。在发送时，套接字发送 API 可能会返回 ``errno`` 为 ``ENOMEM``，并显示 `TX 缓冲区大小不足`（如果启用了调试日志级别）。这些问题的主要原因是，默认的内存配置针对较大帧进行了优化。默认情况下 :menuitem:`CONFIG_ETH_DMA_BUFFER_SIZE` 设置为 512 字节，以确保 *数据缓冲区* 与 *描述符* 大小的开销比。要解决此问题，可以增加缓冲区数量， :menuitem:`CONFIG_ETH_DMA_RX_BUFFER_NUM` 或 :menuitem:`CONFIG_ETH_DMA_TX_BUFFER_NUM`。此外，还可以减小 :menuitem:`CONFIG_ETH_DMA_BUFFER_SIZE`，使其与网络中典型帧的大小相匹配，从而合理控制以太网驱动的内存占用。
+        * **网络流量由短且频繁的帧主导时**：如果你的网络流量主要由短且频繁发送（或接收）的帧组成，可能会遇到吞吐量低于预期（尽管额定为 100 Mbps），以及接收过程中丢帧等问题。在发送时，套接字发送 API 可能会返回 ``errno`` 为 ``ENOMEM``，并显示 `TX 缓冲区大小不足`（如果启用了调试日志级别）。这些问题的主要原因是，默认的内存配置针对较大帧进行了优化。默认情况下 :ref:`CONFIG_ETH_DMA_BUFFER_SIZE` 设置为 512 字节，以确保 *数据缓冲区* 与 *描述符* 大小的开销比。要解决此问题，可以增加缓冲区数量， :ref:`CONFIG_ETH_DMA_RX_BUFFER_NUM` 或 :ref:`CONFIG_ETH_DMA_TX_BUFFER_NUM`。此外，还可以减小 :ref:`CONFIG_ETH_DMA_BUFFER_SIZE`，使其与网络中典型帧的大小相匹配，从而合理控制以太网驱动的内存占用。
 
-        * **高吞吐量导致缓冲区耗尽时**：如果套接字发送 API 间歇性返回 ``errno`` 为 ``ENOMEM``，并显示 `TX 缓冲区大小不足`（如果启用了调试日志级别），且吞吐量接近额定的 100 Mbps，这通常表明接近硬件限制。在这种情况下，硬件无法跟上传输请求。解决方案是，增加 :menuitem:`CONFIG_ETH_DMA_TX_BUFFER_NUM`，以缓存更多的帧，并缓解传输请求的短时峰值。然而，如果请求的流量持续超过额定吞吐量，此方法将失效，需通过应用层通过软件限制带宽。
+        * **高吞吐量导致缓冲区耗尽时**：如果套接字发送 API 间歇性返回 ``errno`` 为 ``ENOMEM``，并显示 `TX 缓冲区大小不足`（如果启用了调试日志级别），且吞吐量接近额定的 100 Mbps，这通常表明接近硬件限制。在这种情况下，硬件无法跟上传输请求。解决方案是，增加 :ref:`CONFIG_ETH_DMA_TX_BUFFER_NUM`，以缓存更多的帧，并缓解传输请求的短时峰值。然而，如果请求的流量持续超过额定吞吐量，此方法将失效，需通过应用层通过软件限制带宽。
 
 PHY 的相关配置可以在 :cpp:class:`eth_phy_config_t` 中找到，具体包括：
 
@@ -548,36 +541,20 @@ ESP-IDF 在宏 :c:macro:`ETH_DEFAULT_CONFIG` 中为安装驱动程序提供了�
 
     ::
 
-        esp_eth_mac_t *mac;
-        esp_eth_get_mac_instance(eth_hndl, &mac);
-
         // 启用硬件时间戳
-        eth_mac_ptp_config_t ptp_cfg = ETH_MAC_ESP_PTP_DEFAULT_CONFIG();
-        esp_eth_mac_ptp_enable(mac, &ptp_cfg);
+        bool ptp_enable = true;
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_PTP_ENABLE, &ptp_enable);
 
         // 获取当前 EMAC 时间
         eth_mac_time_t ptp_time;
-        esp_eth_mac_get_ptp_time(mac, &ptp_time);
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_G_PTP_TIME, &ptp_time);
 
         // 设置 EMAC 时间
         ptp_time = {
             .seconds = 42,
             .nanoseconds = 0
         };
-        esp_eth_mac_set_ptp_time(mac, &ptp_time);
-
-    PTP 模块可以按如下方式配置：
-
-    .. list::
-        * :cpp:member:`eth_mac_ptp_config_t::clk_src`：PTP 时钟源。从 :cpp:type:`soc_periph_emac_ptp_clk_src_t` 枚举中选择一个时钟源。
-
-        * :cpp:member:`eth_mac_ptp_config_t::clk_src_period_ns`：PTP 时钟源的周期（以纳秒为单位）。例如，如果时钟源为 40 MHz，则周期为 25 ns。
-
-        * :cpp:member:`eth_mac_ptp_config_t::required_accuracy_ns`：PTP 的所需精度（以纳秒为单位）。所需精度必须低于 PTP 时钟源的周期。例如，如果时钟源为 40 MHz（25 ns 周期），则所需精度为 40 ns。
-
-        * :cpp:member:`eth_mac_ptp_config_t::roll_type`：亚秒寄存器的翻转模式（数字或二进制）。推荐使用二进制翻转模式，因为它能提供更精确的时间同步。
-
-    接收帧的时间戳可以通过注册的 :cpp:member:`esp_eth_config_t::stack_input_info` 函数的最后一个参数进行访问，传输帧的时间戳可以通过 :cpp:func:`esp_eth_transmit_ctrl_bufs` 函数的 ``ctrl`` 参数进行访问。然而，对于用户获取时间戳信息，更简便的方式是利用 L2 TAP :ref:`扩展缓冲区 <esp_netif_l2tap_ext_buff>` 机制。
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_S_PTP_TIME, &ptp_time);
 
     您可以通过注册回调函数和设置事件触发的目标时间，在精确的时间点调度事件。请注意，回调函数将在中断服务程序 (ISR) 上下文中调用，因此应尽量简洁。
 
@@ -586,21 +563,16 @@ ESP-IDF 在宏 :c:macro:`ETH_DEFAULT_CONFIG` 中为安装驱动程序提供了�
     ::
 
         // 注册回调函数
-        esp_eth_mac_set_target_time_cb(mac, ts_callback);
+        esp_eth_ioctl(eth_hndl, ETH_MAC_ESP_CMD_S_TARGET_CB, ts_callback);
 
         // 设置事件的触发时间
         eth_mac_time_t mac_target_time = {
             .seconds = 42,
             .nanoseconds = 0
         };
-        esp_eth_mac_set_target_time(mac, &mac_target_time);
+        esp_eth_ioctl(s_eth_hndl, ETH_MAC_ESP_CMD_S_TARGET_TIME, &mac_target_time);
 
-    此外，PTP 同步的时间可以通过 GPIO 上的 PPS (Pulse-Per-Second) 信号输出。这提供了一个精确的硬件时间参考，可用于同步外部设备、对齐独立时钟域或驱动 ESP32 芯片系列之外的时间关键型进程。顾名思义，PPS 信号默认每秒产生一次脉冲。但是，可以通过 :cpp:func:`esp_eth_mac_set_pps_out_freq` 函数设置 PPS0 输出频率来调整频率。该命令接受 0-16384 范围内的整数值，其中 0 = 1 PPS（单次脉冲），其他值产生方波时钟信号。时钟频率必须是 2 的幂且小于或等于 16384 Hz。请注意，由于数字翻转模式中位的非线性切换，实际频率是一个平均值（在一秒钟的总周期内占空比不同于 50%）。此行为不适用于二进制翻转模式，因此推荐使用二进制翻转模式。可以使用 :cpp:func:`esp_eth_mac_set_pps_out_gpio` 函数配置 PPS 信号在 GPIO 上输出。
-
-    .. only:: esp32p4
-
-        .. note::
-            GPIO 管脚上的 PPS 信号输出从 ESP32-P4 芯片版本 3 开始可用。
+    接收帧的时间戳可以通过注册的 :cpp:member:`esp_eth_config_t::stack_input_info` 函数的最后一个参数进行访问，传输帧的时间戳可以通过注册的 :cpp:func:`esp_eth_transmit_ctrl_vargs` 函数的 ``ctrl`` 参数进行访问。然而，对于用户获取时间戳信息，更简便的方式是利用 L2 TAP :ref:`扩展缓冲区 <esp_netif_l2tap_ext_buff>` 机制。
 
 .. _flow-control:
 
@@ -682,20 +654,6 @@ ESP-IDF 以太网驱动程序所需的大部分 PHY 管理功能都已涵盖在 
 4. 初始化 IEEE 802.3 父对象并重新分配针对芯片的特定管理回调功能。
 
 实现新的自定义 PHY 驱动程序后，你可以通过 `乐鑫组件注册表 <https://components.espressif.com/>`_ 将驱动分享给其他用户。
-
-.. _ethernet-sublayer:
-
-以太网子层
-^^^^^^^^^^
-
-以太网子层是位于一个物理以太网驱动程序（``esp_eth_handle_t``）与一个或多个 ``esp_netif`` 实例之间的可选层。它负责拥有驱动程序的 RX 输入路径，将以太网事件分发给所连接的接口，并可执行路径中的帧处理，例如 802.1Q VLAN 复用与解复用。
-
-.. note::
-    以太网子层是一项**实验性**功能。需启用 :menuitem:`CONFIG_IDF_EXPERIMENTAL_FEATURES` 和 :menuitem:`CONFIG_ETH_SUBLAYER_SUPPORT` 后方可使用。该 API 仍在积极开发中，未来 ESP-IDF 版本中可能会在不经过弃用周期的情况下发生变更。
-
-有关架构细节、配置和使用指南，请参阅 :component_file:`esp_eth/src/sublayer/README.md`。
-
-可参考 :example:`ethernet/sublayer` 中的示例，该示例演示了如何在一个未打标签的 ``esp_netif`` 和一个带标签的 VLAN ``esp_netif`` 之间共享同一个以太网驱动程序。
 
 .. ---------------------------- API Reference ----------------------------------
 

@@ -50,25 +50,29 @@ static DRAM_ATTR  sleep_cpu_retention_t s_cpu_retention;
 
 extern RvCoreCriticalSleepFrame *rv_core_critical_regs_frame;
 
-FORCE_INLINE_ATTR void save_csr_disable_global_int(uint32_t *mstatus_val, uint32_t *mintthresh_val)
+FORCE_INLINE_ATTR uint32_t save_mstatus_and_disable_global_int(void)
 {
-#if __riscv_zcmp && SOC_CPU_ZCMP_WORKAROUND
-    *mintthresh_val = rv_utils_set_intlevel_regval(0xff);
-#else
-    (void) mintthresh_val;
-#endif
-    *mstatus_val = RV_READ_MSTATUS_AND_DISABLE_INTR();
+    return RV_READ_MSTATUS_AND_DISABLE_INTR();
 }
 
-FORCE_INLINE_ATTR void restore_csr_enable_global_int(uint32_t mstatus_val, uint32_t mintthresh_val)
+FORCE_INLINE_ATTR void restore_mstatus(uint32_t mstatus_val)
 {
     RV_WRITE_CSR(mstatus, mstatus_val);
-#if __riscv_zcmp && SOC_CPU_ZCMP_WORKAROUND
-    rv_utils_restore_intlevel_regval(mintthresh_val);
-#else
-    (void) mintthresh_val;
-#endif
 }
+
+#if __riscv_zcmp && SOC_CPU_ZCMP_WORKAROUND
+FORCE_INLINE_ATTR uint32_t save_mintthresh_and_disable_global_int(void)
+{
+    /* Due to the reason described in IDF-14279, when mie is set to 0, mintthresh needs to be set to 0xff. */
+    // TODO: IDF-14279 DIG-661
+    return RV_READ_MINTTHRESH_AND_DISABLE_INTR();
+}
+
+FORCE_INLINE_ATTR void restore_mintthresh(uint32_t mintthresh_val)
+{
+    RV_RESTORE_MINTTHRESH(mintthresh_val);
+}
+#endif
 
 static IRAM_ATTR RvCoreNonCriticalSleepFrame * rv_core_noncritical_regs_save(void)
 {
@@ -300,10 +304,11 @@ static IRAM_ATTR esp_err_t do_cpu_retention(sleep_cpu_entry_cb_t goto_sleep,
 esp_err_t IRAM_ATTR esp_sleep_cpu_retention(uint32_t (*goto_sleep)(uint32_t, uint32_t, uint32_t, bool),
         uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu, bool dslp)
 {
-    uint32_t mstatus = 0;
-    uint32_t mintthresh = 0;
     esp_sleep_execute_event_callbacks(SLEEP_EVENT_SW_CPU_TO_MEM_START, (void *)0);
-    save_csr_disable_global_int(&mstatus, &mintthresh);
+    uint32_t mstatus = save_mstatus_and_disable_global_int();
+#if __riscv_zcmp && SOC_CPU_ZCMP_WORKAROUND
+    uint32_t mintthresh = save_mintthresh_and_disable_global_int();
+#endif
 
     cpu_domain_dev_regs_save(s_cpu_retention.retent.clic_frame);
     cpu_domain_dev_regs_save(s_cpu_retention.retent.clint_frame);
@@ -316,17 +321,18 @@ esp_err_t IRAM_ATTR esp_sleep_cpu_retention(uint32_t (*goto_sleep)(uint32_t, uin
 #endif
     esp_err_t err = do_cpu_retention(goto_sleep, wakeup_opt, reject_opt, lslp_mem_inf_fpu, dslp);
 
-    if (err == ESP_OK) {
 #if CONFIG_PM_CHECK_SLEEP_RETENTION_FRAME
-        validate_retention_frame_crc((uint32_t*)frame, sizeof(RvCoreNonCriticalSleepFrame) - sizeof(long), (uint32_t *)(&frame->frame_crc));
+    validate_retention_frame_crc((uint32_t*)frame, sizeof(RvCoreNonCriticalSleepFrame) - sizeof(long), (uint32_t *)(&frame->frame_crc));
 #endif
 
-        rv_core_noncritical_regs_restore(frame);
-        cpu_domain_dev_regs_restore(s_cpu_retention.retent.cache_config_frame);
-        cpu_domain_dev_regs_restore(s_cpu_retention.retent.clint_frame);
-        cpu_domain_dev_regs_restore(s_cpu_retention.retent.clic_frame);
-    }
-    restore_csr_enable_global_int(mstatus, mintthresh);
+    rv_core_noncritical_regs_restore(frame);
+    cpu_domain_dev_regs_restore(s_cpu_retention.retent.cache_config_frame);
+    cpu_domain_dev_regs_restore(s_cpu_retention.retent.clint_frame);
+    cpu_domain_dev_regs_restore(s_cpu_retention.retent.clic_frame);
+#if __riscv_zcmp && SOC_CPU_ZCMP_WORKAROUND
+    restore_mintthresh(mintthresh);
+#endif
+    restore_mstatus(mstatus);
     return err;
 }
 

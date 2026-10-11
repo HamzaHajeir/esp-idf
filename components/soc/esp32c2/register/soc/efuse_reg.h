@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #include "soc/efuse_defs.h"
 #ifdef __cplusplus

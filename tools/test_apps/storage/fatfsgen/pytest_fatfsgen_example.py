@@ -4,12 +4,11 @@ import os
 import re
 import shutil
 import sys
+import typing as t
 from datetime import datetime
-from subprocess import STDOUT
-from subprocess import CalledProcessError
 from subprocess import run
+from subprocess import STDOUT
 from time import sleep
-from typing import Union
 
 import pytest
 from pytest_embedded import Dut
@@ -23,7 +22,7 @@ sys.path.append(parttool_dir)
 from parttool import PartitionName, ParttoolTarget  # noqa E402  # pylint: disable=C0413
 
 
-FileStructure = dict[str, Union[str, None, 'FileStructure']]  # noqa: UP007
+FileStructure = t.Dict[str, t.Union[t.Optional[str], 'FileStructure']]
 
 
 class DirectoryStructureError(Exception):
@@ -70,7 +69,7 @@ def validate_directory_structure(base_path: str, expected_structure: FileStructu
     :raises DirectoryStructureError: If the structure or contents do not match.
     """
 
-    def normalize_case(items: list[str]) -> dict[str, str]:
+    def normalize_case(items: t.List[str]) -> t.Dict[str, str]:
         return {item.lower(): item for item in items}
 
     def escape_output(text: str) -> str:
@@ -94,7 +93,7 @@ def validate_directory_structure(base_path: str, expected_structure: FileStructu
 
                 if isinstance(substructure, str):  # Check file content
                     try:
-                        with open(full_path, encoding='utf-8') as file:
+                        with open(full_path, 'r', encoding='utf-8') as file:
                             content = file.read()
                         if content != substructure:
                             raise ContentMismatchError(
@@ -142,7 +141,7 @@ def test_examples_fatfsgen(config: str, dut: Dut) -> None:
         dut.expect(msg, timeout=timeout)
 
     # Expects list of strings sequentially
-    def expect_all(msg_list: list[str], timeout: int = timeout) -> None:
+    def expect_all(msg_list: t.List[str], timeout: int = timeout) -> None:
         for msg in msg_list:
             expect(msg, timeout)
 
@@ -178,14 +177,12 @@ def test_examples_fatfsgen(config: str, dut: Dut) -> None:
     expect('example: Mounting FAT filesystem')
 
     if not config_read_only:
-        expect_all(
-            [
-                'example: Opening file',
-                'example: File written',
-                'example: Reading file',
-                'example: Read from file: ' + "'This is written by the device'",
-            ]
-        )
+        expect_all([
+            'example: Opening file',
+            'example: File written',
+            'example: Reading file',
+            'example: Read from file: ' + "'This is written by the device'",
+        ])
 
     expect('example: Reading file')
 
@@ -202,18 +199,8 @@ def test_examples_fatfsgen(config: str, dut: Dut) -> None:
     dut.serial.close()
     sleep(1)
 
-    # Host read-flash after closing the test UART can fail at very high baud (e.g. exit code 2 on
-    # multi-Mbit reads). Use the same order of magnitude as post-stub flash programming (921600).
-    read_baud = 921600
-    for attempt in range(3):
-        try:
-            target = ParttoolTarget(dut.serial.port, read_baud)
-            target.read_partition(PartitionName('storage'), 'temp.img')
-            break
-        except CalledProcessError:
-            if attempt == 2:
-                raise
-            sleep(2)
+    target = ParttoolTarget(dut.serial.port, 1843200)
+    target.read_partition(PartitionName('storage'), 'temp.img')
     if config_long_names:
         run(['python', fatfs_parser_path, '--long-name-support', 'temp.img'], stderr=STDOUT)
     else:

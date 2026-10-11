@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,25 +14,17 @@
 #include "hal/spi_flash_hal.h"
 #include "hal/spi_flash_types.h"
 #include "esp_private/mspi_timing_tuning.h"
-#if SOC_AES_SUPPORTED
-#include "aes/esp_aes.h"
-#endif
 #if SOC_SHA_SUPPORTED
 #include "hal/sha_types.h"
-#include "psa_crypto_driver_esp_sha_contexts.h"
-#endif
-#if SOC_ECC_SUPPORTED
-#include "ecc_impl.h"
+#include "hal/sha_hal.h"
 #endif
 #if SOC_HMAC_SUPPORTED
 #include "esp_hmac.h"
-#include "hal/hmac_hal.h"
 #endif
 #if SOC_DIG_SIGN_SUPPORTED
 #include "esp_ds.h"
 #include "rom/digital_signature.h"
 #endif
-#include "psa/crypto.h"
 #include "esp_crypto_lock.h"
 #include "esp_flash.h"
 
@@ -69,6 +61,12 @@ void IRAM_ATTR __wrap_wdt_hal_deinit(wdt_hal_context_t *hal)
 /* ---------------------------------------------- AES ------------------------------------------------- */
 
 #if SOC_AES_SUPPORTED
+typedef struct {
+    uint8_t key_bytes;
+    volatile uint8_t key_in_hardware; /* This variable is used for fault injection checks, so marked volatile to avoid optimisation */
+    uint8_t key[32];
+} esp_aes_context;
+
 int __wrap_esp_aes_intr_alloc(void)
 {
     return esp_tee_service_call(1, SS_ESP_AES_INTR_ALLOC);
@@ -160,6 +158,49 @@ int __wrap_esp_aes_crypt_ofb(esp_aes_context *ctx,
 /* ---------------------------------------------- SHA ------------------------------------------------- */
 
 #if SOC_SHA_SUPPORTED
+typedef enum {
+    ESP_SHA1_STATE_INIT,
+    ESP_SHA1_STATE_IN_PROCESS
+} esp_sha1_state;
+
+typedef enum {
+    ESP_SHA256_STATE_INIT,
+    ESP_SHA256_STATE_IN_PROCESS
+} esp_sha256_state;
+
+typedef enum {
+    ESP_SHA512_STATE_INIT,
+    ESP_SHA512_STATE_IN_PROCESS
+} esp_sha512_state;
+
+typedef struct {
+    uint32_t total[2];          /*!< number of bytes processed  */
+    uint32_t state[5];          /*!< intermediate digest state  */
+    unsigned char buffer[64];   /*!< data block being processed */
+    int first_block;            /*!< if first then true else false */
+    esp_sha_type mode;
+    esp_sha1_state sha_state;
+} esp_sha1_context;
+
+typedef struct {
+    uint32_t total[2];          /*!< number of bytes processed  */
+    uint32_t state[8];          /*!< intermediate digest state  */
+    unsigned char buffer[64];   /*!< data block being processed */
+    int first_block;           /*!< if first then true, else false */
+    esp_sha_type mode;
+    esp_sha256_state sha_state;
+} esp_sha256_context;
+
+typedef struct {
+    uint64_t total[2];          /*!< number of bytes processed  */
+    uint64_t state[8];          /*!< intermediate digest state  */
+    unsigned char buffer[128];  /*!< data block being processed */
+    int first_block;
+    esp_sha_type mode;
+    uint32_t t_val;             /*!< t_val for 512/t mode */
+    esp_sha512_state sha_state;
+} esp_sha512_context;
+
 void __wrap_esp_sha(esp_sha_type sha_type, const unsigned char *input, size_t ilen, unsigned char *output)
 {
     esp_tee_service_call(5, SS_ESP_SHA,
@@ -209,11 +250,6 @@ int __wrap_esp_sha_512_t_init_hash(uint16_t t)
 /* ---------------------------------------------- HMAC ------------------------------------------------- */
 
 #if SOC_HMAC_SUPPORTED
-void __wrap_esp_crypto_hmac_enable_periph_clk(bool enable)
-{
-    esp_tee_service_call(2, SS_ESP_CRYPTO_HMAC_ENABLE_PERIPH_CLK, enable);
-}
-
 esp_err_t __wrap_esp_hmac_calculate(hmac_key_id_t key_id, const void *message, size_t message_len, uint8_t *hmac)
 {
     esp_crypto_hmac_lock_acquire();
@@ -242,19 +278,56 @@ esp_err_t __wrap_esp_hmac_jtag_disable(void)
 /* ---------------------------------------------- DS ------------------------------------------------- */
 
 #if SOC_DIG_SIGN_SUPPORTED
-void __wrap_esp_crypto_ds_enable_periph_clk(bool enable)
+esp_err_t __wrap_esp_ds_sign(const void *message,
+                             const esp_ds_data_t *data,
+                             hmac_key_id_t key_id,
+                             void *signature)
 {
-    esp_tee_service_call(2, SS_ESP_CRYPTO_DS_ENABLE_PERIPH_CLK, enable);
+    esp_crypto_ds_lock_acquire();
+    esp_err_t err = esp_tee_service_call(5, SS_ESP_DS_SIGN, message, data, key_id, signature);
+    esp_crypto_ds_lock_release();
+    return err;
 }
 
-uint32_t __wrap_hmac_hal_config_key(hmac_hal_output_t config, uint32_t key_id)
+esp_err_t __wrap_esp_ds_start_sign(const void *message,
+                                   const esp_ds_data_t *data,
+                                   hmac_key_id_t key_id,
+                                   esp_ds_context_t **esp_ds_ctx)
 {
-    return esp_tee_service_call(3, SS_HMAC_HAL_CONFIG_KEY, config, key_id);
+    esp_crypto_ds_lock_acquire();
+    if (esp_ds_ctx != NULL) {
+        *esp_ds_ctx = malloc(sizeof(esp_ds_context_t));
+        if (!*esp_ds_ctx) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return esp_tee_service_call(5, SS_ESP_DS_START_SIGN, message, data, key_id, esp_ds_ctx);
 }
 
-void __wrap_hmac_hal_clean(void)
+bool __wrap_esp_ds_is_busy(void)
 {
-    esp_tee_service_call(1, SS_HMAC_HAL_CLEAN);
+    return esp_tee_service_call(1, SS_ESP_DS_IS_BUSY);
+}
+
+esp_err_t __wrap_esp_ds_finish_sign(void *signature, esp_ds_context_t *esp_ds_ctx)
+{
+    esp_err_t err = esp_tee_service_call(3, SS_ESP_DS_FINISH_SIGN, signature, esp_ds_ctx);
+    if (err != ESP_ERR_INVALID_ARG) {
+        free(esp_ds_ctx);
+    }
+    esp_crypto_ds_lock_release();
+    return err;
+}
+
+esp_err_t __wrap_esp_ds_encrypt_params(esp_ds_data_t *data,
+                                       const void *iv,
+                                       const esp_ds_p_data_t *p_data,
+                                       const void *key)
+{
+    esp_crypto_sha_aes_lock_acquire();
+    esp_err_t err = esp_tee_service_call(5, SS_ESP_DS_ENCRYPT_PARAMS, data, iv, p_data, key);
+    esp_crypto_sha_aes_lock_release();
+    return err;
 }
 #endif
 
@@ -267,9 +340,18 @@ void __wrap_esp_crypto_mpi_enable_periph_clk(bool enable)
 }
 #endif
 
-/* ---------------------------------------------- ECC/ECDSA ------------------------------------------------- */
+/* ---------------------------------------------- ECC ------------------------------------------------- */
 
 #if SOC_ECC_SUPPORTED
+#define P256_LEN        (256/8)
+#define P192_LEN        (192/8)
+
+typedef struct {
+    uint8_t x[P256_LEN]; /* Little endian order */
+    uint8_t y[P256_LEN]; /* Little endian order */
+    unsigned len;        /* P192_LEN or P256_LEN */
+} ecc_point_t;
+
 int __wrap_esp_ecc_point_multiply(const ecc_point_t *point, const uint8_t *scalar, ecc_point_t *result, bool verify_first)
 {
     esp_crypto_ecc_lock_acquire();
@@ -291,11 +373,6 @@ int __wrap_esp_ecc_point_verify(const ecc_point_t *point)
 void __wrap_esp_crypto_ecc_enable_periph_clk(bool enable)
 {
     esp_tee_service_call(2, SS_ESP_CRYPTO_ECC_ENABLE_PERIPH_CLK, enable);
-}
-
-void __wrap_esp_crypto_ecdsa_enable_periph_clk(bool enable)
-{
-    esp_tee_service_call(2, SS_ESP_CRYPTO_ECDSA_ENABLE_PERIPH_CLK, enable);
 }
 #endif
 
@@ -453,16 +530,6 @@ void IRAM_ATTR __wrap_mspi_timing_enter_high_speed_mode(bool control_spi1)
     esp_tee_service_call(2, SS_MSPI_TIMING_ENTER_HIGH_SPEED_MODE, control_spi1);
 }
 
-void IRAM_ATTR __wrap_mspi_timing_enter_low_speed_early(void)
-{
-    esp_tee_service_call(1, SS_MSPI_TIMING_ENTER_LOW_SPEED_EARLY);
-}
-
-void IRAM_ATTR __wrap_mspi_timing_enter_high_speed_early(void)
-{
-    esp_tee_service_call(1, SS_MSPI_TIMING_ENTER_HIGH_SPEED_EARLY);
-}
-
 void IRAM_ATTR __wrap_mspi_timing_change_speed_mode_cache_safe(bool switch_down)
 {
     esp_tee_service_call(2, SS_MSPI_TIMING_CHANGE_SPEED_MODE_CACHE_SAFE, switch_down);
@@ -473,18 +540,4 @@ void IRAM_ATTR __wrap_spi_timing_get_flash_timing_param(spi_flash_hal_timing_con
     esp_tee_service_call(2, SS_SPI_TIMING_GET_FLASH_TIMING_PARAM, out_timing_config);
 }
 #endif
-#endif
-
-#if CONFIG_SECURE_TEE_ATTESTATION
-psa_status_t __wrap_psa_initial_attest_get_token(const uint8_t *auth_challenge, size_t challenge_size,
-                                                 uint8_t *token_buf, size_t token_buf_size, size_t *token_size)
-{
-    return (esp_err_t)esp_tee_service_call_with_noniram_intr_disabled(6, SS_PSA_INITIAL_ATTEST_GET_TOKEN, auth_challenge, challenge_size,
-                                                                      token_buf, token_buf_size, token_size);
-}
-
-psa_status_t __wrap_psa_initial_attest_get_token_size(size_t challenge_size, size_t *token_size)
-{
-    return (esp_err_t)esp_tee_service_call_with_noniram_intr_disabled(3, SS_PSA_INITIAL_ATTEST_GET_TOKEN_SIZE, challenge_size, token_size);
-}
 #endif

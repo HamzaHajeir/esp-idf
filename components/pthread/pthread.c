@@ -140,7 +140,6 @@ static void pthread_delete(esp_pthread_t *pthread)
 }
 
 /* Call this function to configure pthread stacks in Pthreads */
-ESP_COMPILER_DIAGNOSTIC_PUSH_IGNORE("-Wanalyzer-malloc-leak") // ignore leak of 'p'
 esp_err_t esp_pthread_set_cfg(const esp_pthread_cfg_t *cfg)
 {
     if (cfg == NULL) {
@@ -168,6 +167,7 @@ esp_err_t esp_pthread_set_cfg(const esp_pthread_cfg_t *cfg)
 
     /* If a value is already set, update that value */
     esp_pthread_cfg_t *p = pthread_getspecific(s_pthread_cfg_key);
+    ESP_COMPILER_DIAGNOSTIC_PUSH_IGNORE("-Wanalyzer-malloc-leak") // ignore leak of 'p'
     if (!p) {
         p = malloc(sizeof(esp_pthread_cfg_t));
         if (!p) {
@@ -179,8 +179,8 @@ esp_err_t esp_pthread_set_cfg(const esp_pthread_cfg_t *cfg)
     pthread_setspecific(s_pthread_cfg_key, p);
 
     return ESP_OK;
+    ESP_COMPILER_DIAGNOSTIC_POP("-Wanalyzer-malloc-leak")
 }
-ESP_COMPILER_DIAGNOSTIC_POP("-Wanalyzer-malloc-leak")
 
 esp_err_t esp_pthread_get_cfg(esp_pthread_cfg_t *p)
 {
@@ -464,14 +464,8 @@ int pthread_join(pthread_t thread, void **retval)
 
     if (ret == 0) {
         if (wait) {
-            for (;;) {
-                xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
-                _lock_acquire(&s_threads_lock);
-                if (pthread->state == PTHREAD_TASK_STATE_EXIT) {
-                    break;
-                }
-                _lock_release(&s_threads_lock);
-            }
+            xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
+            _lock_acquire(&s_threads_lock);
             child_task_retval = pthread->retval;
             pthread_delete(pthread);
             _lock_release(&s_threads_lock);
@@ -542,11 +536,12 @@ void pthread_exit(void *value_ptr)
     } else {
         // Set return value
         pthread->retval = value_ptr;
-        // Publish completion under the same lock checked by pthread_join.
-        pthread->state = PTHREAD_TASK_STATE_EXIT;
+        // Remove from list, it indicates that task has exited
         if (pthread->join_task) {
             // notify join
             xTaskNotify(pthread->join_task, 0, eNoAction);
+        } else {
+            pthread->state = PTHREAD_TASK_STATE_EXIT;
         }
     }
 

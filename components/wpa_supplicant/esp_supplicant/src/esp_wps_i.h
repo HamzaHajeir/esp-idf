@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,19 +9,17 @@
 #include "wps/wps.h"
 #include "wps/wps_attr_parse.h"
 
-struct wpabuf;
+/* WPS message flag */
+enum wps_msg_flag {
+    WPS_MSG_FLAG_MORE = 0x01,
+    WPS_MSG_FLAG_LEN = 0x02
+};
 
 enum wps_reg_sig_type {
     SIG_WPS_REG_ENABLE = 1,         //1
     SIG_WPS_REG_DISABLE,            //2
     SIG_WPS_REG_START,              //3
     SIG_WPS_REG_MAX,                //4
-};
-
-enum wps_owner {
-    WPS_OWNER_NONE = 0,
-    WPS_OWNER_ENROLLEE,
-    WPS_OWNER_REGISTRAR,
 };
 
 typedef struct {
@@ -33,7 +31,6 @@ typedef struct {
 enum wps_sm_state {
     WAIT_START,
     WPA_MESG,
-    WPA_FINISH_PROCESS,
     WPA_FAIL
 };
 #endif /* ESP_SUPPLICANT */
@@ -41,11 +38,6 @@ enum wps_sm_state {
 /* Bssid of the discard AP which is discarded for not select reg or other reason */
 struct discard_ap_list_t {
     u8 bssid[6];
-};
-
-struct wps_eap_wsc_frag_data {
-    struct wpabuf *in_buf;
-    enum wsc_op_code in_op_code;
 };
 
 struct wps_sm {
@@ -68,7 +60,6 @@ struct wps_sm {
     u8 discover_ssid_cnt;
     bool wps_pbc_overlap;
     bool post_m8_recv;
-    struct wps_eap_wsc_frag_data wsc_frag;
 };
 
 #define API_MUTEX_TAKE() do {\
@@ -118,8 +109,7 @@ static inline int wps_set_status(uint32_t status)
     return esp_wifi_set_wps_status_internal(status);
 }
 
-enum wps_owner wps_get_owner(void);
-void wps_set_owner(enum wps_owner owner);
+bool is_wps_enabled(void);
 int wps_init_cfg_pin(struct wps_config *cfg);
 void wifi_station_wps_eapol_start_handle(void *data, void *user_ctx);
 int wifi_ap_wps_disable_internal(void);

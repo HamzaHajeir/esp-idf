@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,27 +27,10 @@ uxPriority (4)
 #define PORT_OFFSET_PX_STACK 0x30
 #endif /* #if CONFIG_FREERTOS_USE_LIST_DATA_INTEGRITY_CHECK_BYTES */
 
-#if ( configNUMBER_OF_CORES > 1 )
-#define PORT_TCB_CORE_FIELDS_SIZE 8
-#else
-#define PORT_TCB_CORE_FIELDS_SIZE 0
-#endif
-
-#if ( configUSE_TASK_PREEMPTION_DISABLE == 1 )
-#define PORT_TCB_PREEMPT_DISABLE_FIELD_SIZE 4
-#else
-#define PORT_TCB_PREEMPT_DISABLE_FIELD_SIZE 0
-#endif
-
-/* Align the value up to the nearest multiple of 4 */
-#define PORT_ALIGN_UP_TO_4(value) (((value) + 3) & ~3)
-
 #define PORT_OFFSET_PX_END_OF_STACK ( \
     PORT_OFFSET_PX_STACK \
     + 4                                 /* StackType_t * pxStack */ \
-    + PORT_TCB_CORE_FIELDS_SIZE                     /* BaseType_t xDummy23 + UBaseType_t uxDummy24 */ \
-    + PORT_ALIGN_UP_TO_4(configMAX_TASK_NAME_LEN)   /* pcTaskName[ configMAX_TASK_NAME_LEN ] */ \
-    + PORT_TCB_PREEMPT_DISABLE_FIELD_SIZE           /* BaseType_t xDummy25 */ \
+    + CONFIG_FREERTOS_MAX_TASK_NAME_LEN /* pcTaskName[ configMAX_TASK_NAME_LEN ] */ \
 )
 
 #ifndef __ASSEMBLER__
@@ -326,26 +309,6 @@ and vPortExitCritical() from precompiled libraries (.a) thereby failing linking.
 */
 void vPortEnterCritical(void);
 void vPortExitCritical(void);
-
-#if CONFIG_FREERTOS_PORT_THREAD_SAFE_CLAIM
-/**
- * @brief Claim thread-safe region start
- *        If claimed, vPortEnterCritical/vPortExitCritical on the current core are no-ops.
- *        Only can be used in single-core running context with interrupts disabled.
- * @note !!! Caller must guarantee thread safety between Claim and Disclaim !!!
- */
-void xPortThreadSafeClaim(void);
-
-/**
- * @brief Claim thread-safe region end
- *        Restores normal port critical behavior
- *        Only can be used in single-core running context with interrupts disabled.
- * @note !!! Caller must guarantee thread safety between Claim and Disclaim !!!
- */
-void xPortThreadSafeDisclaim(void);
-
-extern volatile bool port_xThreadSafeClaimed;
-#endif /* CONFIG_FREERTOS_PORT_THREAD_SAFE_CLAIM */
 
 //IDF task critical sections
 #define portTRY_ENTER_CRITICAL(lock, timeout)       ({(void) lock; (void) timeout; vPortEnterCritical(); pdPASS;})

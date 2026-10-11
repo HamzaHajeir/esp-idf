@@ -122,30 +122,20 @@ void bta_ag_process_at(tBTA_AG_AT_CB *p_cb)
                 if (int_arg < (INT16) p_cb->p_at_tbl[idx].min ||
                     int_arg > (INT16) p_cb->p_at_tbl[idx].max) {
                     /* arg out of range; error */
-                    if (p_cb->p_err_cback) {
-                        (*p_cb->p_err_cback)(p_cb->p_user, FALSE, NULL);
-                    }
+                    (*p_cb->p_err_cback)(p_cb->p_user, FALSE, NULL);
                 } else {
-                    if (p_cb->p_cmd_cback) {
-                        (*p_cb->p_cmd_cback)(p_cb->p_user, idx, arg_type, p_arg, int_arg);
-                    }
-                }
-            } else {
-                if (p_cb->p_cmd_cback) {
                     (*p_cb->p_cmd_cback)(p_cb->p_user, idx, arg_type, p_arg, int_arg);
                 }
+            } else {
+                (*p_cb->p_cmd_cback)(p_cb->p_user, idx, arg_type, p_arg, int_arg);
             }
         } else {
             /* else error */
-            if (p_cb->p_err_cback) {
-                (*p_cb->p_err_cback)(p_cb->p_user, FALSE, NULL);
-            }
+            (*p_cb->p_err_cback)(p_cb->p_user, FALSE, NULL);
         }
     } else {
         /* else no match call error callback */
-        if (p_cb->p_err_cback) {
-            (*p_cb->p_err_cback)(p_cb->p_user, TRUE, p_cb->p_cmd_buf);
-        }
+        (*p_cb->p_err_cback)(p_cb->p_user, TRUE, p_cb->p_cmd_buf);
     }
 }
 
@@ -195,9 +185,7 @@ void bta_ag_at_parse(tBTA_AG_AT_CB *p_cb, char *p_buf, UINT16 len)
                 p_cb->cmd_pos = 0;
             } else if( p_cb->p_cmd_buf[p_cb->cmd_pos] == 0x1A || p_cb->p_cmd_buf[p_cb->cmd_pos] == 0x1B) {
                 p_cb->p_cmd_buf[++p_cb->cmd_pos] = 0;
-                if (p_cb->p_err_cback) {
-                    (*p_cb->p_err_cback)(p_cb->p_user, TRUE, p_cb->p_cmd_buf);
-                }
+                (*p_cb->p_err_cback)(p_cb->p_user, TRUE, p_cb->p_cmd_buf);
                 p_cb->cmd_pos = 0;
             } else {
                 ++p_cb->cmd_pos;

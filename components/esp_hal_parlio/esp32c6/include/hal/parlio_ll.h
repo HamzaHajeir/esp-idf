@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -72,7 +72,6 @@ static inline void parlio_ll_enable_bus_clock(int group_id, bool enable)
  *
  * @param group_id  The group id of the parlio module
  */
-__attribute__((always_inline))
 static inline void parlio_ll_reset_register(int group_id)
 {
     (void)group_id;
@@ -88,7 +87,6 @@ static inline void parlio_ll_reset_register(int group_id)
  * @param dev Parallel IO register base address
  * @param src Clock source
  */
-__attribute__((always_inline))
 static inline void parlio_ll_rx_set_clock_source(parl_io_dev_t *dev, parlio_clock_source_t src)
 {
     (void)dev;
@@ -535,12 +533,12 @@ static inline bool parlio_ll_tx_set_valid_delay(parl_io_dev_t *dev, uint32_t sta
 }
 
 /**
- * @brief Set the shift clock edge
+ * @brief Set the sample clock edge
  *
  * @param dev Parallel IO register base address
- * @param edge Shift clock edge
+ * @param edge Sample clock edge
  */
-static inline void parlio_ll_tx_set_shift_clock_edge(parl_io_dev_t *dev, parlio_shift_edge_t edge)
+static inline void parlio_ll_tx_set_sample_clock_edge(parl_io_dev_t *dev, parlio_sample_edge_t edge)
 {
     dev->tx_cfg0.tx_smp_edge_sel = edge;
 }

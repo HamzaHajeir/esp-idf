@@ -22,7 +22,6 @@
 #include "mesh/trace.h"
 #include "mesh/mutex.h"
 #include "mesh/access.h"
-#include "mesh/crypto.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,6 +8,7 @@
 #include "esp_err.h"
 #include "soc/soc_caps.h"
 
+#include "mbedtls/aes.h"
 #include "esp_crypto_dma.h"
 
 #include "soc/soc_caps.h"
@@ -16,7 +17,7 @@
 #include "esp_aes_dma_priv.h"
 #include "esp_sha_dma_priv.h"
 
-#define TEE_CRYPTO_GDMA_CH  (GDMA_LL_AHB_PAIRS_PER_GROUP - 1)
+#define TEE_CRYPTO_GDMA_CH  (0)
 
 #if SOC_AHB_GDMA_VERSION == 2
 #include "hal/ahb_dma_ll.h"
@@ -37,12 +38,10 @@
 #define dma_ll_rx_enable_descriptor_burst   DMA_LL_FUNC(rx_enable_descriptor_burst)
 #define dma_ll_tx_reset_channel             DMA_LL_FUNC(tx_reset_channel)
 #define dma_ll_tx_connect_to_periph         DMA_LL_FUNC(tx_connect_to_periph)
-#define dma_ll_tx_connect_to_memory         DMA_LL_FUNC(tx_connect_to_mem)
 #define dma_ll_rx_reset_channel             DMA_LL_FUNC(rx_reset_channel)
 #define dma_ll_rx_connect_to_periph         DMA_LL_FUNC(rx_connect_to_periph)
-#define dma_ll_rx_connect_to_memory         DMA_LL_FUNC(rx_connect_to_mem)
-#define dma_ll_tx_disconnect_all            DMA_LL_FUNC(tx_disconnect_all)
-#define dma_ll_rx_disconnect_all            DMA_LL_FUNC(rx_disconnect_all)
+#define dma_ll_tx_disconnect_from_periph    DMA_LL_FUNC(tx_disconnect_from_periph)
+#define dma_ll_rx_disconnect_from_periph    DMA_LL_FUNC(rx_disconnect_from_periph)
 #define dma_ll_tx_set_desc_addr             DMA_LL_FUNC(tx_set_desc_addr)
 #define dma_ll_tx_start                     DMA_LL_FUNC(tx_start)
 #define dma_ll_rx_set_desc_addr             DMA_LL_FUNC(rx_set_desc_addr)
@@ -51,22 +50,9 @@
 #define dma_ll_rx_stop                      DMA_LL_FUNC(rx_stop)
 #define dma_ll_tx_set_priority              DMA_LL_FUNC(tx_set_priority)
 #define dma_ll_rx_set_priority              DMA_LL_FUNC(rx_set_priority)
-#define dma_ll_tx_enable_etm_task           DMA_LL_FUNC(tx_enable_etm_task)
-#define dma_ll_rx_enable_etm_task           DMA_LL_FUNC(rx_enable_etm_task)
-#define dma_ll_tx_is_desc_fsm_idle          DMA_LL_FUNC(tx_is_desc_fsm_idle)
-#define dma_ll_rx_is_desc_fsm_idle          DMA_LL_FUNC(rx_is_desc_fsm_idle)
-#define dma_ll_tx_enable_interrupt          DMA_LL_FUNC(tx_enable_interrupt)
-#define dma_ll_rx_enable_interrupt          DMA_LL_FUNC(rx_enable_interrupt)
-#define dma_ll_tx_clear_interrupt_status    DMA_LL_FUNC(tx_clear_interrupt_status)
-#define dma_ll_rx_clear_interrupt_status    DMA_LL_FUNC(rx_clear_interrupt_status)
 #if SOC_AHB_GDMA_VERSION == 2
 #define dma_ll_tx_set_burst_size            DMA_LL_FUNC(tx_set_burst_size)
 #define dma_ll_rx_set_burst_size            DMA_LL_FUNC(rx_set_burst_size)
-#define DMA_LL_TX_EVENT_MASK                AHB_DMA_LL_TX_EVENT_MASK
-#define DMA_LL_RX_EVENT_MASK                AHB_DMA_LL_RX_EVENT_MASK
-#else
-#define DMA_LL_TX_EVENT_MASK                GDMA_LL_TX_EVENT_MASK
-#define DMA_LL_RX_EVENT_MASK                GDMA_LL_RX_EVENT_MASK
 #endif
 
 /*
@@ -77,23 +63,17 @@
 
 /* ---------------------------------------------- Shared GDMA layer for AES/SHA crypto ------------------------------------------------- */
 
-/* Iterations to wait for a stopped channel's descriptor FSM to park before
- * resetting it anyway */
-#define TEE_GDMA_CH_QUIESCE_TIMEOUT_ITER  (1024)
-
 static void crypto_shared_gdma_init(void)
 {
     // enable gdma clock
     gdma_ll_enable_bus_clock(0, true);
+    gdma_ll_reset_register(0);
     dma_ll_force_enable_reg_clock(&DMA_DEV, true);
-
-    /* Forcibly reclaim the channel, aborting any transfer the REE may have */
-    esp_tee_crypto_shared_gdma_free();
 
     // setting the transfer ability
 #if SOC_AHB_GDMA_VERSION == 2
     dma_ll_rx_enable_data_burst(&DMA_DEV, TEE_CRYPTO_GDMA_CH, true);
-    dma_ll_rx_set_burst_size(&DMA_DEV, TEE_CRYPTO_GDMA_CH, 16);
+    dma_ll_tx_set_burst_size(&DMA_DEV, TEE_CRYPTO_GDMA_CH, 16);
     dma_ll_tx_set_burst_size(&DMA_DEV, TEE_CRYPTO_GDMA_CH, 16);
 #else
     dma_ll_rx_enable_data_burst(&DMA_DEV, TEE_CRYPTO_GDMA_CH, false);
@@ -104,23 +84,23 @@ static void crypto_shared_gdma_init(void)
     dma_ll_rx_enable_descriptor_burst(&DMA_DEV, TEE_CRYPTO_GDMA_CH, true);
 
     dma_ll_tx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_tx_connect_to_memory(&DMA_DEV, TEE_CRYPTO_GDMA_CH, SOC_GDMA_TRIG_PERIPH_M2M0);
+    dma_ll_tx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, GDMA_TRIG_PERIPH_M2M, SOC_GDMA_TRIG_PERIPH_M2M0);
 
     dma_ll_rx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_rx_connect_to_memory(&DMA_DEV, TEE_CRYPTO_GDMA_CH, SOC_GDMA_TRIG_PERIPH_M2M0);
+    dma_ll_rx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, GDMA_TRIG_PERIPH_M2M, SOC_GDMA_TRIG_PERIPH_M2M0);
 }
 
-esp_err_t esp_tee_crypto_shared_gdma_start(const crypto_dma_desc_t *input, const crypto_dma_desc_t *output, crypto_dma_user_t periph)
+esp_err_t esp_tee_crypto_shared_gdma_start(const crypto_dma_desc_t *input, const crypto_dma_desc_t *output, gdma_trigger_peripheral_t periph)
 {
     int periph_inst_id = SOC_GDMA_TRIG_PERIPH_M2M0;
     switch (periph) {
 #if SOC_SHA_SUPPORTED
-    case CRYPTO_DMA_USER_SHA:
+    case GDMA_TRIG_PERIPH_SHA:
         periph_inst_id = SOC_GDMA_TRIG_PERIPH_SHA0;
         break;
 #endif
 #if SOC_AES_SUPPORTED
-    case CRYPTO_DMA_USER_AES:
+    case GDMA_TRIG_PERIPH_AES:
         periph_inst_id = SOC_GDMA_TRIG_PERIPH_AES0;
         break;
 #endif
@@ -130,14 +110,14 @@ esp_err_t esp_tee_crypto_shared_gdma_start(const crypto_dma_desc_t *input, const
 
     crypto_shared_gdma_init();
 
-    dma_ll_tx_disconnect_all(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_rx_disconnect_all(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
+    dma_ll_tx_disconnect_from_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
+    dma_ll_rx_disconnect_from_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
 
     dma_ll_tx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_tx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, periph_inst_id);
+    dma_ll_tx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, periph, periph_inst_id);
 
     dma_ll_rx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_rx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, periph_inst_id);
+    dma_ll_rx_connect_to_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH, periph, periph_inst_id);
 
     dma_ll_tx_set_desc_addr(&DMA_DEV, TEE_CRYPTO_GDMA_CH, (intptr_t)input);
     dma_ll_tx_start(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
@@ -150,31 +130,19 @@ esp_err_t esp_tee_crypto_shared_gdma_start(const crypto_dma_desc_t *input, const
 
 void esp_tee_crypto_shared_gdma_free(void)
 {
-    dma_ll_tx_enable_etm_task(&DMA_DEV, TEE_CRYPTO_GDMA_CH, false);
-    dma_ll_rx_enable_etm_task(&DMA_DEV, TEE_CRYPTO_GDMA_CH, false);
-
     dma_ll_tx_stop(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
     dma_ll_rx_stop(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
 
-    for (uint32_t i = 0; i < TEE_GDMA_CH_QUIESCE_TIMEOUT_ITER; i++) {
-        if (dma_ll_tx_is_desc_fsm_idle(&DMA_DEV, TEE_CRYPTO_GDMA_CH) && dma_ll_rx_is_desc_fsm_idle(&DMA_DEV, TEE_CRYPTO_GDMA_CH)) {
-            break;
-        }
-    }
-
-    dma_ll_tx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_rx_reset_channel(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-
-    dma_ll_tx_disconnect_all(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-    dma_ll_rx_disconnect_all(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
-
-    dma_ll_tx_enable_interrupt(&DMA_DEV, TEE_CRYPTO_GDMA_CH, DMA_LL_TX_EVENT_MASK, false);
-    dma_ll_rx_enable_interrupt(&DMA_DEV, TEE_CRYPTO_GDMA_CH, DMA_LL_RX_EVENT_MASK, false);
-    dma_ll_tx_clear_interrupt_status(&DMA_DEV, TEE_CRYPTO_GDMA_CH, DMA_LL_TX_EVENT_MASK);
-    dma_ll_rx_clear_interrupt_status(&DMA_DEV, TEE_CRYPTO_GDMA_CH, DMA_LL_RX_EVENT_MASK);
+    dma_ll_tx_disconnect_from_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
+    dma_ll_rx_disconnect_from_periph(&DMA_DEV, TEE_CRYPTO_GDMA_CH);
 
     dma_ll_tx_set_priority(&DMA_DEV, TEE_CRYPTO_GDMA_CH, 0);
     dma_ll_rx_set_priority(&DMA_DEV, TEE_CRYPTO_GDMA_CH, 0);
+
+    // disable gdma clock
+    gdma_ll_enable_bus_clock(0, false);
+    gdma_ll_reset_register(0);
+    dma_ll_force_enable_reg_clock(&DMA_DEV, false);
 }
 
 /* ---------------------------------------------- DMA Implementations: AES ------------------------------------------------- */
@@ -182,7 +150,7 @@ void esp_tee_crypto_shared_gdma_free(void)
 #if SOC_AES_SUPPORTED
 esp_err_t esp_aes_dma_start(const crypto_dma_desc_t *input, const crypto_dma_desc_t *output)
 {
-    return esp_tee_crypto_shared_gdma_start(input, output, CRYPTO_DMA_USER_AES);
+    return esp_tee_crypto_shared_gdma_start(input, output, GDMA_TRIG_PERIPH_AES);
 }
 
 bool esp_aes_dma_done(const crypto_dma_desc_t *output)
@@ -196,6 +164,6 @@ bool esp_aes_dma_done(const crypto_dma_desc_t *output)
 #if SOC_SHA_SUPPORTED
 esp_err_t esp_sha_dma_start(const crypto_dma_desc_t *input)
 {
-    return esp_tee_crypto_shared_gdma_start(input, NULL, CRYPTO_DMA_USER_SHA);
+    return esp_tee_crypto_shared_gdma_start(input, NULL, GDMA_TRIG_PERIPH_SHA);
 }
 #endif

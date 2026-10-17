@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -23,14 +23,12 @@
 
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
-#include "soc/soc_memory_layout.h"
 
 #include "sdkconfig.h"
 #include "unity.h"
 #include "unity_test_utils_memory.h"
 
 #include "test_utils.h"
-#include "event_performance.h"
 
 static const char* TAG = "test_event";
 
@@ -235,156 +233,10 @@ TEST_CASE("can exit running loop at approximately the set amount of time", "[eve
     vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
 }
 
-static void test_event_count_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
-{
-    (void) event_base;
-    (void) event_id;
-    (void) event_data;
-    (*((int*) event_handler_arg))++;
-}
-
-TEST_CASE("loop run with a finite timeout drains queued events and returns", "[event]")
-{
-    const int runtime_ms = 200;
-    esp_event_loop_handle_t loop;
-    esp_event_loop_args_t loop_args = test_event_get_default_loop_args();
-    loop_args.task_name = NULL;
-    TEST_ESP_OK(esp_event_loop_create(&loop_args, &loop));
-
-    int count = 0;
-    TEST_ESP_OK(esp_event_handler_register_with(loop, s_test_base1, TEST_EVENT_BASE1_EV1,
-                                                test_event_count_handler, &count));
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, portMAX_DELAY));
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, portMAX_DELAY));
-
-    int64_t start = esp_timer_get_time();
-    TEST_ESP_OK(esp_event_loop_run(loop, pdMS_TO_TICKS(runtime_ms)));
-    int64_t elapsed_us = esp_timer_get_time() - start;
-
-    TEST_ASSERT_EQUAL(2, count);
-    TEST_ASSERT_GREATER_OR_EQUAL_INT((runtime_ms - portTICK_PERIOD_MS) * 1000, elapsed_us);
-    TEST_ASSERT_LESS_THAN_INT(500 * 1000, elapsed_us);
-
-    TEST_ESP_OK(esp_event_loop_delete(loop));
-    vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
-}
-
-TEST_CASE("failed loop create with an oversized task does not leak", "[event]")
-{
-    esp_event_loop_handle_t loop = NULL;
-    esp_event_loop_args_t loop_args = test_event_get_default_loop_args();
-    loop_args.task_name = "oversized";
-    loop_args.task_stack_size = 32 * 1024 * 1024;
-
-    // The common tearDown checks that the queue and mutex allocated before task creation are freed.
-    esp_err_t err = esp_event_loop_create(&loop_args, &loop);
-    if (err != ESP_FAIL) {
-        // On the expected failure path no loop is returned, so there is nothing to delete here
-        TEST_FAIL_MESSAGE("expected loop create to fail with an oversized task stack");
-    }
-}
-
-typedef struct {
-    esp_event_loop_handle_t loop;
-    SemaphoreHandle_t done;
-    esp_err_t err;
-} blocking_post_arg_t;
-
-static void test_event_blocking_post_task(void* args)
-{
-    blocking_post_arg_t* arg = (blocking_post_arg_t*) args;
-    arg->err = esp_event_post_to(arg->loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, portMAX_DELAY);
-    xSemaphoreGive(arg->done);
-    vTaskDelete(NULL);
-}
-
-typedef struct {
-    esp_event_loop_handle_t loop;
-    SemaphoreHandle_t done;
-    esp_err_t err;
-} loop_delete_arg_t;
-
-static void test_event_loop_delete_task(void* args)
-{
-    loop_delete_arg_t* arg = (loop_delete_arg_t*) args;
-    arg->err = esp_event_loop_delete(arg->loop);
-    xSemaphoreGive(arg->done);
-    vTaskDelete(NULL);
-}
-
-TEST_CASE("deleting a loop waits for an in-flight post without starving the loop task", "[event]")
-{
-    UBaseType_t orig_prio = uxTaskPriorityGet(NULL);
-    const UBaseType_t loop_prio = 2;
-    const UBaseType_t poster_prio = 3;
-    const UBaseType_t test_prio = 4;
-    vTaskPrioritySet(NULL, test_prio);
-
-    esp_event_loop_handle_t loop;
-    esp_event_loop_args_t loop_args = test_event_get_default_loop_args();
-    loop_args.queue_size = 1;
-    loop_args.task_name = "loop";
-    loop_args.task_priority = loop_prio;
-    loop_args.task_core_id = xPortGetCoreID();
-    TEST_ESP_OK(esp_event_loop_create(&loop_args, &loop));
-
-    // Fill the queue while its consumer is suspended, then start a second post that must block.
-    esp_event_loop_instance_t* loop_inst = (esp_event_loop_instance_t*) loop;
-    vTaskSuspend(loop_inst->task);
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, 0));
-
-    blocking_post_arg_t post_arg = {
-        .loop = loop,
-        .done = xSemaphoreCreateBinary(),
-        .err = ESP_FAIL,
-    };
-    TEST_ASSERT_NOT_NULL(post_arg.done);
-
-    TEST_ASSERT_EQUAL(pdPASS, xTaskCreatePinnedToCore(test_event_blocking_post_task, "poster", 2048,
-                                                      &post_arg, poster_prio, NULL, xPortGetCoreID()));
-
-    // Wait for the poster to pass the deletion gate. This proves the post is in flight instead
-    // of relying on a delay and scheduler timing before starting the concurrent deletion.
-    uint32_t posts_in_flight = 0;
-    const TickType_t wait_ticks = pdMS_TO_TICKS(50);
-    for (TickType_t waited = 0; waited < wait_ticks && posts_in_flight == 0; waited++) {
-        portENTER_CRITICAL(&loop_inst->state.lock);
-        posts_in_flight = loop_inst->state.posts_in_flight;
-        portEXIT_CRITICAL(&loop_inst->state.lock);
-        if (posts_in_flight == 0) {
-            vTaskDelay(1);
-        }
-    }
-    TEST_ASSERT_EQUAL_UINT32(1, posts_in_flight);
-
-    loop_delete_arg_t delete_arg = {
-        .loop = loop,
-        .done = xSemaphoreCreateBinary(),
-        .err = ESP_FAIL,
-    };
-    TEST_ASSERT_NOT_NULL(delete_arg.done);
-
-    vTaskResume(loop_inst->task);
-    TEST_ASSERT_EQUAL(pdPASS, xTaskCreatePinnedToCore(test_event_loop_delete_task, "deleter", 2048,
-                                                      &delete_arg, test_prio, NULL, xPortGetCoreID()));
-    BaseType_t deleted = xSemaphoreTake(delete_arg.done, pdMS_TO_TICKS(500));
-    BaseType_t posted = xSemaphoreTake(post_arg.done, pdMS_TO_TICKS(200));
-    vTaskPrioritySet(NULL, orig_prio);
-
-    TEST_ASSERT_EQUAL(pdTRUE, deleted);
-    TEST_ESP_OK(delete_arg.err);
-    TEST_ASSERT_EQUAL(pdTRUE, posted);
-    TEST_ESP_OK(post_arg.err);
-
-    vSemaphoreDelete(post_arg.done);
-    vSemaphoreDelete(delete_arg.done);
-    vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
-}
-
 TEST_CASE("can register/unregister handlers simultaneously", "[event]")
 {
     /* this test aims to verify that the event handlers list remains consistent despite
-     * simultaneous access by different tasks */
+     * simultaneous access by differenct tasks */
 
     const char* base = "base";
     int32_t id = 0;
@@ -506,7 +358,7 @@ TEST_CASE("can post and run events simultaneously", "[event]")
 {
     /* this test aims to verify that:
      *  - multiple tasks can post to the queue simultaneously
-     *  - handlers receive the appropriate handler arg and associated event data */
+     *  - handlers recieve the appropriate handler arg and associated event data */
 
     esp_event_loop_handle_t loop;
 
@@ -581,7 +433,7 @@ TEST_CASE("can post and run events simultaneously with instances", "[event]")
 {
     /* this test aims to verify that:
      *  - multiple tasks can post to the queue simultaneously
-     *  - handlers receive the appropriate handler arg and associated event data */
+     *  - handlers recieve the appropriate handler arg and associated event data */
 
     esp_event_loop_handle_t loop;
 
@@ -765,7 +617,7 @@ static void performance_test(bool dedicated_task)
     int average = (int)(running_sum / (running_count));
 
     if (!dedicated_task) {
-        vTaskDelete(mtask);
+        ((esp_event_loop_instance_t*) loop)->task = mtask;
     }
 
     TEST_ESP_OK(esp_event_loop_delete(loop));
@@ -833,36 +685,10 @@ TEST_CASE("data posted from ISR is correctly set internally", "[event][intr]")
     TEST_ASSERT_EQUAL(pdTRUE, xQueueReceive(loop_def->queue, &post, portMAX_DELAY));
     TEST_ASSERT_EQUAL(true, post.data_set);
     TEST_ASSERT_EQUAL(false, post.data_allocated);
-    TEST_ASSERT_EQUAL(0, *(int*)post.data.val);
+    TEST_ASSERT_EQUAL(false, post.data.val);
 
     TEST_ESP_OK(esp_event_loop_delete(loop));
 
-    vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
-}
-
-TEST_CASE("task-context event data at the ISR inline capacity does not use the heap", "[event][intr]")
-{
-    esp_event_loop_handle_t loop;
-    esp_event_loop_args_t loop_args = test_event_get_default_loop_args();
-    loop_args.task_name = NULL;
-    TEST_ESP_OK(esp_event_loop_create(&loop_args, &loop));
-
-    // Enabling ISR posting also gives task-context posts an inline payload buffer of this size.
-    esp_event_post_instance_t post;
-    uint8_t payload[sizeof(post.data.val)];
-    for (size_t i = 0; i < sizeof(payload); i++) {
-        payload[i] = (uint8_t)(0xA0 + i);
-    }
-
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, payload, sizeof(payload), portMAX_DELAY));
-
-    esp_event_loop_instance_t* loop_def = (esp_event_loop_instance_t*) loop;
-    TEST_ASSERT_EQUAL(pdTRUE, xQueueReceive(loop_def->queue, &post, portMAX_DELAY));
-    TEST_ASSERT_EQUAL(true, post.data_set);
-    TEST_ASSERT_EQUAL(false, post.data_allocated);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, post.data.val, sizeof(payload));
-
-    TEST_ESP_OK(esp_event_loop_delete(loop));
     vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
 }
 
@@ -934,65 +760,3 @@ TEST_CASE("can post events from interrupt handler", "[event][intr]")
 }
 
 #endif // CONFIG_ESP_EVENT_POST_FROM_ISR
-
-#if CONFIG_ESP_EVENT_LOOP_IN_EXT_RAM && CONFIG_SPIRAM
-TEST_CASE("event loop structures are allocated in external RAM", "[event][ext_ram]")
-{
-    esp_event_loop_handle_t loop;
-    esp_event_loop_args_t loop_args = test_event_get_default_loop_args();
-
-    loop_args.task_name = "test_loop";
-    TEST_ESP_OK(esp_event_loop_create(&loop_args, &loop));
-
-    esp_event_loop_instance_t* loop_inst = (esp_event_loop_instance_t*) loop;
-
-    // Verify that the loop structure itself is in external RAM
-    TEST_ASSERT_TRUE(esp_ptr_external_ram(loop_inst));
-
-    // Verify that the queue handle is valid
-    // Note: With xQueueCreateWithCaps(MALLOC_CAP_SPIRAM), the queue internals (buffer and storage)
-    // are allocated in external RAM, but we cannot directly access them for verification.
-    // The queue is only created with SPIRAM when CONFIG_ESP_EVENT_POST_FROM_ISR is disabled.
-    TEST_ASSERT_NOT_NULL(loop_inst->queue);
-
-    // Verify that the task handle is valid
-    // The task stack is allocated in external RAM via xTaskCreatePinnedToCoreWithCaps
-    TEST_ASSERT_NOT_NULL(loop_inst->task);
-
-    // Register a handler and verify handler structures are in external RAM
-    int handler_called = 0;
-    simple_arg_t arg = {
-        .data = &handler_called,
-        .mutex = xSemaphoreCreateMutex()  // Mutex must be in internal RAM
-    };
-
-    esp_event_handler_instance_t ctx;
-    TEST_ESP_OK(esp_event_handler_instance_register_with(loop, s_test_base1, TEST_EVENT_BASE1_EV1,
-                                                         test_event_simple_handler, &arg, &ctx));
-
-    // Verify handler context is in external RAM (allocated with esp_event_calloc)
-    TEST_ASSERT_NOT_NULL(ctx);
-    TEST_ASSERT_TRUE(esp_ptr_external_ram(ctx));
-
-    // Post an event and verify queue functionality
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, portMAX_DELAY));
-
-    vTaskDelay(pdMS_TO_TICKS(100)); // Give time for event to be processed
-
-    TEST_ASSERT_EQUAL(1, handler_called);
-
-    // Post again to verify the queue (with internal structures in external RAM) is working correctly
-    TEST_ESP_OK(esp_event_post_to(loop, s_test_base1, TEST_EVENT_BASE1_EV1, NULL, 0, portMAX_DELAY));
-
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    TEST_ASSERT_EQUAL(2, handler_called);
-
-    // Cleanup
-    TEST_ESP_OK(esp_event_handler_instance_unregister_with(loop, s_test_base1, TEST_EVENT_BASE1_EV1, ctx));
-    TEST_ESP_OK(esp_event_loop_delete(loop));
-    vSemaphoreDelete(arg.mutex);
-
-    vTaskDelay(pdMS_TO_TICKS(TEST_CONFIG_TEARDOWN_WAIT));
-}
-#endif // CONFIG_ESP_EVENT_LOOP_IN_EXT_RAM && CONFIG_SPIRAM

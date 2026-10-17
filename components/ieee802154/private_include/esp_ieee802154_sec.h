@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,10 +25,11 @@ extern "C" {
 void ieee802154_transmit_security_config(uint8_t *frame, uint8_t *key, uint8_t *addr);
 
 /**
- * @brief  Clear the encryption enabled configuration.
+ * @brief  Update the encryption enabled configuration of the next transmission.
+ *
  *
  */
-void ieee802154_sec_clear(void);
+void ieee802154_sec_update(void);
 
 #ifdef __cplusplus
 }

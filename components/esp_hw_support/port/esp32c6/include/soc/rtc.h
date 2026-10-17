@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -53,6 +53,9 @@ extern "C" {
 #define RTC_SLOW_CLK_32K_CAL_TIMEOUT_THRES(cycles)   (cycles << 12)
 #define RTC_FAST_CLK_20M_CAL_TIMEOUT_THRES(cycles)   (TIMG_RTC_CALI_TIMEOUT_THRES_V) // Just use the max timeout thres value
 
+#define OTHER_BLOCKS_POWERUP        1
+#define OTHER_BLOCKS_WAIT           1
+
 /* Delays for various clock sources to be enabled/switched.
  * All values are in microseconds.
  */
@@ -62,9 +65,36 @@ extern "C" {
 #define SOC_DELAY_RC_FAST_DIGI_SWITCH       5
 #define SOC_DELAY_RC32K_ENABLE              300
 
+#define RTC_CNTL_PLL_BUF_WAIT_DEFAULT  20
+#define RTC_CNTL_XTL_BUF_WAIT_DEFAULT  100
+
 #define RTC_CNTL_CK8M_DFREQ_DEFAULT  100
 #define RTC_CNTL_SCK_DCAP_DEFAULT    128
 #define RTC_CNTL_RC32K_DFREQ_DEFAULT 700
+
+/* Various delays to be programmed into power control state machines */
+#define RTC_CNTL_XTL_BUF_WAIT_SLP_US            (250)
+#define RTC_CNTL_PLL_BUF_WAIT_SLP_CYCLES        (1)
+#define RTC_CNTL_CK8M_WAIT_SLP_CYCLES           (4)
+#define RTC_CNTL_WAKEUP_DELAY_CYCLES            (5)
+#define RTC_CNTL_OTHER_BLOCKS_POWERUP_CYCLES    (1)
+#define RTC_CNTL_OTHER_BLOCKS_WAIT_CYCLES       (1)
+#define RTC_CNTL_MIN_SLP_VAL_MIN                (2)
+
+/*
+set sleep_init default param
+*/
+#define RTC_CNTL_DBG_ATTEN_LIGHTSLEEP_DEFAULT  5
+#define RTC_CNTL_DBG_ATTEN_LIGHTSLEEP_NODROP  0
+#define RTC_CNTL_DBG_ATTEN_DEEPSLEEP_DEFAULT  15
+#define RTC_CNTL_DBG_ATTEN_MONITOR_DEFAULT  0
+#define RTC_CNTL_BIASSLP_MONITOR_DEFAULT  0
+#define RTC_CNTL_BIASSLP_SLEEP_ON  0
+#define RTC_CNTL_BIASSLP_SLEEP_DEFAULT  1
+#define RTC_CNTL_PD_CUR_MONITOR_DEFAULT  0
+#define RTC_CNTL_PD_CUR_SLEEP_ON  0
+#define RTC_CNTL_PD_CUR_SLEEP_DEFAULT  1
+#define RTC_CNTL_DG_VDD_DRV_B_SLP_DEFAULT 254
 
 #if CONFIG_ESP_ENABLE_PVT
 /*
@@ -72,8 +102,8 @@ set pvt default param
 */
 #define PVT_CHANNEL0_SEL        34
 #define PVT_CHANNEL1_SEL        38
-#define PVT_CHANNEL0_CFG        0x11fff
-#define PVT_CHANNEL1_CFG        0x17fff
+#define PVT_CHANNEL0_CFG        0x1033e
+#define PVT_CHANNEL1_CFG        0x1033e
 #define PVT_CHANNEL2_CFG        0x10000
 #define PVT_CMD0                0x24
 #define PVT_CMD1                0x5
@@ -84,9 +114,8 @@ set pvt default param
 #define PVT_DELAY_NUM_HIGH      108
 #define PVT_DELAY_NUM_LOW       98
 #define PVT_PUMP_CHANNEL_CODE   1
-#define PVT_PUMP_BITMAP         21
+#define PVT_PUMP_BITMAP         25
 #define PVT_PUMP_DRV            0
-#define PVT_DELAY_NUM_PUMP      95
 
 /**
  * @brief Initialize PVT related parameters
@@ -114,6 +143,15 @@ void charge_pump_enable(bool enable);
 
 #endif //#if CONFIG_ESP_ENABLE_PVT
 
+/*
+The follow value is used to get a reasonable rtc voltage dbias value according to digital dbias & some other value
+storing in efuse (based on ATE 5k ECO3 chips)
+*/
+#define K_RTC_MID_MUL10000 215
+#define K_DIG_MID_MUL10000 213
+#define V_RTC_MID_MUL10000  10800
+#define V_DIG_MID_MUL10000  10860
+
 /**
  * @brief CPU clock configuration structure
  */
@@ -125,6 +163,9 @@ typedef struct rtc_cpu_freq_config_s {
 } rtc_cpu_freq_config_t;
 
 #define RTC_CLK_CAL_FRACT  19  //!< Number of fractional bits in values returned by rtc_clk_cal
+
+#define RTC_VDDSDIO_TIEH_1_8V 0 //!< TIEH field value for 1.8V VDDSDIO
+#define RTC_VDDSDIO_TIEH_3_3V 1 //!< TIEH field value for 3.3V VDDSDIO
 
 #define RTC_CAL_RTC_MUX _Pragma ("GCC warning \"'RTC_CAL_RTC_MUX' macro is deprecated\"") CLK_CAL_RTC_SLOW
 #define RTC_CAL_RC_SLOW _Pragma ("GCC warning \"'RTC_CAL_RC_SLOW' macro is deprecated\"") CLK_CAL_RC_SLOW
@@ -346,14 +387,17 @@ void rtc_clk_cpu_freq_get_config(rtc_cpu_freq_config_t *out_config);
 void rtc_clk_cpu_freq_set_xtal(void);
 
 /**
- * @brief Release root clock source locked by PMU
+ * @brief Switch root clock source to PLL (only used by sleep) release root clock source locked by PMU
  *
  * wifi receiving beacon frame in PMU modem state strongly depends on the BBPLL
  * clock, PMU will forcibly lock the root clock source as PLL, when the root
  * clock source of the software system is selected as PLL, we need to release
- * the root clock source locking in the sleep process (a critical section).
+ * the root clock source locking and switch the root clock source to PLL in the
+ * sleep process (a critical section).
+ *
+ * @param[in] Maximum CPU frequency, in MHz
  */
-void rtc_clk_modem_pll_lock_release(void);
+void rtc_clk_cpu_freq_to_pll_and_pll_lock_release(int cpu_freq_mhz);
 
 /**
  * @brief Get the current APB frequency.

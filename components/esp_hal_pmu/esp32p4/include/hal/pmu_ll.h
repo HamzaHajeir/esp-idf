@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,27 +16,11 @@
 #include "soc/pmu_struct.h"
 #include "hal/pmu_types.h"
 #include "hal/misc.h"
-#include "soc/efuse_struct.h"
 #include "hal/config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-__attribute__((always_inline)) static inline uint32_t pmu_ll_get_active_hp_dbias(void)
-{
-    return EFUSE.rd_mac_sys_4.active_hp_dbias;
-}
-
-__attribute__((always_inline)) static inline uint32_t pmu_ll_get_active_lp_dbias(void)
-{
-    return EFUSE.rd_mac_sys_4.active_lp_dbias;
-}
-
-__attribute__((always_inline)) static inline int32_t pmu_ll_get_dbias_vol_gap(void)
-{
-    return EFUSE.rd_mac_sys_5.lp_dcdc_dbias_vol_gap;
-}
 
 FORCE_INLINE_ATTR uint32_t pmu_ll_lp_get_interrupt_raw(pmu_dev_t *hw)
 {
@@ -583,16 +567,6 @@ FORCE_INLINE_ATTR void pmu_ll_hp_clear_reject_intr_status(pmu_dev_t *hw)
     hw->hp_ext.int_clr.reject = 1;
 }
 
-FORCE_INLINE_ATTR void pmu_ll_hp_clear_lp_cpu_exc_intr_status(pmu_dev_t *hw)
-{
-    hw->hp_ext.int_clr.lp_exception = 1;
-}
-
-FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_wakeup_enable(pmu_dev_t *hw)
-{
-    return hw->wakeup.cntl2.val;
-}
-
 FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_wakeup_cause(pmu_dev_t *hw)
 {
     return hw->wakeup.status0;
@@ -655,36 +629,12 @@ FORCE_INLINE_ATTR uint32_t pmu_ll_lp_get_digital_power_down_wait_cycle(pmu_dev_t
 
 FORCE_INLINE_ATTR void pmu_ll_lp_set_analog_wait_target_cycle(pmu_dev_t *hw, uint32_t slow_clk_cycle)
 {
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-    HAL_ASSERT(slow_clk_cycle <= 1020);
-    uint32_t target = 0, expand = 0;
-    if (slow_clk_cycle <= 255) {
-        target = slow_clk_cycle;
-        expand = 0;
-    } else if (slow_clk_cycle <= 510) {
-        expand = 1;
-        target = (slow_clk_cycle + 1) >> 1;
-    } else if (slow_clk_cycle <= 1020) {
-        expand = 2;
-        target = (slow_clk_cycle + 3) >> 2;
-    }
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target, target);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target_expand, expand);
-#else
-    HAL_ASSERT(slow_clk_cycle <= 255);
     HAL_FORCE_MODIFY_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target, slow_clk_cycle);
-#endif
 }
 
 FORCE_INLINE_ATTR uint32_t pmu_ll_lp_get_analog_wait_target_cycle(pmu_dev_t *hw)
 {
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-    uint32_t target = HAL_FORCE_READ_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target);
-    uint32_t expand = HAL_FORCE_READ_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target_expand);
-    return target << expand;
-#else
     return HAL_FORCE_READ_U32_REG_FIELD(hw->wakeup.cntl5, lp_ana_wait_target);
-#endif
 }
 
 FORCE_INLINE_ATTR void pmu_ll_set_xtal_stable_wait_cycle(pmu_dev_t *hw, uint32_t cycle)

@@ -5,7 +5,7 @@
  */
 #include "esp_rom_sys.h"
 #include "multi_heap.h"
-#include "rom_patch_tlsf.h"
+#include "esp_rom_tlsf.h"
 
 typedef struct {
     int *ptr;

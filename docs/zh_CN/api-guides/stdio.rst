@@ -21,14 +21,10 @@ ESP-IDF 提供了 C 标准输入输出功能，如 ``stdin``、``stdout`` 和 ``
 
     - UART
     :SOC_USB_SERIAL_JTAG_SUPPORTED: - USB Serial/JTAG
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - USB CDC（使用 USB_OTG 外设）
+    :esp32s2 or esp32s3: - USB CDC（使用 USB_OTG 外设）
     - "Null"（无输出）
 
 不过，标准 I/O 并不限于这些选项。请参见下文，了解如何为标准 I/O 启用自定义目标。
-
-.. note::
-
-    控制台通路与通过 :doc:`UART 驱动 <../api-reference/peripherals/uart>` 在其他管脚上打开的应用 UART 彼此独立。若控制台输出由 UART 外设提供，则需要 USB 至 UART 桥芯片，许多开发板上已板载该桥芯片，用于 PC 与默认 UART0 之间的控制台通信；若控制台输出由 USB 或 USB Serial/JTAG 外设提供，则无需转接芯片，开发板上的 USB 接口直连芯片的 USB D+/D- 管脚。除非将某端口配置为控制台，否则其他 UART 端口上的数据不会出现在 ``idf.py monitor`` 中。有关详细信息，请参阅 :doc:`与 {IDF_TARGET_NAME} 创建串口连接 <../get-started/establish-serial-connection>`。
 
 配置
 -----
@@ -37,11 +33,11 @@ ESP-IDF 提供了 C 标准输入输出功能，如 ``stdin``、``stdout`` 和 ``
 
 .. list::
 
-    - :menuitem:`CONFIG_ESP_CONSOLE_UART_DEFAULT` — 启用 UART 用于标准 I/O，保持默认选项项（管脚号、波特率）。
-    - :menuitem:`CONFIG_ESP_CONSOLE_UART_CUSTOM` — 启用 UART 用于标准 I/O，通过 Kconfig 配置 TX/RX 管脚号和波特率。
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - :menuitem:`CONFIG_ESP_CONSOLE_USB_CDC` — 启用 USB CDC（使用 USB_OTG 外设）用于标准 I/O。硬件连接要求请参见 :doc:`usb-otg-console`。
-    :SOC_USB_SERIAL_JTAG_SUPPORTED: - :menuitem:`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` — 启用 USB Serial/JTAG 用于标准 I/O。硬件连接要求请参见 :doc:`usb-serial-jtag-console`。
-    - :menuitem:`CONFIG_ESP_CONSOLE_NONE` — 禁用标准 I/O。选择此选项时， ``stdin``、 ``stdout`` 和 ``stderr`` 将映射到 ``/dev/null``，不会产生输出或输入。
+    - :ref:`CONFIG_ESP_CONSOLE_UART_DEFAULT<CONFIG_ESP_CONSOLE_UART_DEFAULT>` — 启用 UART 用于标准 I/O，保持默认选项项（管脚号、波特率）。
+    - :ref:`CONFIG_ESP_CONSOLE_UART_CUSTOM<CONFIG_ESP_CONSOLE_UART_CUSTOM>` — 启用 UART 用于标准 I/O，通过 Kconfig 配置 TX/RX 管脚号和波特率。
+    :esp32s2 or esp32s3: - :ref:`CONFIG_ESP_CONSOLE_USB_CDC<CONFIG_ESP_CONSOLE_USB_CDC>` — 启用 USB CDC（使用 USB_OTG 外设）用于标准 I/O。硬件连接要求请参见 :doc:`usb-otg-console`。
+    :SOC_USB_SERIAL_JTAG_SUPPORTED: - :ref:`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG<CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG>` — 启用 USB Serial/JTAG 用于标准 I/O。硬件连接要求请参见 :doc:`usb-serial-jtag-console`。
+    - :ref:`CONFIG_ESP_CONSOLE_NONE<CONFIG_ESP_CONSOLE_NONE>` — 禁用标准 I/O。选择此选项时， ``stdin``、 ``stdout`` 和 ``stderr`` 将映射到 ``/dev/null``，不会产生输出或输入。
 
 启用上述任一选项，会将相应的 VFS 驱动编译进应用程序，用于打开 ``stdin``、 ``stdout`` 和 ``stderr`` 流。写入 ``stdout`` 和 ``stderr`` 的数据将通过选定接口发送，而来自选定接口的输入将可通过 ``stdin`` 读取。
 
@@ -59,12 +55,12 @@ ESP-IDF 提供了 C 标准输入输出功能，如 ``stdin``、``stdout`` 和 ``
 
     可用的次级控制台选项包括：
 
-        - :menuitem:`CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG`
+        - :ref:`CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG<CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG>`
 
 标准流与 FreeRTOS 任务
 -----------------------
 
-ESP-IDF 根据 :menuitem:`CONFIG_LIBC` 中所选择的 LibC 实现，提供了两种不同的标准 I/O 流实现方式。 ``stdin``、 ``stdout`` 和 ``stderr`` 流在这两种实现下的行为存在差异，尤其体现在 FreeRTOS 任务之间的共享方式上。
+ESP-IDF 根据 :ref:`CONFIG_LIBC` 中所选择的 LibC 实现，提供了两种不同的标准 I/O 流实现方式。 ``stdin``、 ``stdout`` 和 ``stderr`` 流在这两种实现下的行为存在差异，尤其体现在 FreeRTOS 任务之间的共享方式上。
 
 两种实现的共同点是，每个流 (``stdin``、 ``stdout``、 ``stderr``) 都具有一个互斥锁 (mutex) 用于保护，防止多个任务并发访问同一个流。例如，当两个任务同时向 ``stdout`` 写数据时，该互斥锁可以确保各个任务的输出不会相互混杂。
 
@@ -106,7 +102,7 @@ UART
 
     安装中断驱动后，也可使用带有 ``O_NONBLOCK`` 标志的 ``fcntl`` 函数启用/禁用非阻塞行为。
 
-.. only:: SOC_USB_OTG_CONSOLE_SUPPORTED
+.. only:: esp32s2 or esp32s3
 
     USB CDC（使用 USB_OTG 外设）
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -121,13 +117,13 @@ UART
 应用程序可以使用以下 Kconfig 选项全局配置此行为：
 
     - 配置输出
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF`
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_CR`
-        - :menuitem:`CONFIG_LIBC_STDOUT_LINE_ENDING_LF`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF<CONFIG_LIBC_STDOUT_LINE_ENDING_CRLF>`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_CR<CONFIG_LIBC_STDOUT_LINE_ENDING_CR>`
+        - :ref:`CONFIG_LIBC_STDOUT_LINE_ENDING_LF<CONFIG_LIBC_STDOUT_LINE_ENDING_LF>`
     - 配置输入
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_CRLF`
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_CR`
-        - :menuitem:`CONFIG_LIBC_STDIN_LINE_ENDING_LF`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_CRLF<CONFIG_LIBC_STDIN_LINE_ENDING_CRLF>`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_CR<CONFIG_LIBC_STDIN_LINE_ENDING_CR>`
+        - :ref:`CONFIG_LIBC_STDIN_LINE_ENDING_LF<CONFIG_LIBC_STDIN_LINE_ENDING_LF>`
 
 
 也可以为特定 VFS 驱动配置行结束符转换：
@@ -136,7 +132,7 @@ UART
 
     - 对于 UART：:cpp:func:`uart_vfs_dev_port_set_rx_line_endings` 和 :cpp:func:`uart_vfs_dev_port_set_tx_line_endings`
     :SOC_USB_SERIAL_JTAG_SUPPORTED: - 对于 USB Serial/JTAG：:cpp:func:`usb_serial_jtag_vfs_set_rx_line_endings` 和 :cpp:func:`usb_serial_jtag_vfs_set_tx_line_endings`
-    :SOC_USB_OTG_CONSOLE_SUPPORTED: - 对于 USB CDC（使用 USB_OTG 外设）：:cpp:func:`esp_vfs_dev_cdcacm_set_rx_line_endings` 和 :cpp:func:`esp_vfs_dev_cdcacm_set_tx_line_endings`
+    :esp32s2 or esp32s3: - 对于 USB CDC（使用 USB_OTG 外设）：:cpp:func:`esp_vfs_dev_cdcacm_set_rx_line_endings` 和 :cpp:func:`esp_vfs_dev_cdcacm_set_tx_line_endings`
 
 缓冲
 -----
@@ -174,72 +170,3 @@ UART
     stderr = f;
 
 注意，日志函数（如 ``ESP_LOGE()``）会将其输出写入 ``stdout``。在自定义 VFS（或其调用的组件）实现中使用日志时，请尤为注意。例如，如果自定义 VFS 驱动的 ``write()`` 操作失败，并使用 ``ESP_LOGE()`` 记录错误，会将输出写入 ``stdout``，而这又会调用自定义 VFS 驱动程序的 ``write()`` 操作，可能导致无限循环。建议在 VFS 驱动的 ``write()`` 实现中跟踪此类情况，如果发现写入仍在进行中，则立即返回。
-
-控制台 I/O 多路复用器
------------------------
-
-除了手动重定向 ``stdout`` 和 ``stderr`` 外（如上文所示），ESP-IDF 还提供控制台 I/O 多路复用器，使应用程序可以注册一个或多个自定义 VFS 后端，并在运行时在这些后端之间切换，而无需自行重新指定 ``stdin``、``stdout`` 或 ``stderr`` 流。
-
-多路复用器以 ``/dev/console`` 的形式对外提供，并将后端分为两类管理：
-
-- **主控 (Primary)**：当前活跃的读写后端，所有的应用输入 (``stdin``) 和输出 (``stdout``/``stderr``) 都经过主控。主控以栈方式管理：推入新主控时上一个主控会被挂起，弹出则恢复。Kconfig 设定的默认控制台位于栈底，始终作为兜底方案保留。
-- **辅助 (Auxiliary)**：仅接收写入的后端。写入 ``stdout`` 和 ``stderr`` 的内容除了发送给主控，还会同时复制到所有已注册的辅助后端。比如，既可以将控制台输出镜像到日志文件或网络，也能保留物理接口的交互控制台。
-
-允许同时注册的后端数量（主控和辅助总数，包括 Kconfig 默认项）由 :ref:`CONFIG_ESP_STDIO_MAX_VFS_ENTRIES` 配置。
-
-API 概览
-^^^^^^^^
-
-多路复用器 API 在 ``esp_stdio.h`` 中声明，启用 ``CONFIG_VFS_SUPPORT_IO`` 配置后可用：
-
-- ``esp_stdio_register_io()`` — 将 VFS 后端注册为只写辅助后端，并返回不透明句柄。此后端会立即开始接收写入扇出。
-- ``esp_stdio_push_primary()`` — 将先前注册的句柄提升为当前活动的读写主控。当前主控被挂起到栈上。
-- ``esp_stdio_pop_primary()`` — 从栈中移除一个主控，使其恢复为辅助状态。传入 ``NULL`` 将移除当前（栈顶）主控；传入特定句柄则无论其在栈中何处都会将其移除。
-- ``esp_stdio_unregister_io()`` — 将后端从多路复用器中彻底移除。若该后端当前是活动主控，则先将其弹出。
-
-后端由 ``esp_stdio_io_config_t`` 结构体描述：
-
-.. list::
-
-    - ``vfs_ops`` — 指向 VFS 操作表的指针（不得为 ``NULL``）。
-    - ``vfs_ctx`` — 转发给每个 VFS 回调的上下文指针。
-    - ``path`` — 在驱动内部传给 ``open()`` 的路径，例如 ``"/"``。
-
-.. note::
-
-    在调用 ``esp_stdio_unregister_io()`` 移除该后端前，配置中传入的操作表、上下文及路径字符串必须保持有效。
-
-示例
-^^^^^^^
-
-以下示例注册自定义后端，将其设为活动控制台，随后再恢复先前的控制台：
-
-.. code-block:: c
-
-    #include "esp_stdio.h"
-
-    // 由应用程序实现的 VFS 操作表。
-    extern const esp_vfs_fs_ops_t my_console_vfs;
-
-    esp_stdio_handle_t handle;
-    esp_stdio_io_config_t config = {
-        .vfs_ops = &my_console_vfs,
-        .vfs_ctx = NULL,
-        .path = "/",
-    };
-
-    // 注册为只写辅助后端：输出现在会镜像到该后端。
-    ESP_ERROR_CHECK(esp_stdio_register_io(&config, &handle));
-
-    // 将其提升为当前活动的读写主控。
-    ESP_ERROR_CHECK(esp_stdio_push_primary(handle));
-
-    // ... 应用程序通过自定义控制台使用 stdin/stdout/stderr ...
-
-    // 恢复先前的主控（自定义后端恢复为辅助）。
-    ESP_ERROR_CHECK(esp_stdio_pop_primary(handle));
-
-    // 从多路复用器中彻底移除该后端。
-    ESP_ERROR_CHECK(esp_stdio_unregister_io(handle));
-
-上文关于日志的重入说明，此处同样适用。后端的 ``write()`` 实现不应触发会递归写回控制台的日志。

@@ -69,10 +69,10 @@ static   ble_uuid128_t data_source = BLE_UUID128_INIT(
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x18, 0x11,
-    0x0d, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'a', 'n', 'c', 's', '-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x18, 0x11,
+    0x0e, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'a', 'n', 'c', 's', '-', 'e',
 };
 #endif
 
@@ -338,13 +338,14 @@ ext_ble_ancs_advertise(void)
     }
 
     /* use defaults for non-set params */
-    memset(&params, 0, sizeof(params));
+    memset (&params, 0, sizeof(params));
 
     /* enable connectable advertising */
     params.connectable = 1;
 
-    /* advertise using configured addr */
-    params.own_addr_type = own_addr_type;
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
+
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
     params.tx_power = 127;
@@ -357,6 +358,8 @@ ext_ble_ancs_advertise(void)
     rc = ble_gap_ext_adv_configure(instance, &params, NULL,
                                    ble_ancs_gap_event, NULL);
     assert (rc == 0);
+
+    /* in this case only scan response is allowed */
 
     /* get mbuf for scan rsp data */
     data = os_msys_get_pkthdr(sizeof(ext_adv_pattern_1), 0);
@@ -413,15 +416,11 @@ ble_ancs_advertise(void)
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
-#endif
 
-    static const ble_uuid16_t adv_uuids16[] = { BLE_UUID16_INIT(0x1811) };
-    fields.uuids16 = adv_uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
@@ -489,7 +488,6 @@ ble_ancs_gap_event(struct ble_gap_event *event, void *arg)
 #else
             ble_ancs_advertise();
 #endif
-            return 0;
         }
 
         /** Initiate security - It will perform
@@ -549,11 +547,7 @@ ble_ancs_gap_event(struct ble_gap_event *event, void *arg)
         assert(rc == 0);
         ble_ancs_print_conn_desc(&desc);
         MODLOG_DFLT(INFO, "\n");
-        if (event->enc_change.status != 0) {
-            MODLOG_DFLT(ERROR, "encryption failed; status=%d\n", event->enc_change.status);
-            return 0;
-        }
-        rc = ble_gattc_disc_svc_by_uuid(event->enc_change.conn_handle, &APPLE_NC_UUID.u,
+        rc = ble_gattc_disc_svc_by_uuid(event->connect.conn_handle, &APPLE_NC_UUID.u,
                                     ancs_service_discovered_cb, NULL);
         if (rc != 0) {
             return rc;
@@ -572,10 +566,6 @@ ble_ancs_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_NOTIFY_RX:
     /* Peer sent us a notification or indication. */
         if (event->notify_rx.attr_handle == notification_source_handle) {
-            if (event->notify_rx.om == NULL || event->notify_rx.om->om_len < 8) {
-                MODLOG_DFLT(ERROR, "NOTIFY_RX: short or NULL notification source packet\n");
-                return 0;
-            }
             ble_receive_apple_notification_source(event->notify_rx.om->om_data, event->notify_rx.om->om_len);
             uint8_t *notificationUID = &event->notify_rx.om->om_data[4];
             if (event->notify_rx.om->om_data[0] == EventIDNotificationAdded &&
@@ -588,18 +578,10 @@ ble_ancs_gap_event(struct ble_gap_event *event, void *arg)
                                                 notificationUID, sizeof(p_attr)/sizeof(ble_noti_attr_list_t), p_attr);
             }
         } else if (event->notify_rx.attr_handle == data_source_handle) {
-            uint16_t new_len = data_buffer.len + event->notify_rx.om->om_len;
-            if (new_len > sizeof(data_buffer.buffer)) {
-                MODLOG_DFLT(ERROR, "data_buffer overflow: %d + %d > %d",
-                            data_buffer.len, event->notify_rx.om->om_len,
-                            (int)sizeof(data_buffer.buffer));
-                data_buffer.len = 0;
-                return 0;
-            }
             memcpy(&data_buffer.buffer[data_buffer.len],
-                   event->notify_rx.om->om_data,
-                   event->notify_rx.om->om_len);
-            data_buffer.len = new_len;
+            event->notify_rx.om->om_data,
+            event->notify_rx.om->om_len);
+            data_buffer.len += event->notify_rx.om->om_len;
 
             if (event->notify_rx.om->om_len == (MTU_size - 3)) {
                 esp_timer_start_periodic(periodic_timer, 500000);
@@ -658,8 +640,6 @@ ble_ancs_gap_event(struct ble_gap_event *event, void *arg)
 
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
             pkey.action = event->passkey.params.action;
-            /* WARNING: Hardcoded passkey for demonstration only.
-             * In production, generate a random passkey per pairing. */
             pkey.passkey = 123456; // This is the passkey to be entered on peer
             ESP_LOGI(tag, "Enter passkey %" PRIu32 "on the peer side", pkey.passkey);
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
@@ -779,21 +759,12 @@ app_main(void)
     ble_hs_cfg.sm_their_key_dist |= BLE_SM_PAIR_KEY_DIST_ENC;
     ble_hs_cfg.sm_sc = 0;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("nimble-ancs");
     assert(rc == 0);
-#endif
 
     /* XXX Need to have template for store */
     ble_store_config_init();
-
-    ret = esp_timer_create(&periodic_timer_args, &periodic_timer);
-    if (ret != ESP_OK) {
-        ESP_LOGE(tag, "Failed to create periodic timer: %d", ret);
-        nimble_port_deinit();
-        return;
-    }
 
     nimble_port_freertos_init(ble_ancs_host_task);
 

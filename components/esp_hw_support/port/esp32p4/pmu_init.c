@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,9 +18,6 @@
 #include "pmu_param.h"
 #include "esp_private/esp_pmu.h"
 #include "soc/regi2c_dig_reg.h"
-#include "soc/regi2c_mpll.h"
-#include "soc/regi2c_bias.h"
-#include "hal/regi2c_ctrl_ll.h"
 #include "soc/lp_system_reg.h"
 #include "regi2c_ctrl.h"
 #include "esp_rom_sys.h"
@@ -42,22 +39,13 @@ typedef struct {
     const pmu_lp_system_analog_param_t *analog;
 } pmu_lp_system_param_t;
 
-pmu_context_t * __attribute__((weak)) SPM_IRAM_ATTR PMU_instance(void)
+pmu_context_t * __attribute__((weak)) TCM_IRAM_ATTR PMU_instance(void)
 {
     /* It should be explicitly defined in the internal RAM, because this
      * instance will be used in pmu_sleep.c */
-    static SPM_DRAM_ATTR pmu_hal_context_t pmu_hal = { .dev = &PMU };
-    static SPM_DRAM_ATTR pmu_sleep_machine_constant_t pmu_mc = PMU_SLEEP_MC_DEFAULT();
-#if PMU_SLEEP_PRIV_ENABLED
-    static SPM_DRAM_ATTR pmu_sleep_data_t pmu_data = { 0 };
-#endif
-    static SPM_DRAM_ATTR pmu_context_t pmu_context = {
-        .hal = &pmu_hal,
-        .mc = (void *)&pmu_mc,
-#if PMU_SLEEP_PRIV_ENABLED
-        .priv = &pmu_data,
-#endif
-    };
+    static TCM_DRAM_ATTR pmu_hal_context_t pmu_hal = { .dev = &PMU };
+    static TCM_DRAM_ATTR pmu_sleep_machine_constant_t pmu_mc = PMU_SLEEP_MC_DEFAULT();
+    static TCM_DRAM_ATTR pmu_context_t pmu_context = { .hal = &pmu_hal, .mc = (void *)&pmu_mc };
     return &pmu_context;
 }
 
@@ -189,7 +177,7 @@ static void pmu_hp_system_init_default(pmu_context_t *ctx)
         pmu_hp_system_param_default(mode, &param);
         pmu_hp_system_init(ctx, mode, &param);
     }
-#if !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 300
     lp_sys_ll_set_hp_mem_lowpower_mode(MEM_AUX_DEEPSLEEP);
 #endif
 }
@@ -208,7 +196,7 @@ static void pmu_lp_system_init_default(pmu_context_t *ctx)
         pmu_lp_system_param_default(mode, &param);
         pmu_lp_system_init(ctx, mode, &param);
     }
-#if !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 300
     lp_sys_ll_set_lp_mem_lowpower_mode(MEM_AUX_DEEPSLEEP);
 #endif
 }
@@ -223,11 +211,5 @@ void pmu_init(void)
     pvt_func_enable(true);
     // For PVT func taking effect, need delay.
     esp_rom_delay_us(1000);
-#endif
-#if !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
-    REG_SET_BIT(PMU_RF_PWC_REG, PMU_MSPI_PHY_XPD);
-    REGI2C_WRITE_MASK(I2C_BIAS, I2C_BIAS_DREG_1P1, 12);
-    REGI2C_WRITE_MASK(I2C_BIAS, I2C_BIAS_DREG_1P1_PVT, 12);
-    REGI2C_WRITE_MASK(I2C_MPLL, I2C_MPLL_IR_CAL_EXT_CAP, 3);
 #endif
 }

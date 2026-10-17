@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -475,7 +475,7 @@ esp_err_t ledc_set_fade_with_time(ledc_mode_t speed_mode, ledc_channel_t channel
  *     - ESP_OK Success
  *     - ESP_ERR_INVALID_ARG Intr flag error
  *     - ESP_ERR_NOT_FOUND Failed to find available interrupt source
- *     - ESP_ERR_INVALID_STATE Fade function already installed / LEDC not initialized
+ *     - ESP_ERR_INVALID_STATE Fade function already installed
  */
 esp_err_t ledc_fade_func_install(int intr_alloc_flags);
 
@@ -526,9 +526,8 @@ esp_err_t ledc_fade_stop(ledc_mode_t speed_mode, ledc_channel_t channel);
 #endif //SOC_LEDC_SUPPORT_FADE_STOP
 
 /**
- * @brief A thread-safe API to set duty for LEDC channel and update it.
+ * @brief A thread-safe API to set duty for LEDC channel and return when duty updated.
  *
- * @note  The new duty takes effect from the next PWM cycle, see ledc_update_duty().
  * @note  For ESP32, hardware does not support any duty change while a fade operation is running in progress on that channel.
  *        Other duty operations will have to wait until the fade operation has finished.
  *

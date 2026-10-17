@@ -1,11 +1,10 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <stdlib.h>
-#include <stdint.h>
 #include <new>
 #include <sys/lock.h>
 #include "wear_levelling.h"
@@ -14,6 +13,7 @@
 #include "WL_Flash.h"
 #include "WL_Ext_Perf.h"
 #include "WL_Ext_Safe.h"
+#include "SPI_Flash.h"
 #include "Partition.h"
 
 #ifndef MAX_WL_HANDLES
@@ -49,22 +49,7 @@ static wl_instance_t s_instances[MAX_WL_HANDLES];
 static _lock_t s_instances_lock;
 static const char *TAG = "wear_levelling";
 
-static esp_err_t check_handle(wl_handle_t handle, const char *func)
-{
-    if (handle == WL_INVALID_HANDLE) {
-        ESP_LOGE(TAG, "%s: invalid handle", func);
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (handle >= MAX_WL_HANDLES) {
-        ESP_LOGE(TAG, "%s: instance[0x%08" PRIx32 "] out of range", func, handle);
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (s_instances[handle].instance == NULL) {
-        ESP_LOGE(TAG, "%s: instance[0x%08" PRIx32 "] not initialized", func, handle);
-        return ESP_ERR_NOT_FOUND;
-    }
-    return ESP_OK;
-}
+static esp_err_t check_handle(wl_handle_t handle, const char *func);
 
 esp_err_t wl_mount(const esp_partition_t *partition, wl_handle_t *out_handle)
 {
@@ -185,106 +170,100 @@ out:
 
 esp_err_t wl_unmount(wl_handle_t handle)
 {
+    esp_err_t result = ESP_OK;
     _lock_acquire(&s_instances_lock);
-
-    esp_err_t result = check_handle(handle, __func__);
+    result = check_handle(handle, __func__);
     if (result == ESP_OK) {
-        // Acquire per-instance lock to drain any in-flight I/O that is
-        // running outside the global lock.
-        _lock_acquire(&s_instances[handle].lock);
-        Flash_Access *part = s_instances[handle].instance->get_part();
+        // We use placement new in wl_mount, so call destructor directly
+        Partition *part = s_instances[handle].instance->get_part();
+        // We have to flush state of the component
         if (!part->is_readonly()) {
             result = s_instances[handle].instance->flush();
         }
-        part->~Flash_Access();
+        part->~Partition();
         free(part);
         s_instances[handle].instance->~WL_Flash();
         free(s_instances[handle].instance);
         s_instances[handle].instance = NULL;
-        _lock_release(&s_instances[handle].lock);
         _lock_close(&s_instances[handle].lock); // also zeroes the lock variable
     }
-
     _lock_release(&s_instances_lock);
     return result;
 }
 
 esp_err_t wl_erase_range(wl_handle_t handle, size_t start_addr, size_t size)
 {
-    _lock_acquire(&s_instances_lock);
     esp_err_t result = check_handle(handle, __func__);
-    if (result == ESP_OK) {
-        _lock_acquire(&s_instances[handle].lock);
-        _lock_release(&s_instances_lock);
-        result = s_instances[handle].instance->erase_range(start_addr, size);
-        _lock_release(&s_instances[handle].lock);
-    } else {
-        _lock_release(&s_instances_lock);
+    if (result != ESP_OK) {
+        return result;
     }
-
+    _lock_acquire(&s_instances[handle].lock);
+    result = s_instances[handle].instance->erase_range(start_addr, size);
+    _lock_release(&s_instances[handle].lock);
     return result;
 }
 
 esp_err_t wl_write(wl_handle_t handle, size_t dest_addr, const void *src, size_t size)
 {
-    _lock_acquire(&s_instances_lock);
     esp_err_t result = check_handle(handle, __func__);
-    if (result == ESP_OK) {
-        _lock_acquire(&s_instances[handle].lock);
-        _lock_release(&s_instances_lock);
-        result = s_instances[handle].instance->write(dest_addr, src, size);
-        _lock_release(&s_instances[handle].lock);
-    } else {
-        _lock_release(&s_instances_lock);
+    if (result != ESP_OK) {
+        return result;
     }
-
+    _lock_acquire(&s_instances[handle].lock);
+    result = s_instances[handle].instance->write(dest_addr, src, size);
+    _lock_release(&s_instances[handle].lock);
     return result;
 }
 
 esp_err_t wl_read(wl_handle_t handle, size_t src_addr, void *dest, size_t size)
 {
-    _lock_acquire(&s_instances_lock);
     esp_err_t result = check_handle(handle, __func__);
-    if (result == ESP_OK) {
-        _lock_acquire(&s_instances[handle].lock);
-        _lock_release(&s_instances_lock);
-        result = s_instances[handle].instance->read(src_addr, dest, size);
-        _lock_release(&s_instances[handle].lock);
-    } else {
-        _lock_release(&s_instances_lock);
+    if (result != ESP_OK) {
+        return result;
     }
-
+    _lock_acquire(&s_instances[handle].lock);
+    result = s_instances[handle].instance->read(src_addr, dest, size);
+    _lock_release(&s_instances[handle].lock);
     return result;
 }
 
 size_t wl_size(wl_handle_t handle)
 {
-    _lock_acquire(&s_instances_lock);
-    esp_err_t result = check_handle(handle, __func__);
-    if (result == ESP_OK) {
-        _lock_acquire(&s_instances[handle].lock);
-        _lock_release(&s_instances_lock);
-        result = s_instances[handle].instance->get_flash_size();
-        _lock_release(&s_instances[handle].lock);
-    } else {
-        _lock_release(&s_instances_lock);
+    esp_err_t err = check_handle(handle, __func__);
+    if (err != ESP_OK) {
+        return 0;
     }
-
+    _lock_acquire(&s_instances[handle].lock);
+    size_t result = s_instances[handle].instance->get_flash_size();
+    _lock_release(&s_instances[handle].lock);
     return result;
 }
 
 size_t wl_sector_size(wl_handle_t handle)
 {
-    _lock_acquire(&s_instances_lock);
-    esp_err_t result = check_handle(handle, __func__);
-    if (result == ESP_OK) {
-        _lock_acquire(&s_instances[handle].lock);
-        _lock_release(&s_instances_lock);
-        result = s_instances[handle].instance->get_sector_size();
-        _lock_release(&s_instances[handle].lock);
-    } else {
-        _lock_release(&s_instances_lock);
+    esp_err_t err = check_handle(handle, __func__);
+    if (err != ESP_OK) {
+        return 0;
     }
-
+    _lock_acquire(&s_instances[handle].lock);
+    size_t result = s_instances[handle].instance->get_sector_size();
+    _lock_release(&s_instances[handle].lock);
     return result;
+}
+
+static esp_err_t check_handle(wl_handle_t handle, const char *func)
+{
+    if (handle == WL_INVALID_HANDLE) {
+        ESP_LOGE(TAG, "%s: invalid handle", func);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (handle >= MAX_WL_HANDLES) {
+        ESP_LOGE(TAG, "%s: instance[0x%08" PRIx32 "] out of range", func, handle);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_instances[handle].instance == NULL) {
+        ESP_LOGE(TAG, "%s: instance[0x%08" PRIx32 "] not initialized", func, handle);
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
 }

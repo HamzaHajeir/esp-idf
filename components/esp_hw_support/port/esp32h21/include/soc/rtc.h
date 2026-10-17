@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,6 +50,9 @@ extern "C" {
 
 #define MHZ (1000000)
 
+#define OTHER_BLOCKS_POWERUP        1
+#define OTHER_BLOCKS_WAIT           1
+
 /* Delays for various clock sources to be enabled/switched.
  * All values are in microseconds.
  */
@@ -65,6 +68,15 @@ extern "C" {
 
 #define RTC_CNTL_CK8M_DFREQ_DEFAULT  860
 #define RTC_CNTL_SCK_DCAP_DEFAULT    85
+
+/* Various delays to be programmed into power control state machines */
+#define RTC_CNTL_XTL_BUF_WAIT_SLP_US            (250)
+#define RTC_CNTL_PLL_BUF_WAIT_SLP_CYCLES        (1)
+#define RTC_CNTL_CK8M_WAIT_SLP_CYCLES           (4)
+#define RTC_CNTL_WAKEUP_DELAY_CYCLES            (5)
+#define RTC_CNTL_OTHER_BLOCKS_POWERUP_CYCLES    (1)
+#define RTC_CNTL_OTHER_BLOCKS_WAIT_CYCLES       (1)
+#define RTC_CNTL_MIN_SLP_VAL_MIN                (2)
 
 // /*
 // set sleep_init default param
@@ -262,9 +274,7 @@ void rtc_clk_cpu_freq_set_config(const rtc_cpu_freq_config_t *config);
  *
  * @param config  CPU frequency configuration structure
  */
-#ifndef BOOTLOADER_BUILD
 void rtc_clk_cpu_freq_set_config_fast(const rtc_cpu_freq_config_t *config);
-#endif
 
 /**
  * @brief Get the currently used CPU frequency configuration
@@ -272,7 +282,6 @@ void rtc_clk_cpu_freq_set_config_fast(const rtc_cpu_freq_config_t *config);
  */
 void rtc_clk_cpu_freq_get_config(rtc_cpu_freq_config_t *out_config);
 
-#ifndef BOOTLOADER_BUILD
 /**
  * @brief Switch CPU clock source to XTAL
  *
@@ -280,10 +289,11 @@ void rtc_clk_cpu_freq_get_config(rtc_cpu_freq_config_t *out_config);
  * rtc_clk_cpu_freq_set_config when a switch to XTAL is needed.
  * Assumes that XTAL frequency has been determined — don't call in startup code.
  *
- * Releases the CPU clk_tree hold on the previous root clock (BBPLL / XTAL_X2).
+ * @note This function always disables BBPLL after switching the CPU clock source to XTAL for power saving purpose.
+ * If this is unwanted, please use rtc_clk_cpu_freq_set_config. It helps to check whether USB Serial JTAG is in use,
+ * if so, then BBPLL will not be turned off.
  */
 void rtc_clk_cpu_freq_set_xtal(void);
-#endif
 
 /**
  * @brief Get the current APB frequency.

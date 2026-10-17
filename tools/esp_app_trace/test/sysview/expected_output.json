@@ -26180,10 +26180,6 @@
         }
     ],
     "streams": {
-        "func": {
-            "enter": 0,
-            "exit": 1
-        },
         "heap": {
             "alloc": 512,
             "free": 513

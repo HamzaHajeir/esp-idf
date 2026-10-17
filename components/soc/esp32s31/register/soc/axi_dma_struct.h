@@ -1,5 +1,5 @@
 /**
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  *  SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -590,6 +590,119 @@ typedef union {
     uint32_t val;
 } axi_dma_in_peri_sel_chn_reg_t;
 
+/** Type of in_crc_init_data_chn register
+ *  This register is used to config ch0 crc initial data(max 32 bit)
+ */
+typedef union {
+    struct {
+        /** in_crc_init_data_chn : R/W; bitpos: [31:0]; default: 4294967295;
+         *  This register is used to config ch0 of rx crc initial value
+         */
+        uint32_t in_crc_init_data_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_in_crc_init_data_chn_reg_t;
+
+/** Type of rx_crc_width_chn register
+ *  This register is used to config rx ch0 crc result width,2'b00 mean crc_width
+ *  <=8bit,2'b01 8<crc_width<=16 ,2'b10 mean 16<crc_width  <=24,2'b11 mean
+ *  24<crc_width<=32
+ */
+typedef union {
+    struct {
+        /** rx_crc_width_chn : R/W; bitpos: [1:0]; default: 0;
+         *  reserved
+         */
+        uint32_t rx_crc_width_chn: 2;
+        /** rx_crc_latch_flag_chn : R/W; bitpos: [2]; default: 0;
+         *  reserved
+         */
+        uint32_t rx_crc_latch_flag_chn: 1;
+        uint32_t reserved_3: 29;
+    };
+    uint32_t val;
+} axi_dma_rx_crc_width_chn_reg_t;
+
+/** Type of in_crc_clear_chn register
+ *  This register is used to clear ch0 crc result
+ */
+typedef union {
+    struct {
+        /** in_crc_clear_chn_reg : R/W; bitpos: [0]; default: 0;
+         *  This register is used to clear ch0 of rx crc result
+         */
+        uint32_t in_crc_clear_chn_reg: 1;
+        uint32_t reserved_1: 31;
+    };
+    uint32_t val;
+} axi_dma_in_crc_clear_chn_reg_t;
+
+/** Type of in_crc_final_result_chn register
+ *  This register is used to store ch0 crc result
+ */
+typedef union {
+    struct {
+        /** in_crc_final_result_chn : RO; bitpos: [31:0]; default: 0;
+         *  This register is used to store result ch0 of rx
+         */
+        uint32_t in_crc_final_result_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_in_crc_final_result_chn_reg_t;
+
+/** Type of rx_crc_en_wr_data_chn register
+ *  This resister is used to config ch0 crc en for every bit
+ */
+typedef union {
+    struct {
+        /** rx_crc_en_wr_data_chn : R/W; bitpos: [31:0]; default: 0;
+         *  This register is used to enable rx ch0 crc 32bit on/off
+         */
+        uint32_t rx_crc_en_wr_data_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_rx_crc_en_wr_data_chn_reg_t;
+
+/** Type of rx_crc_en_addr_chn register
+ *  This register is used to config ch0 crc en addr
+ */
+typedef union {
+    struct {
+        /** rx_crc_en_addr_chn : R/W; bitpos: [31:0]; default: 0;
+         *  reserved
+         */
+        uint32_t rx_crc_en_addr_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_rx_crc_en_addr_chn_reg_t;
+
+/** Type of rx_crc_data_en_wr_data_chn register
+ *  This register is used to config crc data_8bit en
+ */
+typedef union {
+    struct {
+        /** rx_crc_data_en_wr_data_chn : R/W; bitpos: [15:0]; default: 0;
+         *  reserved
+         */
+        uint32_t rx_crc_data_en_wr_data_chn: 16;
+        uint32_t reserved_16: 16;
+    };
+    uint32_t val;
+} axi_dma_rx_crc_data_en_wr_data_chn_reg_t;
+
+/** Type of rx_crc_data_en_addr_chn register
+ *  This register is used to config addr of crc data_8bit en
+ */
+typedef union {
+    struct {
+        /** rx_crc_data_en_addr_chn : R/W; bitpos: [31:0]; default: 0;
+         *  reserved
+         */
+        uint32_t rx_crc_data_en_addr_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_rx_crc_data_en_addr_chn_reg_t;
+
 /** Group: out */
 /** Type of out_int_raw_chn register
  *  Raw status interrupt of channel0
@@ -648,12 +761,7 @@ typedef union {
          *  underflow.
          */
         uint32_t outfifo_l3_udf_chn_int_raw: 1;
-        /** out_link_switch_chn_int_raw : R/WTC/SS; bitpos: [10]; default: 0;
-         *  The raw interrupt bit turns to high level when the dma switch to new link for Tx
-         *  channel0.
-         */
-        uint32_t out_link_switch_chn_int_raw: 1;
-        uint32_t reserved_11: 21;
+        uint32_t reserved_10: 22;
     };
     uint32_t val;
 } axi_dma_out_int_raw_chn_reg_t;
@@ -703,11 +811,7 @@ typedef union {
          *  The raw interrupt status bit for the OUTFIFO_UDF_L3_CH_INT interrupt.
          */
         uint32_t outfifo_l3_udf_chn_int_st: 1;
-        /** out_link_switch_chn_int_st : RO; bitpos: [10]; default: 0;
-         *  The raw interrupt status bit for the OUT_LINK_SWITCH_CH_INT interrupt.
-         */
-        uint32_t out_link_switch_chn_int_st: 1;
-        uint32_t reserved_11: 21;
+        uint32_t reserved_10: 22;
     };
     uint32_t val;
 } axi_dma_out_int_st_chn_reg_t;
@@ -757,11 +861,7 @@ typedef union {
          *  The interrupt enable bit for the OUTFIFO_UDF_L3_CH_INT interrupt.
          */
         uint32_t outfifo_l3_udf_chn_int_ena: 1;
-        /** out_link_switch_chn_int_ena : R/W; bitpos: [10]; default: 0;
-         *  The interrupt enable bit for the OUT_LINK_SWITCH_CH_INT interrupt.
-         */
-        uint32_t out_link_switch_chn_int_ena: 1;
-        uint32_t reserved_11: 21;
+        uint32_t reserved_10: 22;
     };
     uint32_t val;
 } axi_dma_out_int_ena_chn_reg_t;
@@ -811,11 +911,7 @@ typedef union {
          *  Set this bit to clear the OUTFIFO_UDF_L3_CH_INT interrupt.
          */
         uint32_t outfifo_l3_udf_chn_int_clr: 1;
-        /** out_link_switch_chn_int_clr : WT; bitpos: [10]; default: 0;
-         *  Set this bit to clear the OUT_LINK_SWITCH_CH_INT interrupt.
-         */
-        uint32_t out_link_switch_chn_int_clr: 1;
-        uint32_t reserved_11: 21;
+        uint32_t reserved_10: 22;
     };
     uint32_t val;
 } axi_dma_out_int_clr_chn_reg_t;
@@ -1164,6 +1260,119 @@ typedef union {
     };
     uint32_t val;
 } axi_dma_out_peri_sel_chn_reg_t;
+
+/** Type of out_crc_init_data_chn register
+ *  This register is used to config ch0 crc initial data(max 32 bit)
+ */
+typedef union {
+    struct {
+        /** out_crc_init_data_chn : R/W; bitpos: [31:0]; default: 4294967295;
+         *  This register is used to config ch0 of tx crc initial value
+         */
+        uint32_t out_crc_init_data_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_out_crc_init_data_chn_reg_t;
+
+/** Type of tx_crc_width_chn register
+ *  This register is used to config tx ch0 crc result width,2'b00 mean crc_width
+ *  <=8bit,2'b01 8<crc_width<=16 ,2'b10 mean 16<crc_width  <=24,2'b11 mean
+ *  24<crc_width<=32
+ */
+typedef union {
+    struct {
+        /** tx_crc_width_chn : R/W; bitpos: [1:0]; default: 0;
+         *  reserved
+         */
+        uint32_t tx_crc_width_chn: 2;
+        /** tx_crc_latch_flag_chn : R/W; bitpos: [2]; default: 0;
+         *  reserved
+         */
+        uint32_t tx_crc_latch_flag_chn: 1;
+        uint32_t reserved_3: 29;
+    };
+    uint32_t val;
+} axi_dma_tx_crc_width_chn_reg_t;
+
+/** Type of out_crc_clear_chn register
+ *  This register is used to clear ch0 crc result
+ */
+typedef union {
+    struct {
+        /** out_crc_clear_chn_reg : R/W; bitpos: [0]; default: 0;
+         *  This register is used to clear ch0 of tx crc result
+         */
+        uint32_t out_crc_clear_chn_reg: 1;
+        uint32_t reserved_1: 31;
+    };
+    uint32_t val;
+} axi_dma_out_crc_clear_chn_reg_t;
+
+/** Type of out_crc_final_result_chn register
+ *  This register is used to store ch0 crc result
+ */
+typedef union {
+    struct {
+        /** out_crc_final_result_chn : RO; bitpos: [31:0]; default: 0;
+         *  This register is used to store result ch0 of tx
+         */
+        uint32_t out_crc_final_result_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_out_crc_final_result_chn_reg_t;
+
+/** Type of tx_crc_en_wr_data_chn register
+ *  This resister is used to config ch0 crc en for every bit
+ */
+typedef union {
+    struct {
+        /** tx_crc_en_wr_data_chn : R/W; bitpos: [31:0]; default: 0;
+         *  This register is used to enable tx ch0 crc 32bit on/off
+         */
+        uint32_t tx_crc_en_wr_data_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_tx_crc_en_wr_data_chn_reg_t;
+
+/** Type of tx_crc_en_addr_chn register
+ *  This register is used to config ch0 crc en addr
+ */
+typedef union {
+    struct {
+        /** tx_crc_en_addr_chn : R/W; bitpos: [31:0]; default: 0;
+         *  reserved
+         */
+        uint32_t tx_crc_en_addr_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_tx_crc_en_addr_chn_reg_t;
+
+/** Type of tx_crc_data_en_wr_data_chn register
+ *  This register is used to config crc data_8bit en
+ */
+typedef union {
+    struct {
+        /** tx_crc_data_en_wr_data_chn : R/W; bitpos: [15:0]; default: 0;
+         *  reserved
+         */
+        uint32_t tx_crc_data_en_wr_data_chn: 16;
+        uint32_t reserved_16: 16;
+    };
+    uint32_t val;
+} axi_dma_tx_crc_data_en_wr_data_chn_reg_t;
+
+/** Type of tx_crc_data_en_addr_chn register
+ *  This register is used to config addr of crc data_8bit en
+ */
+typedef union {
+    struct {
+        /** tx_crc_data_en_addr_chn : R/W; bitpos: [31:0]; default: 0;
+         *  reserved
+         */
+        uint32_t tx_crc_data_en_addr_chn: 32;
+    };
+    uint32_t val;
+} axi_dma_tx_crc_data_en_addr_chn_reg_t;
 
 /** Group: Configuration Registers */
 /** Type of arb_timeout register
@@ -1520,9 +1729,20 @@ typedef struct {
 } axi_dma_in_conf_chn_reg_t;
 
 typedef struct {
+    volatile axi_dma_in_crc_init_data_chn_reg_t in_crc_init_data;
+    volatile axi_dma_rx_crc_width_chn_reg_t rx_crc_width;
+    volatile axi_dma_in_crc_clear_chn_reg_t in_crc_clear;
+    volatile axi_dma_in_crc_final_result_chn_reg_t in_crc_final_result;
+    volatile axi_dma_rx_crc_en_wr_data_chn_reg_t rx_crc_en_wr_data;
+    volatile axi_dma_rx_crc_en_addr_chn_reg_t rx_crc_en_addr;
+    volatile axi_dma_rx_crc_data_en_wr_data_chn_reg_t rx_crc_data_en_wr_data;
+    volatile axi_dma_rx_crc_data_en_addr_chn_reg_t rx_crc_data_en_addr;
+} axi_dma_in_crc_chn_reg_t;
+
+typedef struct {
     volatile axi_dma_in_int_chn_reg_t intr;
     volatile axi_dma_in_conf_chn_reg_t conf;
-    uint32_t reserved[8];
+    volatile axi_dma_in_crc_chn_reg_t crc;
 } axi_dma_in_reg_t;
 
 typedef struct {
@@ -1550,9 +1770,20 @@ typedef struct {
 } axi_dma_out_conf_chn_reg_t;
 
 typedef struct {
+    volatile axi_dma_out_crc_init_data_chn_reg_t out_crc_init_data;
+    volatile axi_dma_tx_crc_width_chn_reg_t tx_crc_width;
+    volatile axi_dma_out_crc_clear_chn_reg_t out_crc_clear;
+    volatile axi_dma_out_crc_final_result_chn_reg_t out_crc_final_result;
+    volatile axi_dma_tx_crc_en_wr_data_chn_reg_t tx_crc_en_wr_data;
+    volatile axi_dma_tx_crc_en_addr_chn_reg_t tx_crc_en_addr;
+    volatile axi_dma_tx_crc_data_en_wr_data_chn_reg_t tx_crc_data_en_wr_data;
+    volatile axi_dma_tx_crc_data_en_addr_chn_reg_t tx_crc_data_en_addr;
+} axi_dma_out_crc_chn_reg_t;
+
+typedef struct {
     volatile axi_dma_out_int_chn_reg_t intr;
     volatile axi_dma_out_conf_chn_reg_t conf;
-    uint32_t reserved[8];
+    volatile axi_dma_out_crc_chn_reg_t crc;
 } axi_dma_out_reg_t;
 
 typedef struct {

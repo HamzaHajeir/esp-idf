@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 import logging
 import os
+import typing as t
 from xml.etree import ElementTree as ET
 
 
 def format_case_id(
-    target: str | None, config: str | None, case: str, is_qemu: bool = False, params: dict | None = None
+    target: t.Optional[str], config: t.Optional[str], case: str, is_qemu: bool = False, params: t.Optional[dict] = None
 ) -> str:
     parts = []
     if target:
@@ -21,16 +22,16 @@ def format_case_id(
     return '.'.join(parts)
 
 
-def merge_junit_files(junit_files: list[str], target_path: str) -> None:
+def merge_junit_files(junit_files: t.List[str], target_path: str) -> None:
     if len(junit_files) <= 1:
         return
 
     merged_testsuite: ET.Element = ET.Element('testsuite')
-    testcases: dict[str, ET.Element] = {}
+    testcases: t.Dict[str, ET.Element] = {}
     for junit in junit_files:
         logging.info(f'Merging {junit} to {target_path}')
-        tree = ET.parse(junit)
-        testsuite = tree.getroot()
+        tree: ET.ElementTree = ET.parse(junit)
+        testsuite: ET.Element = tree.getroot()
 
         for testcase in testsuite.findall('testcase'):
             name: str = testcase.get('name') if testcase.get('name') else ''  # type: ignore
@@ -61,7 +62,7 @@ def merge_junit_files(junit_files: list[str], target_path: str) -> None:
         fw.write(ET.tostring(merged_testsuite))
 
 
-def normalize_testcase_file_path(file: str, app_path: str | tuple) -> str:
+def normalize_testcase_file_path(file: str, app_path: t.Union[str, tuple]) -> str:
     """
     Normalize file paths to a consistent format, resolving relative paths based on the `app_path`.
 

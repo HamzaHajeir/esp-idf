@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,7 +33,7 @@
 #define LP_MAILBOX_RX_MSG_COUNT  (LP_MAILBOX_MSG_COUNT / 2)
 
 /**
- * @brief Mask for the LP -> HP messages
+ * @brief Mask for the HP -> LP messages
  */
 #define LP_MAILBOX_RX_MSG_MASK   (((1U << LP_MAILBOX_RX_MSG_COUNT) - 1U) << LP_MAILBOX_RX_MSG_IDX)
 
@@ -106,7 +106,7 @@ static void lp_core_mailbox_intr_handler(void* arg)
             portYIELD_FROM_ISR();
         }
     } else {
-        lp_message_t received[LP_MAILBOX_RX_MSG_COUNT / 2];
+        lp_message_t received[LP_MAILBOX_RX_MSG_COUNT];
         int received_count = 0;
 
         /* Acknowledge all the received message as fast as possible */
@@ -123,8 +123,7 @@ static void lp_core_mailbox_intr_handler(void* arg)
                 /* Acknowledge reception by writing to the next message */
                 const int ack_msg_idx = LP_MAILBOX_RX_MSG_IDX + lp_core_next_msg_idx(i);
                 lp_core_mailbox_impl_set_message(mailbox->mb_ctx, ack_msg_idx, LP_MAILBOX_ACK);
-                /* Clear ACK self-interrupt (writing ACK sets HP's own interrupt bit) */
-                lp_core_mailbox_impl_intr_clear(mailbox->mb_ctx, BIT(ack_msg_idx));
+                lp_core_mailbox_impl_intr_clear(mailbox->mb_ctx, ack_msg_idx);
                 received_count++;
                 mailbox->rcv_remaining--;
                 if (mailbox->rcv_remaining == 0) {
@@ -162,7 +161,6 @@ esp_err_t lp_core_mailbox_init(lp_mailbox_t *mailbox, lp_mailbox_config_t *confi
         return ESP_ERR_INVALID_ARG;
     }
 
-    lp_core_mailbox_impl_init();
     lp_core_mailbox_ctx_t context = lp_core_mailbox_impl_get_context();
     if (context == NULL) {
         /* Invalid state! LP core didn't initialize the spinlock? (SW backend) */

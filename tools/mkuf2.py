@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 # Module was moved to the esptool in ESP-IDF v5.2 and relicensed under GPL v2.0 license.
 import argparse
@@ -9,18 +9,13 @@ import os
 import subprocess
 import sys
 
-from esp_pylib.excepthook import install_exception_reporting
-from esp_pylib.logger import log
-from rich.markup import escape
-
 
 def main() -> None:
-    install_exception_reporting()
     parser = argparse.ArgumentParser()
 
     def parse_chip_id(string: str) -> str:
         # compatibility layer with old script
-        log.warn("DEPRECATED option '--chip-id'. Please consider using '--chip' instead")
+        print("DEPRECATED option '--chip-id'. Please consider using '--chip' instead")
         # DO NOT add new IDs; they are now maintained in esptool.
         ids = {
             0x1C5F21B0: 'esp32',
@@ -95,11 +90,10 @@ def main() -> None:
                 bin_selection = [json_content[b] for b in args.bin]
                 flash_dic = dict((x['offset'], x['file']) for x in bin_selection)
             except KeyError:
+                print('Invalid binary was selected.')
                 valid = [k if all(x in v for x in ('offset', 'file')) else None for k, v in json_content.items()]
-                # Keep pre-migration order and stdout stream.
-                log.print('Invalid binary was selected.')
-                log.print('Valid ones:', ' '.join(escape(x) for x in valid if x))
-                sys.exit(1)
+                print('Valid ones:', ' '.join(x for x in valid if x))
+                exit(1)
         else:
             flash_dic = json_content['flash_files']
 
@@ -130,7 +124,7 @@ def main() -> None:
         cmd.append('--md5-disable')
 
     cmd_str = ' '.join(cmd + files_flatten)
-    log.note(f'Executing: {escape(cmd_str)}')
+    print(f'Executing: {cmd_str}')
 
     sys.exit(subprocess.run(cmd + files_flatten).returncode)
 

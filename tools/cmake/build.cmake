@@ -65,17 +65,6 @@ function(idf_build_unset_property property)
     idf_build_set_property(__BUILD_PROPERTIES "${build_properties}")
 endfunction()
 
-function(__component_manager_get_command var)
-    idf_build_get_property(python PYTHON)
-    if(DEFINED ENV{IDF_COMPONENT_WRAPPER} AND NOT "$ENV{IDF_COMPONENT_WRAPPER}" STREQUAL "")
-        set(component_manager_cmd
-            "${python}" "$ENV{IDF_COMPONENT_WRAPPER}" "idf_component_manager.prepare_components")
-    else()
-        set(component_manager_cmd "${python}" "-m" "idf_component_manager.prepare_components")
-    endif()
-    set(${var} ${component_manager_cmd} PARENT_SCOPE)
-endfunction()
-
 # idf_build_replace_option_from_property
 #
 # @brief Replace specified option with new one in a given property.
@@ -86,8 +75,8 @@ endfunction()
 # @param[in] new_option the option to replace with (if empty, the old option will be removed)
 #
 # Example usage:
-#   idf_build_replace_option_from_property(COMPILE_OPTIONS "-Werror" "-Werror=all")
-#   idf_build_replace_option_from_property(COMPILE_OPTIONS "-Wno-error=extra" "")
+#   idf_build_replace_options_from_property(COMPILE_OPTIONS "-Werror" "-Werror=all")
+#   idf_build_replace_options_from_property(COMPILE_OPTIONS "-Wno-error=extra" "")
 #
 function(idf_build_replace_option_from_property property_name option_to_remove new_option)
     idf_build_get_property(current_list_of_options ${property_name})
@@ -158,10 +147,8 @@ function(__build_get_idf_git_revision)
     if(EXISTS "${idf_path}/version.txt")
         file(STRINGS "${idf_path}/version.txt" idf_ver_t)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${idf_path}/version.txt")
-    elseif(idf_ver_git)
-        set(idf_ver_t ${idf_ver_git})
     else()
-        set(idf_ver_t "v${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}")
+        set(idf_ver_t ${idf_ver_git})
     endif()
     # cut IDF_VER to required 32 characters.
     string(SUBSTRING "${idf_ver_t}" 0 31 idf_ver)
@@ -299,8 +286,6 @@ function(__build_init idf_path)
     # Create the build target, to which the ESP-IDF build properties, dependencies are attached to.
     # Must be global so as to be accessible from any subdirectory in custom projects.
     add_library(__idf_build_target STATIC IMPORTED GLOBAL)
-    # Set the IMPORTED_LOCATION property to avoid errors on IDE codemodel queries with CMake >=4.2
-    set_property(TARGET __idf_build_target PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/dummy.a")
 
     # Set the Python path (which may be passed in via -DPYTHON=) and store in a build property
     set_default(PYTHON "python")
@@ -370,7 +355,6 @@ function(idf_build_component component_dir)
 
     # component_source must be one of the following (sorted by the override order):
     set(valid_component_sources "idf_components"
-                              "idf_managed_components"
                               "project_managed_components"
                               "project_extra_components"
                               "project_components")
@@ -661,7 +645,6 @@ macro(idf_build_process target)
     idf_build_get_property(idf_component_manager IDF_COMPONENT_MANAGER)
 
     set(result 0)
-    set(use_sdk_json FALSE)
     if(idf_component_manager EQUAL 1)
         idf_build_get_property(build_dir BUILD_DIR)
         set(managed_components_list_file ${build_dir}/managed_components_list.temp.cmake)
@@ -674,55 +657,42 @@ macro(idf_build_process target)
         foreach(__build_component_target ${build_component_targets})
             __component_get_property(__component_name ${__build_component_target} COMPONENT_NAME)
             __component_get_property(__component_dir ${__build_component_target} COMPONENT_DIR)
-            __component_get_property(__component_source ${__build_component_target} COMPONENT_SOURCE)
 
             # Exclude components could be passed with -DEXCLUDE_COMPONENTS
             # after the call to __component_add finished in the last run.
             # Need to check if the component is excluded again
             if(NOT __component_name IN_LIST EXCLUDE_COMPONENTS)
-                string(CONCAT __contents "${__contents}"
-                    "  - name: \"${__component_name}\"\n"
-                    "    path: \"${__component_dir}\"\n"
-                    "    source: \"${__component_source}\"\n")
+                set(__contents "${__contents}  - name: \"${__component_name}\"\n    path: \"${__component_dir}\"\n")
             endif()
         endforeach()
 
         file(WRITE ${local_components_list_file} "${__contents}")
 
         # Call for the component manager to prepare remote dependencies
-        __component_manager_get_command(component_manager_cmd)
+        idf_build_get_property(python PYTHON)
         idf_build_get_property(component_manager_interface_version __COMPONENT_MANAGER_INTERFACE_VERSION)
         idf_build_get_property(dependencies_lock_file DEPENDENCIES_LOCK)
 
-        set(use_sdk_json TRUE)
-        if(retried EQUAL 0)
-            set(use_sdk_json FALSE)
-        endif()
-
-        execute_process(COMMAND ${component_manager_cmd}
+        execute_process(COMMAND ${python}
+            "-m"
+            "idf_component_manager.prepare_components"
             "--project_dir=${project_dir}"
             "--lock_path=${dependencies_lock_file}"
+            "--sdkconfig_json_file=${build_dir}/config/sdkconfig.json"
             "--interface_version=${component_manager_interface_version}"
-            "--use_sdk_json=${use_sdk_json}"
             "prepare_dependencies"
             "--local_components_list_file=${local_components_list_file}"
-            "--build_dir=${build_dir}"
             "--managed_components_list_file=${managed_components_list_file}"
             RESULT_VARIABLE result
             ERROR_VARIABLE error)
 
         if(NOT result EQUAL 0)
-            # If KConfig variables are missing, allow rerunning 2 times
-            if(NOT (result EQUAL ${__RERUN_EXITCODE} AND retried LESS 2))
+            if(result EQUAL ${__RERUN_EXITCODE})
+                message(WARNING "${error}")
+            else()
                 message(FATAL_ERROR "${error}")
             endif()
-        else()
-            if(error)
-                message(WARNING "${error}")
-            endif()
         endif()
-
-
 
         include(${managed_components_list_file})
 
@@ -755,7 +725,7 @@ macro(idf_build_process target)
     # It is here we retrieve the public and private requirements of each component.
     # It is also here we add the common component requirements to each component's
     # own requirements.
-    __component_get_requirements(${use_sdk_json})
+    __component_get_requirements()
 
     idf_build_get_property(component_targets __COMPONENT_TARGETS)
 
@@ -793,23 +763,11 @@ macro(idf_build_process target)
     idf_build_get_property(sdkconfig SDKCONFIG)
     idf_build_get_property(sdkconfig_defaults SDKCONFIG_DEFAULTS)
 
-    set(sdkconfig_cm "${build_dir}/sdkconfig.cm")
     # add target here since we have all components
     if(result EQUAL 0)
         __kconfig_generate_config("${sdkconfig}" "${sdkconfig_defaults}" CREATE_MENUCONFIG_TARGET)
-        # Delete the sdkconfig.cm backup if the last run of Component Manager was successful (cleanup)
-        if(EXISTS "${sdkconfig_cm}")
-            file(REMOVE "${sdkconfig_cm}")
-        endif()
     else()
-        # We need to create backup of sdkconfig because the build system may
-        # lacks the Kconfig definitions for managed components.
-        if(EXISTS "${sdkconfig}")
-            file(COPY_FILE "${sdkconfig}" "${sdkconfig_cm}")
-        else()
-            file(REMOVE "${sdkconfig_cm}")
-        endif()
-        __kconfig_generate_config("${sdkconfig_cm}" "${sdkconfig_defaults}")
+        __kconfig_generate_config("${sdkconfig}" "${sdkconfig_defaults}")
     endif()
 
     __build_import_configs()
@@ -834,16 +792,6 @@ macro(idf_build_process target)
         add_subdirectory(${idf_path} ${build_dir}/esp-idf)
 
         unset(ESP_PLATFORM)
-    else()
-        # We have to clear all build properties set in
-        # __build_expand_requirements if we are doing a retry
-        # This fixes order of dependencies when KConfig is used
-        idf_build_unset_property(__BUILD_COMPONENT_TARGETS)
-        idf_build_unset_property(__COMPONENT_TARGETS_SEEN)
-        idf_build_unset_property(__BUILD_COMPONENTS)
-        idf_build_unset_property(BUILD_COMPONENT_ALIASES)
-        idf_build_unset_property(BUILD_COMPONENTS)
-        idf_build_unset_property(__BUILD_COMPONENT_DEPGRAPH)
     endif()
 endmacro()
 

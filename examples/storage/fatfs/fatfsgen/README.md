@@ -67,8 +67,3 @@ I (342) example: Done
 
 The logic of the example is contained in a [single source file](./main/fatfsgen_example_main.c),
 and it should be relatively simple to match points in its execution with the log outputs above.
-
-## When to use this example
-
-- You want to ship pre-created files on a FATFS partition, generated at build time from a host folder.
-- You need a read-only or read-write FATFS image flashed together with the app.

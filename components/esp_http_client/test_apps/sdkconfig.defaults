@@ -1,3 +1,0 @@
-# Some of the test apps allocate 2048 size buffers on the stack.
-# Increase the default stack size to accommodate for that
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

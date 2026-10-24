@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,6 @@
 #include "soc/system_struct.h"
 
 #define LCD_LL_GET(_attr)       LCD_LL_ ## _attr
-#define LCD_LL_SUPPORT(_feat)   LCD_LL_SUPPORT_ ## _feat
 #define LCD_LL_RGB_BUS_WIDTH    16
 #define LCD_LL_RGB_PANEL_NUM    1
 #define LCD_LL_I80_BUS_WIDTH    16
@@ -39,10 +38,6 @@ extern "C" {
 #define LCD_LL_CLK_FRAC_DIV_AB_MAX 64  // LCD_CLK = LCD_CLK_S / (N + b/a), the a/b register is 6 bit-width
 #define LCD_LL_PCLK_DIV_MAX        64  // LCD_PCLK = LCD_CLK / MO, the MO register is 6 bit-width
 #define LCD_LL_FIFO_DEPTH          16  // Async FIFO depth
-
-typedef enum {
-    LCD_LL_MEM_LP_MODE_SHUT_DOWN,
-} lcd_ll_mem_lp_mode_t;
 
 /**
  * @brief LCD data byte swizzle mode
@@ -103,12 +98,11 @@ static inline void lcd_ll_enable_clock(lcd_cam_dev_t *dev, bool en)
 /**
  * @brief Select clock source for LCD peripheral
  *
- * @param group_id Group ID
+ * @param dev LCD register base address
  * @param src Clock source
  */
-static inline void lcd_ll_select_clk_src(int group_id, lcd_clock_source_t src)
+static inline void lcd_ll_select_clk_src(lcd_cam_dev_t *dev, lcd_clock_source_t src)
 {
-    lcd_cam_dev_t *dev = LCD_LL_GET_HW(group_id);
     switch (src) {
     case LCD_CLK_SRC_PLL160M:
         dev->lcd_clock.lcd_clk_sel = 3;
@@ -130,15 +124,14 @@ static inline void lcd_ll_select_clk_src(int group_id, lcd_clock_source_t src)
 /**
  * @brief Set clock coefficient of LCD peripheral
  *
- * @param group_id Group ID
+ * @param dev LCD register base address
  * @param div_num Integer part of the divider
  * @param div_a denominator of the divider
  * @param div_b numerator of the divider
  */
 __attribute__((always_inline))
-static inline void lcd_ll_set_group_clock_coeff(int group_id, int div_num, int div_a, int div_b)
+static inline void lcd_ll_set_group_clock_coeff(lcd_cam_dev_t *dev, int div_num, int div_a, int div_b)
 {
-    lcd_cam_dev_t *dev = LCD_LL_GET_HW(group_id);
     // lcd_clk = module_clock_src / (div_num + div_b / div_a)
     HAL_ASSERT(div_num >= 2 && div_num <= LCD_LL_CLK_FRAC_DIV_N_MAX);
     // dic_num == 0 means LCD_LL_CLK_FRAC_DIV_N_MAX divider in hardware
@@ -148,65 +141,6 @@ static inline void lcd_ll_set_group_clock_coeff(int group_id, int div_num, int d
     HAL_FORCE_MODIFY_U32_REG_FIELD(dev->lcd_clock, lcd_clkm_div_num, div_num);
     dev->lcd_clock.lcd_clkm_div_a = div_a;
     dev->lcd_clock.lcd_clkm_div_b = div_b;
-}
-
-/**
- * @brief Force power on the LCD memory block, regardless of the outside PMU logic
- *
- * @param dev Peripheral instance address
- */
-static inline void lcd_ll_mem_force_power_on(lcd_cam_dev_t *dev)
-{
-    (void)dev;
-    // S3 does not have transfer buffer
-}
-
-/**
- * @brief Force the LCD memory block into low power mode, regardless of the outside PMU logic
- *
- * @param dev Peripheral instance address
- */
-static inline void lcd_ll_mem_force_low_power(lcd_cam_dev_t *dev)
-{
-    (void)dev;
-    // S3 does not have transfer buffer
-}
-
-/**
- * @brief Power control the LCD memory block by the outside PMU logic
- *
- * @param dev Peripheral instance address
- * @param mode LCD memory low power mode in low power stage
- */
-static inline void lcd_ll_mem_power_by_pmu(lcd_cam_dev_t *dev)
-{
-    (void)dev;
-    // S3 does not have transfer buffer
-}
-
-/**
- * @brief Set low power mode for LCD memory block
- *
- * @param dev Peripheral instance address
- * @param mode LCD memory low power mode in low power stage
- */
-static inline void lcd_ll_mem_set_low_power_mode(lcd_cam_dev_t *dev, lcd_ll_mem_lp_mode_t mode)
-{
-    (void)dev;
-    HAL_ASSERT(mode == LCD_LL_MEM_LP_MODE_SHUT_DOWN);
-}
-
-/**
- * @brief Enable the transfer buffer(memory block) for LCD module
- *
- * @param dev Peripheral instance address
- * @param en True to enable, False to disable
- */
-static inline void lcd_ll_enable_trans_buffer(lcd_cam_dev_t *dev, bool en)
-{
-    (void)dev;
-    (void)en;
-    // S3 does not have transfer buffer
 }
 
 /**
@@ -267,12 +201,12 @@ static inline void lcd_ll_enable_color_convert(lcd_cam_dev_t *dev, bool en)
 }
 
 /**
- * @brief Set convert input data line width for YUV<->RGB conversion
+ * @brief Set convert data line width
  *
  * @param dev LCD register base address
  * @param width data line width (8 or 16)
  */
-static inline void lcd_ll_set_yuv_convert_input_data_width(lcd_cam_dev_t *dev, uint32_t width)
+static inline void lcd_ll_set_convert_data_width(lcd_cam_dev_t *dev, uint32_t width)
 {
     HAL_ASSERT(width == 8 || width == 16);
     dev->lcd_rgb_yuv.lcd_conv_mode_8bits_on = (width == 8) ? 1 : 0;
@@ -619,14 +553,14 @@ static inline void lcd_ll_set_dc_level(lcd_cam_dev_t *dev, bool idle_phase, bool
 }
 
 /**
- * @brief Set delay mode for DC line
+ * @brief Set cycle of delay for DC line
  *
  * @param dev LCD register base address
- * @param mode Delay mode, 0: no delay, 1: delay on LCD_CLK rising edge, 2: delay on LCD_CLK falling edge
+ * @param delay Ticks of delay
  */
-static inline void lcd_ll_set_dc_delay_mode(lcd_cam_dev_t *dev, uint32_t mode)
+static inline void lcd_ll_set_dc_delay_ticks(lcd_cam_dev_t *dev, uint32_t delay)
 {
-    dev->lcd_dly_mode.lcd_cd_mode = mode;
+    dev->lcd_dly_mode.lcd_cd_mode = delay;
 }
 
 /**
@@ -743,31 +677,31 @@ static inline void lcd_ll_set_idle_level(lcd_cam_dev_t *dev, bool hsync_idle_lev
 }
 
 /**
- * @brief Set delay mode for HSYNC, VSYNC, and DE signals
+ * @brief Set extra delay for HSYNC, VSYNC, and DE signals
  *
  * @param dev LCD register base address
- * @param hsync_mode HSYNC delay mode, 0: no delay, 1: delay on LCD_CLK rising edge, 2: delay on LCD_CLK falling edge
- * @param vsync_mode VSYNC delay mode, 0: no delay, 1: delay on LCD_CLK rising edge, 2: delay on LCD_CLK falling edge
- * @param de_mode DE delay mode, 0: no delay, 1: delay on LCD_CLK rising edge, 2: delay on LCD_CLK falling edge
+ * @param hsync_delay HSYNC delay
+ * @param vsync_delay VSYNC delay
+ * @param de_delay DE delay
  */
-static inline void lcd_ll_set_delay_mode(lcd_cam_dev_t *dev, uint32_t hsync_mode, uint32_t vsync_mode, uint32_t de_mode)
+static inline void lcd_ll_set_delay_ticks(lcd_cam_dev_t *dev, uint32_t hsync_delay, uint32_t vsync_delay, uint32_t de_delay)
 {
-    dev->lcd_dly_mode.lcd_hsync_mode = hsync_mode;
-    dev->lcd_dly_mode.lcd_vsync_mode = vsync_mode;
-    dev->lcd_dly_mode.lcd_de_mode = de_mode;
+    dev->lcd_dly_mode.lcd_hsync_mode = hsync_delay;
+    dev->lcd_dly_mode.lcd_vsync_mode = vsync_delay;
+    dev->lcd_dly_mode.lcd_de_mode = de_delay;
 }
 
 /**
- * @brief Set delay mode for all data lines
+ * @brief Set extra delay for data lines
  *
  * @param dev LCD register base address
- * @param mode Data line delay mode, 0: no delay, 1: delay on LCD_CLK rising edge, 2: delay on LCD_CLK falling edge
+ * @param delay Data line delay
  */
-static inline void lcd_ll_set_data_delay_mode(lcd_cam_dev_t *dev, uint32_t mode)
+static inline void lcd_ll_set_data_delay_ticks(lcd_cam_dev_t *dev, uint32_t delay)
 {
     uint32_t reg_val = 0;
     for (int i = 0; i < 16; i++) {
-        reg_val |= (mode & 0x03) << (2 * i);
+        reg_val |= (delay & 0x03) << (2 * i);
     }
     dev->lcd_data_dout_mode.val = reg_val;
 }

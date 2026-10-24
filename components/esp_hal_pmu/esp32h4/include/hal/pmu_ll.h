@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,6 @@
 #include "soc/pmu_struct.h"
 #include "hal/pmu_types.h"
 #include "hal/misc.h"
-#include "soc/efuse_struct.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,29 +94,6 @@ FORCE_INLINE_ATTR void pmu_ll_hp_set_clk_power(pmu_dev_t *hw, pmu_hp_mode_t mode
     hw->hp_sys[mode].clk_power.val = xpd_flag;
 }
 
-FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_clk_power(pmu_dev_t *hw, pmu_hp_mode_t mode)
-{
-    return hw->hp_sys[mode].clk_power.val;
-}
-
-/**
- * @brief Set the power and isolation of the analog i2c master shared by all the PLLs
- *
- * @param hw Beginning address of the peripheral registers.
- * @param mode The pmu mode
- * @param xpd_bb_i2c Power up the analog i2c master
- * @param iso_en Isolate the analog i2c master interface
- * @param retention Retain the analog i2c master registers
- *
- * @return None
- */
-FORCE_INLINE_ATTR void pmu_ll_hp_set_ana_i2c_power(pmu_dev_t *hw, pmu_hp_mode_t mode, bool xpd_bb_i2c, bool iso_en, bool retention)
-{
-    hw->hp_sys[mode].clk_power.xpd_bb_i2c = xpd_bb_i2c;
-    hw->hp_sys[mode].clk_power.i2c_iso_en = iso_en;
-    hw->hp_sys[mode].clk_power.i2c_retention = retention;
-}
-
 FORCE_INLINE_ATTR void pmu_ll_hp_set_xtal_xpd(pmu_dev_t *hw, pmu_hp_mode_t mode, bool xpd_xtal)
 {
     hw->hp_sys[mode].xtal.xpd_xtal = xpd_xtal;
@@ -126,11 +102,6 @@ FORCE_INLINE_ATTR void pmu_ll_hp_set_xtal_xpd(pmu_dev_t *hw, pmu_hp_mode_t mode,
 FORCE_INLINE_ATTR void pmu_ll_hp_set_xtalx2_xpd(pmu_dev_t *hw, pmu_hp_mode_t mode, bool xpd_xtalx2)
 {
     hw->hp_sys[mode].xtal.xpd_xtalx2 = xpd_xtalx2;
-}
-
-FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_xtalx2_xpd(pmu_dev_t *hw, pmu_hp_mode_t mode)
-{
-    return hw->hp_sys[mode].xtal.xpd_xtalx2;
 }
 
 FORCE_INLINE_ATTR void pmu_ll_hp_set_bias_xpd(pmu_dev_t *hw, pmu_hp_mode_t mode, bool xpd_bias)
@@ -288,7 +259,7 @@ FORCE_INLINE_ATTR void pmu_ll_hp_set_regulator_power_detect_bypass(pmu_dev_t *hw
     hw->hp_sys[mode].regulator0.power_det_bypass = bypass;
 }
 
-FORCE_INLINE_ATTR void pmu_ll_hp_set_regulator_dbias_select(pmu_dev_t *hw, pmu_hp_mode_t mode, bool dbias_sel)
+FORCE_INLINE_ATTR void pmu_ll_hp_set_regulator_dbias_sel(pmu_dev_t *hw, pmu_hp_mode_t mode, bool dbias_sel)
 {
     HAL_ASSERT(mode == PMU_MODE_HP_ACTIVE);
     hw->hp_sys[mode].regulator0.dbias_sel = dbias_sel;
@@ -602,15 +573,16 @@ FORCE_INLINE_ATTR void pmu_ll_hp_set_memory_power_up(pmu_dev_t *hw, uint32_t fpu
 
 FORCE_INLINE_ATTR void pmu_ll_hp_set_memory_power_on_mask(pmu_dev_t *hw, uint32_t mem_mask)
 {
-    hw->power.mem_mask.mem0_mask = (mem_mask & BIT(0)) ? 1 : 0;
-    hw->power.mem_mask.mem1_mask = (mem_mask & BIT(1)) ? 1 : 0;
-    hw->power.mem_mask.mem2_mask = (mem_mask & BIT(2)) ? 1 : 0;
+    hw->power.mem_mask.mem0_mask = mem_mask & BIT(0);
+    hw->power.mem_mask.mem1_mask = mem_mask & BIT(1);
+    hw->power.mem_mask.mem2_mask = mem_mask & BIT(2);
 }
 
-FORCE_INLINE_ATTR void pmu_ll_hp_set_vdd_flash_tiel_enable(pmu_dev_t *hw, bool enable)
+FORCE_INLINE_ATTR void pmu_ll_hp_set_memory_power_off_mask(pmu_dev_t *hw, uint32_t mem0_pd_mask, uint32_t mem1_pd_mask, uint32_t mem2_pd_mask)
 {
-    hw->power.vdd_flash.ldo_tiel_en = enable;
-    hw->power.vdd_flash.ldo_tiel = enable;
+    hw->power.mem_mask.mem0_pd_mask = mem0_pd_mask;
+    hw->power.mem_mask.mem1_pd_mask = mem1_pd_mask;
+    hw->power.mem_mask.mem2_pd_mask = mem2_pd_mask;
 }
 
 FORCE_INLINE_ATTR void pmu_ll_hp_set_sleep_enable(pmu_dev_t *hw)
@@ -672,11 +644,6 @@ FORCE_INLINE_ATTR void pmu_ll_hp_clear_wakeup_intr_status(pmu_dev_t *hw)
 FORCE_INLINE_ATTR void pmu_ll_hp_clear_reject_intr_status(pmu_dev_t *hw)
 {
     hw->hp_ext.int_clr.soc_sleep_reject = 1;
-}
-
-FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_wakeup_enable(pmu_dev_t *hw)
-{
-    return hw->wakeup.cntl2;
 }
 
 FORCE_INLINE_ATTR uint32_t pmu_ll_hp_get_wakeup_cause(pmu_dev_t *hw)
@@ -874,27 +841,6 @@ FORCE_INLINE_ATTR uint32_t pmu_ll_get_sysclk_sleep_select_state(pmu_dev_t *hw)
 FORCE_INLINE_ATTR void pmu_ll_set_dcdc_ccm_sw_en(pmu_dev_t *hw, bool en)
 {
     hw->dcm_ctrl.dcdc_ccm_sw_en = en;
-}
-
-FORCE_INLINE_ATTR void pmu_ll_set_ble_bandgap_ext_ocode(pmu_dev_t *hw, uint32_t ocode)
-{
-    /* Field is 8 bits (see PMU_EXT_OCODE); mask matches REG_SET_FIELD(..., PMU_EXT_OCODE, x). */
-    hw->ble_bandgap_ctrl.ext_ocode = ocode & 0xFFU;
-}
-
-FORCE_INLINE_ATTR uint32_t pmu_ll_get_ble_bandgap_ext_ocode(pmu_dev_t *hw)
-{
-    return hw->ble_bandgap_ctrl.ext_ocode;
-}
-
-FORCE_INLINE_ATTR void pmu_ll_set_ble_bandgap_ext_force_ocode(pmu_dev_t *hw, bool force)
-{
-    hw->ble_bandgap_ctrl.ext_force_ocode = force;
-}
-
-FORCE_INLINE_ATTR bool pmu_ll_get_ble_bandgap_ext_force_ocode(pmu_dev_t *hw)
-{
-    return hw->ble_bandgap_ctrl.ext_force_ocode;
 }
 
 #ifdef __cplusplus

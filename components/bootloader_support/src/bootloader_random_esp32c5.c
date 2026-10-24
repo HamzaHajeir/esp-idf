@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,8 +8,8 @@
 #include "hal/regi2c_ctrl_ll.h"
 #include "hal/adc_ll.h"
 #include "hal/adc_types.h"
-#include "hal/rng_ll.h"
 #include "esp_private/regi2c_ctrl.h"
+#include "soc/lpperi_reg.h"
 #include "hal/temperature_sensor_ll.h"
 #include "esp_private/sar_periph_ctrl.h"
 
@@ -67,12 +67,13 @@ void bootloader_random_enable(void)
     adc_ll_digi_set_trigger_interval(200);
     adc_ll_digi_trigger_enable();
 
-    rng_ll_enable();
+    SET_PERI_REG_MASK(LPPERI_RNG_CFG_REG, LPPERI_RNG_SAMPLE_ENABLE);
+    REG_SET_FIELD(LPPERI_RNG_CFG_REG, LPPERI_RTC_TIMER_EN, 0x3);
+    SET_PERI_REG_MASK(LPPERI_RNG_CFG_REG, LPPERI_RNG_TIMER_EN);
 }
 
 void bootloader_random_disable(void)
 {
-    rng_ll_disable();
     adc_ll_digi_trigger_disable();
     adc_ll_digi_reset_pattern_table();
     adc_ll_set_calibration_param(ADC_UNIT_1, 0x0);

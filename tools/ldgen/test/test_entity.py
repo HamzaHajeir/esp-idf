@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding=utf-8
 #
 # SPDX-FileCopyrightText: 2018-2022 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
@@ -9,15 +10,14 @@ import sys
 import unittest
 
 try:
-    from ldgen.entity import Entity
-    from ldgen.entity import EntityDB
+    from ldgen.entity import Entity, EntityDB
 except ImportError:
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from ldgen.entity import Entity
-    from ldgen.entity import EntityDB
+    from ldgen.entity import Entity, EntityDB
 
 
 class EntityTest(unittest.TestCase):
+
     def test_create_none(self):
         entity = Entity(Entity.ALL)
         self.assertEqual(Entity.Specificity.NONE, entity.specificity)
@@ -128,7 +128,7 @@ class EntityTest(unittest.TestCase):
         self.assertEqual(entity_a, entity_b)
 
     def test_compare_none_vs_all(self):
-        # Two entities might have the same specificity whether
+        # Two entities might have the same specifity whether
         # Entity.ALL is used or not specified; the latter is
         # considered less than the former.
         entity_a = Entity()
@@ -186,6 +186,7 @@ class EntityTest(unittest.TestCase):
 
 
 class EntityDBTest(unittest.TestCase):
+
     def setUp(self):
         self.entities = EntityDB()
 

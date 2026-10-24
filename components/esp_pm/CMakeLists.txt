@@ -1,5 +1,5 @@
 idf_build_get_property(target IDF_TARGET)
-set(priv_requires esp_system esp_driver_gpio esp_timer esp_hal_uart esp_hal_rtc_timer esp_hal_systimer hal freertos)
+set(priv_requires esp_system esp_driver_gpio esp_timer esp_hal_uart)
 
 if(${target} STREQUAL "linux")
     return() # This component is not supported by the POSIX/Linux simulator
@@ -24,8 +24,3 @@ idf_component_register(SRCS "${srcs}"
                        INCLUDE_DIRS include
                        PRIV_REQUIRES "${priv_requires}"
                        LDFRAGMENTS linker.lf)
-
-if(CONFIG_PM_WORKAROUND_FREQ_LIMIT_ENABLED)
-    # Force linking init_flash ESP_SYSTEM_INIT_FN to ensure it's not discarded by linker
-    target_link_libraries(${COMPONENT_LIB} INTERFACE "-u pm_c5_flash_freq_limit_init_include_func")
-endif()

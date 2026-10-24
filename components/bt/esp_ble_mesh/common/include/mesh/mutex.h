@@ -50,9 +50,7 @@ void bt_mesh_atomic_lock(void);
 void bt_mesh_atomic_unlock(void);
 
 void bt_mesh_mutex_init(void);
-#if CONFIG_BLE_MESH_DEINIT
 void bt_mesh_mutex_deinit(void);
-#endif /* CONFIG_BLE_MESH_DEINIT */
 
 #ifdef __cplusplus
 }

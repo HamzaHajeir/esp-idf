@@ -113,17 +113,6 @@ typedef struct {
     UINT16      sp_tout;
 } tGAP_BLE_PREF_PARAM;
 
-#if (BT_GATTS_KEY_MATERIAL_CHAR == TRUE)
-#define GAP_KEY_MATERIAL_SESSION_KEY_SIZE  16  /* 128-bit session key */
-#define GAP_KEY_MATERIAL_IV_SIZE           8   /* 64-bit IV */
-#define GAP_KEY_MATERIAL_SIZE              (GAP_KEY_MATERIAL_SESSION_KEY_SIZE + GAP_KEY_MATERIAL_IV_SIZE)
-
-typedef struct {
-    UINT8       session_key[GAP_KEY_MATERIAL_SESSION_KEY_SIZE];
-    UINT8       iv[GAP_KEY_MATERIAL_IV_SIZE];
-} tGAP_BLE_KEY_MATERIAL;
-#endif // (BT_GATTS_KEY_MATERIAL_CHAR == TRUE)
-
 typedef union {
     tGAP_BLE_PREF_PARAM     conn_param;
     BD_ADDR                 reconn_bda;
@@ -133,9 +122,6 @@ typedef union {
 #if (BT_GATTS_SECURITY_LEVELS_CHAR == TRUE)
     UINT16                  security_level;
 #endif // (BT_GATTS_SECURITY_LEVELS_CHAR == TRUE)
-#if (BT_GATTS_KEY_MATERIAL_CHAR == TRUE)
-    tGAP_BLE_KEY_MATERIAL   key_material;
-#endif // (BT_GATTS_KEY_MATERIAL_CHAR == TRUE)
 
 } tGAP_BLE_ATTR_VALUE;
 
@@ -194,15 +180,11 @@ extern UINT16 GAP_ConnReadData (UINT16 gap_handle, UINT8 *p_data,
 **
 ** Function         GAP_GetRxQueueCnt
 **
-** Description      Return the number of bytes waiting on the connection rx queue.
+** Description      This function return number of bytes on the rx queue.
 **
-** Parameters:      handle           - Handle returned from GAP_ConnOpen
-**                  p_rx_queue_count - Pointer to receive queue byte count
+** Parameters:      handle     - Handle returned in the GAP_ConnOpen
+**                  p_rx_queue_count - Pointer to return queue count in.
 **
-** Returns          BT_PASS             - success, count stored in *p_rx_queue_count
-**                  GAP_ERR_ILL_PARM    - p_rx_queue_count is NULL
-**                  GAP_ERR_BAD_HANDLE  - handle is invalid
-**                  GAP_ERR_BAD_STATE   - connection is not established
 **
 *******************************************************************************/
 extern int GAP_GetRxQueueCnt (UINT16 handle, UINT32 *p_rx_queue_count);

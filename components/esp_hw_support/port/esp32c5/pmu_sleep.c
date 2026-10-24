@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,6 @@
 #include "soc/soc.h"
 #include "soc/rtc.h"
 #include "soc/pmu_struct.h"
-#include "soc/chip_revision.h"
 #include "hal/lp_aon_hal.h"
 #include "hal/efuse_ll.h"
 #include "hal/efuse_hal.h"
@@ -29,9 +28,6 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_sleep");
 #define HP(state)   (PMU_MODE_HP_ ## state)
 #define LP(state)   (PMU_MODE_LP_ ## state)
 
-// In the ESP32-C5 v1.2 and later versions, need to set PMU_POWER_WAIT_TIMER0_REG->PMU_DG_HP_PD_WAIT_TIMER[1:0] to 0b11 to avoid excessive inrush current.
-#define POWER_DOMAIN_INRUSH_CURRENT_WORKAROUND (BIT(0) | BIT(1))
-
 static bool s_pmu_sleep_regdma_backup_enabled;
 
 static uint32_t get_lslp_dbg(void)
@@ -40,7 +36,7 @@ static uint32_t get_lslp_dbg(void)
     uint32_t chip_version = efuse_hal_chip_revision();
     uint32_t blk_version = efuse_hal_blk_version();
     if ((chip_version == 1 && blk_version >= 1) || (chip_version >= 100 && blk_version >= 2)) {
-        pmu_dbg_atten_lightsleep = pmu_ll_get_lslp_dbg();
+        pmu_dbg_atten_lightsleep = efuse_ll_get_lslp_dbg();
     } else {
         ESP_HW_LOGD(TAG, "lslp dbg not burnt in efuse\n");
     }
@@ -54,7 +50,7 @@ static uint32_t get_lslp_hp_dbias(void)
     uint32_t chip_version = efuse_hal_chip_revision();
     uint32_t blk_version = efuse_hal_blk_version();
     if ((chip_version == 1 && blk_version >= 1) || (chip_version >= 100 && blk_version >= 2)) {
-        pmu_hp_dbias_lightsleep_0v6 = pmu_ll_get_lslp_hp_dbias();
+        pmu_hp_dbias_lightsleep_0v6 = efuse_ll_get_lslp_hp_dbias();
     } else {
         ESP_HW_LOGD(TAG, "lslp hp dbias not burnt in efuse\n");
     }
@@ -68,7 +64,7 @@ static uint32_t get_dslp_dbg(void)
     uint32_t chip_version = efuse_hal_chip_revision();
     uint32_t blk_version = efuse_hal_blk_version();
     if ((chip_version == 1 && blk_version >= 1) || (chip_version >= 100 && blk_version >= 2)) {
-        pmu_dbg_atten_deepsleep = pmu_ll_get_dslp_dbg();
+        pmu_dbg_atten_deepsleep = efuse_ll_get_dslp_dbg();
     } else {
         ESP_HW_LOGD(TAG, "dslp dbg not burnt in efuse\n");
     }
@@ -82,7 +78,7 @@ static uint32_t get_dslp_lp_dbias(void)
     uint32_t chip_version = efuse_hal_chip_revision();
     uint32_t blk_version = efuse_hal_blk_version();
     if ((chip_version == 1 && blk_version >= 1) || (chip_version >= 100 && blk_version >= 2)) {
-        pmu_lp_dbias_deepsleep_0v7 = pmu_ll_get_dslp_lp_dbias();
+        pmu_lp_dbias_deepsleep_0v7 = efuse_ll_get_dslp_lp_dbias();
     } else {
         ESP_HW_LOGD(TAG, "dslp lp dbias not burnt in efuse\n");
     }
@@ -188,15 +184,14 @@ uint32_t pmu_sleep_calculate_hw_wait_time(uint32_t sleep_flags, soc_rtc_slow_clk
 static inline pmu_sleep_param_config_t * pmu_sleep_param_config_default(
         pmu_sleep_param_config_t *param,
         pmu_sleep_power_config_t *power, /* We'll use the runtime power parameter to determine some hardware parameters */
-        pmu_sleep_extra_args_t *args
+        const uint32_t sleep_flags,
+        const uint32_t adjustment,
+        soc_rtc_slow_clk_src_t slowclk_src,
+        const uint32_t slowclk_period,
+        const uint32_t fastclk_period
     )
 {
     const pmu_sleep_machine_constant_t *mc = (pmu_sleep_machine_constant_t *)PMU_instance()->mc;
-    const uint32_t sleep_flags = args->sleep_flags;
-    const uint32_t adjustment = args->adjustment;
-    const soc_rtc_slow_clk_src_t slowclk_src = args->slowclk_src;
-    const uint32_t slowclk_period = args->slowclk_period;
-    const uint32_t fastclk_period = args->fastclk_period;
 
 #if (SOC_PM_PMU_MIN_SLP_SLOW_CLK_CYCLE_FIXED && SOC_PM_SUPPORT_PMU_MODEM_STATE && CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP)
     const uint32_t slowclk_period_fixed = (slowclk_src == SOC_RTC_SLOW_CLK_SRC_RC_SLOW) ? rtc_clk_freq_to_period(SOC_CLK_RC_SLOW_FREQ_APPROX) : slowclk_period;
@@ -232,15 +227,23 @@ static inline pmu_sleep_param_config_t * pmu_sleep_param_config_default(
     return param;
 }
 
-const pmu_sleep_config_t* pmu_sleep_config_default(pmu_sleep_config_t *config, pmu_sleep_extra_args_t *args, bool dslp)
+const pmu_sleep_config_t* pmu_sleep_config_default(
+        pmu_sleep_config_t *config,
+        uint32_t sleep_flags,
+        uint32_t clk_flags,
+        uint32_t adjustment,
+        soc_rtc_slow_clk_src_t slowclk_src,
+        uint32_t slowclk_period,
+        uint32_t fastclk_period,
+        bool dslp
+    )
 {
-    const uint32_t sleep_flags = args->sleep_flags;
     pmu_sleep_power_config_t power_default = PMU_SLEEP_POWER_CONFIG_DEFAULT(sleep_flags);
 
     if (dslp) {
-        config->param.lp_sys.analog_wait_target_cycle  = rtc_time_us_to_slowclk(PMU_LP_ANALOG_WAIT_TARGET_TIME_DSLP_US, args->slowclk_period);
+        config->param.lp_sys.analog_wait_target_cycle  = rtc_time_us_to_slowclk(PMU_LP_ANALOG_WAIT_TARGET_TIME_DSLP_US, slowclk_period);
 
-        pmu_sleep_digital_config_t digital_default = PMU_SLEEP_DIGITAL_DSLP_CONFIG_DEFAULT(sleep_flags, args->clk_flags);
+        pmu_sleep_digital_config_t digital_default = PMU_SLEEP_DIGITAL_DSLP_CONFIG_DEFAULT(sleep_flags, clk_flags);
 
         config->digital = digital_default;
 
@@ -250,7 +253,7 @@ const pmu_sleep_config_t* pmu_sleep_config_default(pmu_sleep_config_t *config, p
 
         config->analog = analog_default;
     } else {
-        pmu_sleep_digital_config_t digital_default = PMU_SLEEP_DIGITAL_LSLP_CONFIG_DEFAULT(sleep_flags, args->clk_flags);
+        pmu_sleep_digital_config_t digital_default = PMU_SLEEP_DIGITAL_LSLP_CONFIG_DEFAULT(sleep_flags, clk_flags);
         config->digital = digital_default;
 
         pmu_sleep_analog_config_t analog_default = PMU_SLEEP_ANALOG_LSLP_CONFIG_DEFAULT(sleep_flags);
@@ -290,7 +293,7 @@ const pmu_sleep_config_t* pmu_sleep_config_default(pmu_sleep_config_t *config, p
 
     config->power = power_default;
     pmu_sleep_param_config_t param_default = PMU_SLEEP_PARAM_CONFIG_DEFAULT(sleep_flags);
-    config->param = *pmu_sleep_param_config_default(&param_default, &power_default, args);
+    config->param = *pmu_sleep_param_config_default(&param_default, &power_default, sleep_flags, adjustment, slowclk_src, slowclk_period, fastclk_period);
 
     return config;
 }
@@ -313,7 +316,6 @@ static void pmu_sleep_digital_init(pmu_context_t *ctx, const pmu_sleep_digital_c
 {
     pmu_ll_hp_set_icg_sysclk_enable(ctx->hal->dev, HP(SLEEP), (dig->icg_func != 0));
     pmu_ll_hp_set_icg_func(ctx->hal->dev, HP(SLEEP), dig->icg_func);
-    pmu_ll_hp_set_pause_watchdog(ctx->hal->dev, HP(SLEEP), dig->syscntl.dig_pause_wdt);
     if (!dslp) {
         pmu_ll_hp_set_dig_pad_slp_sel(ctx->hal->dev, HP(SLEEP), dig->syscntl.dig_pad_slp_sel);
     }
@@ -328,10 +330,6 @@ static void pmu_sleep_analog_init(pmu_context_t *ctx, const pmu_sleep_analog_con
     pmu_ll_hp_set_regulator_xpd               (ctx->hal->dev, HP(SLEEP), analog->hp_sys.analog.xpd);
     pmu_ll_hp_set_regulator_dbias             (ctx->hal->dev, HP(SLEEP), analog->hp_sys.analog.dbias);
     pmu_ll_hp_set_regulator_driver_bar        (ctx->hal->dev, HP(SLEEP), analog->hp_sys.analog.drv_b);
-#if CONFIG_ESP_ENABLE_PVT
-    uint32_t pvt_hp_dbias = GET_PERI_REG_BITS2(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_DBIAS_VOL_V, PMU_HP_DBIAS_VOL_S);
-    pmu_ll_hp_set_regulator_dbias             (ctx->hal->dev, HP(MODEM), pvt_hp_dbias);
-#endif
 
     pmu_ll_lp_set_dbg_atten            (ctx->hal->dev, LP(SLEEP), analog->lp_sys[LP(SLEEP)].analog.dbg_atten);
     pmu_ll_lp_set_current_power_off    (ctx->hal->dev, LP(SLEEP), analog->lp_sys[LP(SLEEP)].analog.pd_cur);
@@ -352,11 +350,7 @@ static void pmu_sleep_param_init(pmu_context_t *ctx, const pmu_sleep_param_confi
     pmu_ll_hp_set_analog_wait_target_cycle(ctx->hal->dev, param->hp_sys.analog_wait_target_cycle);
     pmu_ll_lp_set_analog_wait_target_cycle(ctx->hal->dev, param->lp_sys.analog_wait_target_cycle);
 
-    uint32_t hp_digital_power_supply_wait_cycle = param->hp_sys.digital_power_supply_wait_cycle;
-    if (ESP_CHIP_REV_ABOVE(efuse_hal_chip_revision(), 102)) {
-        hp_digital_power_supply_wait_cycle |= POWER_DOMAIN_INRUSH_CURRENT_WORKAROUND; // Enable power domain power-down to avoid excessive inrush current
-    }
-    pmu_hal_hp_set_digital_power_up_wait_cycle(ctx->hal, hp_digital_power_supply_wait_cycle, param->hp_sys.digital_power_up_wait_cycle);
+    pmu_hal_hp_set_digital_power_up_wait_cycle(ctx->hal, param->hp_sys.digital_power_supply_wait_cycle, param->hp_sys.digital_power_up_wait_cycle);
     pmu_hal_lp_set_digital_power_up_wait_cycle(ctx->hal, param->lp_sys.digital_power_supply_wait_cycle, param->lp_sys.digital_power_up_wait_cycle);
 
     pmu_hal_hp_set_control_ready_wait_cycle(ctx->hal, param->hp_sys.isolate_wait_cycle, param->hp_sys.reset_wait_cycle);

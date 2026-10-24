@@ -1,32 +1,15 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include "host/ble_hs.h"
+#include "host/ble_uuid.h"
 #include "esp_central.h"
-
-int
-peer_addr_parse(const char *addr_str, uint8_t addr[PEER_ADDR_VAL_SIZE])
-{
-    unsigned int tmp[6] = {0};
-    int rc;
-    int i;
-
-    if (addr_str == NULL) {
-        return 0;
-    }
-    rc = sscanf(addr_str, "%x:%x:%x:%x:%x:%x",
-                &tmp[5], &tmp[4], &tmp[3],
-                &tmp[2], &tmp[1], &tmp[0]);
-    for (i = 0; i < PEER_ADDR_VAL_SIZE; i++) {
-        addr[i] = (uint8_t)tmp[i];
-    }
-    return rc;
-}
 
 /**
  * Utility function to log an array of bytes.
@@ -106,7 +89,7 @@ print_conn_desc(const struct ble_gap_conn_desc *desc)
 }
 
 #if MYNEWT_VAL(BLE_EXT_ADV)
-static void
+void
 print_addr(const void *addr, const char *name)
 {
     const uint8_t *u8p;
@@ -169,12 +152,9 @@ print_adv_fields(const struct ble_hs_adv_fields *fields)
     }
 
     if (fields->name != NULL) {
-        size_t copy_len = fields->name_len;
-        if (copy_len >= sizeof(s)) {
-            copy_len = sizeof(s) - 1;
-        }
-        memcpy(s, fields->name, copy_len);
-        s[copy_len] = '\0';
+        assert(fields->name_len < sizeof s - 1);
+        memcpy(s, fields->name, fields->name_len);
+        s[fields->name_len] = '\0';
         MODLOG_DFLT(DEBUG, "    name(%scomplete)=%s\n",
                     fields->name_is_complete ? "" : "in", s);
     }
@@ -262,9 +242,11 @@ print_adv_fields(const struct ble_hs_adv_fields *fields)
 
     if (fields->device_addr_is_present) {
         MODLOG_DFLT(DEBUG, "    device_addr=");
-        u8p = fields->device_addr;
-        MODLOG_DFLT(DEBUG, "%s addr_type %d ", addr_str(u8p),
-                    fields->device_addr_type);
+	u8p = fields->device_addr;
+	MODLOG_DFLT(DEBUG, "%s ", addr_str(u8p));
+
+	u8p += BLE_HS_ADV_PUBLIC_TGT_ADDR_ENTRY_LEN;
+	MODLOG_DFLT(DEBUG, "addr_type %d ", *u8p);
     }
 
     if (fields->le_role_is_present) {

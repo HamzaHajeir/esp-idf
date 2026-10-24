@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -431,12 +431,11 @@ extern "C" {
 #define DPORT_WIFI_CLK_EN_V  0xFFFFFFFF
 #define DPORT_WIFI_CLK_EN_S  0
 
-/* Mask for all Wifi clock bits for initialization - 0, 1, 2, 3, 6, 7, 8, 9, 10, 19, 20, 21
-   Mask for all wifi clock bits for running - 1, 2, 10
+/* Mask for all Wifi clock bits - 0, 1, 2, 3, 6, 7, 8, 9, 10, 15, 19, 20, 21
    Bit15 not included here because of the bit now can't be cleared */
 #define DPORT_WIFI_CLK_WIFI_EN  0x003807cf
 #define DPORT_WIFI_CLK_WIFI_EN_M  ((DPORT_WIFI_CLK_WIFI_EN_V)<<(DPORT_WIFI_CLK_WIFI_EN_S))
-#define DPORT_WIFI_CLK_WIFI_EN_V  0x406
+#define DPORT_WIFI_CLK_WIFI_EN_V  0x7cf
 #define DPORT_WIFI_CLK_WIFI_EN_S  0
 /* Mask for all Bluetooth clock bits - 11, 16, 17 */
 #define DPORT_WIFI_CLK_BT_EN  0x61
@@ -446,9 +445,6 @@ extern "C" {
 /* Mask for clock bits used by both WIFI and Bluetooth, bit 0, 3, 6, 7, 8, 9 */
 #define SYSTEM_WIFI_CLK_WIFI_BT_COMMON_M 0x000003c9
 #define DPORT_WIFI_CLK_WIFI_BT_COMMON_M SYSTEM_WIFI_CLK_WIFI_BT_COMMON_M
-/* Mask for clock bits used by phy calibration, bit 22 */
-#define SYSTEM_WIFI_CLK_PHY_EN_M    0x400000
-#define DPORT_WIFI_CLK_PHY_EN_M     SYSTEM_WIFI_CLK_PHY_EN_M
 
 /* Digital team to check */
 //bluetooth baseband bit11

@@ -5,6 +5,8 @@
 
 `esp_wifi_regulatory.c` is generated from `esp_wifi_regulatory.txt` by using the `reg2fw.py` script.
 
+The num of all suppported countries in `esp_wifi_regulatory.txt` is `WIFI_MAX_SUPPORT_COUNTRY_NUM` that is defined in `esp_wifi_types_generic.h`
+
 - Generate `esp_wifi_regulatory.c`
-  - `cd ${IDF_PATH}/components/esp_wifi/regulatory`
+  - `cd ~/esp-idf/components/esp_wifi/regulatory`
   - `python reg2fw.py`

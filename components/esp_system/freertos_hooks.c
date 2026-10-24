@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,33 +10,13 @@
 #include "freertos/FreeRTOS.h"
 #include "esp_attr.h"
 #include "esp_freertos_hooks.h"
-
-#include "sdkconfig.h"
 #include "esp_cpu.h"
 
-// Strong definitions in esp_pm/pm_impl.c override these weak defaults at
-// link time when esp_pm is in the build. Declared locally to avoid an
-// esp_system -> esp_pm dependency.
-void __attribute__((weak)) esp_pm_impl_idle_hook(void);
-void __attribute__((weak)) esp_pm_impl_waiti(void);
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-bool __attribute__((weak)) esp_pm_impl_tickless_waiti(void);
-#endif
+#include "sdkconfig.h"
 
-void __attribute__((weak)) esp_pm_impl_idle_hook(void)
-{
-}
-
-void __attribute__((weak)) esp_pm_impl_waiti(void)
-{
-    esp_cpu_wait_for_intr();
-}
-
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-bool __attribute__((weak)) esp_pm_impl_tickless_waiti(void)
-{
-    return false;
-}
+#if CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#include "esp_private/pm_impl.h"
 #endif
 
 //We use just a static array here because it's not expected many components will need
@@ -60,16 +40,8 @@ void esp_vApplicationTickHook(void)
 
 void esp_vApplicationIdleHook(void)
 {
-    int core = xPortGetCoreID();
-
-#if CONFIG_PM_TICKLESS_IDLE_WAITI
-    /* Two-phase WAITI: plan is armed in vApplicationSleep(); execute it here (kernel lock free). */
-    if (esp_pm_impl_tickless_waiti()) {
-        return;
-    }
-#endif
-
     bool can_go_idle = true;
+    int core = xPortGetCoreID();
     for (int n = 0; n < MAX_HOOKS; n++) {
         if (idle_cb[core][n] != NULL && !idle_cb[core][n]()) {
             can_go_idle = false;
@@ -79,8 +51,13 @@ void esp_vApplicationIdleHook(void)
         return;
     }
 
+#ifdef CONFIG_PM_ENABLE
     esp_pm_impl_idle_hook();
     esp_pm_impl_waiti();
+#else
+    esp_cpu_wait_for_intr();
+#endif
+
 }
 
 esp_err_t esp_register_freertos_idle_hook_for_cpu(esp_freertos_idle_cb_t new_idle_cb, UBaseType_t cpuid)

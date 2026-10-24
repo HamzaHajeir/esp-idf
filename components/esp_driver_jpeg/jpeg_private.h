@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,10 +7,8 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdbool.h>
 #include <stdatomic.h>
-#include <sys/queue.h>
-#include "esp_macros.h"
+#include "sys/queue.h"
 #include "esp_private/dma2d.h"
 #include "driver/jpeg_types.h"
 #include "freertos/FreeRTOS.h"
@@ -20,10 +18,6 @@
 #include "esp_intr_types.h"
 #include "esp_pm.h"
 #include "sdkconfig.h"
-#if SOC_PAU_SUPPORTED
-#include "soc/regdma.h"
-#include "soc/retention_periph_defs.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,20 +30,7 @@ extern "C" {
 // JPEG encoder and decoder shares same interrupt ID.
 #define JPEG_INTR_ALLOC_FLAG              (ESP_INTR_FLAG_SHARED)
 
-// Buffers fed to the 2D-DMA must be at least 16-byte aligned.
-#define JPEG_DMA2D_BUFFER_ALIGN           16
-
-// The JPEG codec cannot work with encrypted buffer, because it deals with macro block. When an
-// unencrypted PSRAM region is reserved (CONFIG_SPIRAM_ENC_EXEMPT), codec buffers
-// must come from it; otherwise use normal PSRAM.
-#if CONFIG_SPIRAM_ENC_EXEMPT
-#define JPEG_SPIRAM_ALLOC_CAPS            (MALLOC_CAP_SPIRAM_NO_ENC)
-#else
-#define JPEG_SPIRAM_ALLOC_CAPS            (MALLOC_CAP_SPIRAM)
-#endif
-
-// Use retention link only when the target supports sleep retention and PM is enabled
-#define JPEG_USE_RETENTION_LINK  (CONFIG_PM_ENABLE && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+#define JPEG_ALIGN_UP(num, align)         (((num) + ((align) - 1)) & ~((align) - 1))
 
 typedef struct jpeg_decoder_t jpeg_decoder_t;
 typedef struct jpeg_encoder_t jpeg_encoder_t;
@@ -74,18 +55,7 @@ struct jpeg_codec_t {
 #if CONFIG_PM_ENABLE
     esp_pm_lock_handle_t pm_lock; // power manage lock
 #endif
-    bool retention_link_created;     // mark if the retention link is created.
 };
-
-#if SOC_PAU_SUPPORTED
-typedef struct {
-    const regdma_entries_config_t *entry_array;
-    uint32_t array_size;
-    periph_retention_module_t module_id;
-} jpeg_reg_retention_info_t;
-
-extern const jpeg_reg_retention_info_t jpeg_reg_retention_info;
-#endif
 
 typedef enum {
     JPEG_DEC_DIRECT_OUTPUT_HB = 0, /*!< Direct output */
@@ -108,7 +78,6 @@ typedef struct {
     uint8_t mcux;                                               // the best value of minimum coding unit horizontal unit
     uint8_t mcuy;                                               // minimum coding unit vertical unit
     uint8_t qt_tbl_num;                                         // quantization table number
-    uint8_t qt_tbl_seen_mask;                                   // bit i set => qt_tbl[i] populated by a DQT entry
     uint32_t qt_tbl[JPEG_COMPONENT_NUMBER_MAX][JPEG_QUANTIZATION_TABLE_LEN];            // quantization table content [id]
     uint8_t nf;                                                 // number of frames
     uint8_t ci[JPEG_COMPONENT_NUMBER_MAX];                      // Component identifier.
@@ -177,9 +146,7 @@ typedef struct {
 
 typedef struct {
     uint8_t *header_buf;                           // Pointer to the header of jpeg header buffer
-    uint32_t header_buf_size;                      // Capacity of header_buf in bytes
     uint32_t header_len;                           // Record for header length
-    bool header_buf_overflow;                      // Set when emit exceeds header_buf_size
     uint32_t m_quantization_tables[2][JPEG_QUANTIZATION_TABLE_LEN];         // quantization tables
     uint8_t num_components;                        // number of components
     uint32_t origin_h;                             // horizontal of original picture
@@ -278,13 +245,6 @@ esp_err_t jpeg_isr_deregister(jpeg_codec_handle_t jpeg_codec, jpeg_isr_handler_t
  * @return esp_err_t Returns ESP_OK if the interrupt priority meets the requirements, or an error code on failure
  */
 esp_err_t jpeg_check_intr_priority(jpeg_codec_handle_t jpeg_codec, int intr_priority);
-
-/**
- * @brief Create sleep retention link
- *
- * @param jpeg_codec JPEG handle
- */
-void jpeg_create_retention_module(jpeg_codec_handle_t jpeg_codec);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,11 +27,6 @@ typedef enum {
     BTC_GAP_BT_KEY_NOTIF_EVT,
     BTC_GAP_BT_KEY_REQ_EVT,
     BTC_GAP_BT_READ_RSSI_DELTA_EVT,
-    BTC_GAP_BT_READ_ACL_REAL_RSSI_EVT,
-    BTC_GAP_BT_READ_NEW_CONN_TX_PWR_LVL_EVT,
-    BTC_GAP_BT_WRITE_NEW_CONN_TX_PWR_LVL_EVT,
-    BTC_GAP_BT_READ_TX_PWR_LVL_EVT,
-    BTC_GAP_BT_WRITE_TX_PWR_LVL_EVT,
     BTC_GAP_BT_CONFIG_EIR_DATA_EVT,
     BTC_GAP_BT_SET_AFH_CHANNELS_EVT,
     BTC_GAP_BT_READ_REMOTE_NAME_EVT,
@@ -41,7 +36,9 @@ typedef enum {
     BTC_GAP_BT_SET_PAGE_TO_EVT,
     BTC_GAP_BT_GET_PAGE_TO_EVT,
     BTC_GAP_BT_SET_ACL_PKT_TYPES_EVT,
+#if (ENC_KEY_SIZE_CTRL_MODE != ENC_KEY_SIZE_CTRL_MODE_NONE)
     BTC_GAP_BT_SET_MIN_ENC_KEY_SIZE_EVT,
+#endif
     BTC_GAP_BT_GET_DEV_NAME_CMPL_EVT,
 }btc_gap_bt_evt_t;
 
@@ -53,13 +50,6 @@ typedef enum {
     BTC_GAP_BT_ACT_GET_REMOTE_SERVICE_RECORD,
     BTC_GAP_BT_ACT_SET_COD,
     BTC_GAP_BT_ACT_READ_RSSI_DELTA,
-#if (ESP_BT_CLASSIC_ENABLE_POWER_CTRL_VSC == TRUE)
-    BTC_GAP_BT_ACT_READ_ACL_REAL_RSSI,
-    BTC_GAP_BT_ACT_READ_NEW_CONN_TX_PWR_LVL,
-    BTC_GAP_BT_ACT_WRITE_NEW_CONN_TX_PWR_LVL,
-#endif // (ESP_BT_CLASSIC_ENABLE_POWER_CTRL_VSC == TRUE)
-    BTC_GAP_BT_ACT_READ_TX_PWR_LVL,
-    BTC_GAP_BT_ACT_WRITE_TX_PWR_LVL,
     BTC_GAP_BT_ACT_REMOVE_BOND_DEVICE,
     BTC_GAP_BT_ACT_SET_PIN_TYPE,
     BTC_GAP_BT_ACT_PIN_REPLY,
@@ -73,7 +63,9 @@ typedef enum {
     BTC_GAP_BT_ACT_SET_PAGE_TIMEOUT,
     BTC_GAP_BT_ACT_GET_PAGE_TIMEOUT,
     BTC_GAP_BT_ACT_SET_ACL_PKT_TYPES,
+#if (ENC_KEY_SIZE_CTRL_MODE != ENC_KEY_SIZE_CTRL_MODE_NONE)
     BTC_GAP_BT_ACT_SET_MIN_ENC_KEY_SIZE,
+#endif
     BTC_GAP_BT_ACT_SET_DEV_NAME,
     BTC_GAP_BT_ACT_GET_DEV_NAME,
 } btc_gap_bt_act_t;
@@ -112,30 +104,6 @@ typedef union {
     struct bt_read_rssi_delta_args {
         bt_bdaddr_t bda;
     } read_rssi_delta;
-
-#if (ESP_BT_CLASSIC_ENABLE_POWER_CTRL_VSC == TRUE)
-    //BTC_GAP_BT_ACT_READ_ACL_REAL_RSSI,
-    struct bt_read_acl_real_rssi_args {
-        bt_bdaddr_t bda;
-    } read_acl_real_rssi;
-
-    // BTC_GAP_BT_ACT_WRITE_NEW_CONN_TX_PWR_LVL
-    struct bt_write_new_conn_tx_pwr_lvl_args {
-        int8_t pwr_lvl_min;
-        int8_t pwr_lvl_max;
-    } write_new_conn_tx_pwr_lvl;
-#endif // #if (ESP_BT_CLASSIC_ENABLE_POWER_CTRL_VSC == TRUE)
-
-    // BTC_GAP_BT_ACT_READ_TX_PWR_LVL
-    struct bt_read_tx_pwr_lvl_args {
-        esp_bt_gap_tx_pwr_lvl_type_t type;
-    } read_tx_pwr_lvl;
-
-    // BTC_GAP_BT_ACT_WRITE_TX_PWR_LVL
-    struct bt_write_tx_pwr_lvl_args {
-        esp_bt_gap_tx_pwr_lvl_type_t type;
-        int8_t tx_power;
-    } write_tx_pwr_lvl;
 
     // BTC_GAP_BT_ACT_REMOVE_BOND_DEVICE
     struct rm_bond_device_args {
@@ -207,10 +175,12 @@ typedef union {
         uint16_t pkt_types;
     } set_acl_pkt_types;
 
+#if (ENC_KEY_SIZE_CTRL_MODE != ENC_KEY_SIZE_CTRL_MODE_NONE)
     // BTC_GAP_BT_ACT_SET_MIN_ENC_KEY_SIZE
     struct set_min_enc_key_size_args {
         uint8_t key_size;
     } set_min_enc_key_size;
+#endif
 
     // BTC_GAP_BT_ACT_SET_DEV_NAME
     struct bt_set_dev_name_args {

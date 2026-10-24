@@ -1,2 +1,0 @@
-# CONFIG_LIBC_LIBGCC_IN_IRAM is disabled: only 64-bit helpers stay in IRAM.
-CONFIG_LIBC_LIBGCC_IN_IRAM=n

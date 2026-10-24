@@ -34,7 +34,6 @@ FreeRTOS 有其单独的软件定时器，但分辨率比 ESP 定时器低得多
 ESP 定时器 API 提供：
 
 - 一次性和周期性定时器
-- 相对定时和绝对定时
 - 多种分发回调函数的方法
 - 处理过期回调函数
 - 计数器位宽：{IDF_TARGET_HR_TIMER_Resolution} 位
@@ -215,8 +214,7 @@ FreeRTOS 定时器
 
 3. 暂停定时器
 
-    - 调用函数 :cpp:func:`esp_timer_stop` 可以暂停运行中的定时器。但在调用此函数之后，回调函数可能还会再执行一次或多次。使用 :cpp:func:`esp_timer_is_active`，可以检查暂停定时器后回调函数是否仍在运行；也可以使用阻塞式停止 API。
-    - 使用 :cpp:func:`esp_timer_stop_blocking` 可以阻塞定时器停止操作，直到所有正在执行的回调函数执行完毕。
+    - 调用函数 :cpp:func:`esp_timer_stop`，可暂停运行中的定时器。
 
 4. 删除定时器
 
@@ -232,7 +230,7 @@ FreeRTOS 定时器
 
 1. 设置 Kconfig 选项
 
-    - 启用 :menuitem:`CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD`。
+    - 启用 :ref:`CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD`。
 
 2. 创建定时器
 
@@ -273,7 +271,7 @@ FreeRTOS 定时器
 
 1. 设置 Kconfig 选项以获取更详细的输出：
 
-    - 启用 :menuitem:`CONFIG_ESP_TIMER_PROFILING`。
+    - 启用 :ref:`CONFIG_ESP_TIMER_PROFILING`。
 
     .. note::
 
@@ -281,7 +279,7 @@ FreeRTOS 定时器
 
 2. 调用函数 :cpp:func:`esp_timer_dump`，在代码中必要的位置打印信息并用于调试定时器。
 
-3. 结束调试后，考虑禁用 :menuitem:`CONFIG_ESP_TIMER_PROFILING`。
+3. 结束调试后，考虑禁用 :ref:`CONFIG_ESP_TIMER_PROFILING`。
 
 
 故障排除
@@ -295,7 +293,7 @@ FreeRTOS 定时器
 .. list::
 
     - :ref:`使用中断分发法 <Using ESP_TIMER_ISR Callback Method>`。
-    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - 使用 Kconfig 选项 :menuitem:`CONFIG_ESP_TIMER_TASK_AFFINITY`，将 esp_timer 安装到负载较轻的 CPU 核上运行。
+    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - 使用 Kconfig 选项 :ref:`CONFIG_ESP_TIMER_TASK_AFFINITY`，将 esp_timer 安装到负载较轻的 CPU 核上运行。
 
 
 分发回调函数时延迟显著
@@ -315,7 +313,7 @@ FreeRTOS 定时器
 在分发回调函数时栈溢出
 ^^^^^^^^^^^^^^^^^^^^^^
 
-如果在执行回调函数时遇到栈溢出的错误，请考虑减少回调函数内的栈使用量；或者，尝试通过调整 :menuitem:`CONFIG_ESP_TIMER_TASK_STACK_SIZE` 来增加 ESP 定时器任务栈的大小。
+如果在执行回调函数时遇到栈溢出的错误，请考虑减少回调函数内的栈使用量；或者，尝试通过调整 :ref:`CONFIG_ESP_TIMER_TASK_STACK_SIZE` 来增加 ESP 定时器任务栈的大小。
 
 
 应用示例

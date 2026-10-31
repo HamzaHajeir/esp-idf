@@ -4,6 +4,7 @@ set(srcs "rtc_clk_init.c"
          "rtc_clk.c"
          "pmu_param.c"
          "pmu_init.c"
+         "pmu_sleep.c"
          "rtc_time.c"
          "chip_info.c"
          )

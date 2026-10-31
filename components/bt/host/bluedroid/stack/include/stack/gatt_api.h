@@ -1229,6 +1229,23 @@ extern BOOLEAN GATT_GetConnIdIfConnected(tGATT_IF gatt_if, BD_ADDR bd_addr,
 
 /*******************************************************************************
 **
+** Function         GATT_Listen
+**
+** Description      This function start or stop LE advertisement and listen for
+**                  connection.
+**
+** Parameters       gatt_if: application interface
+**                  p_bd_addr: listen for specific address connection, or NULL for
+**                             listen to all device connection.
+**                  start: is a direct connection or a background auto connection
+**
+** Returns          TRUE if advertisement is started; FALSE if adv start failure.
+**
+*******************************************************************************/
+extern BOOLEAN GATT_Listen (tGATT_IF gatt_if, BOOLEAN start, BD_ADDR_PTR bd_addr);
+
+/*******************************************************************************
+**
 ** Function         GATT_ConfigServiceChangeCCC
 **
 ** Description      Configure service change indication on remote device
@@ -1277,11 +1294,6 @@ extern tGATT_STATUS GATTS_HandleMultiValueNotification (UINT16 conn_id, tGATT_HL
 **
 *******************************************************************************/
 extern tGATT_STATUS GATTS_ShowLocalDatabase(void);
-
-#if (BLE_EATT_INCLUDED == TRUE)
-extern void GATT_EattSetChanNum(UINT8 num_chan);
-extern BOOLEAN GATT_EattSetDefaultBearer(UINT16 conn_id, UINT16 lcid);
-#endif
 
 #ifdef __cplusplus
 

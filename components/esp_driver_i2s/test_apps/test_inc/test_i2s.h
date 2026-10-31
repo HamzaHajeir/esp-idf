@@ -1,13 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
 
 #include "sdkconfig.h"
-#include "soc/soc_caps.h"
-#include "driver/i2s_std.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,7 +22,7 @@ extern "C" {
 #define SLAVE_WS_IO 22
 #define DATA_IN_IO 19
 #define DATA_OUT_IO 18
-#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32H4
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
 #define MASTER_MCK_IO 0
 #define MASTER_BCK_IO 4
 #define MASTER_WS_IO 5
@@ -83,9 +81,6 @@ extern "C" {
             .ws_inv = false,    \
         },                      \
     }
-
-void i2s_test_common_sample_rate(i2s_chan_handle_t rx_chan, i2s_std_clk_config_t *clk_cfg,
-                                 uint32_t error_divisor);
 
 #ifdef __cplusplus
 }

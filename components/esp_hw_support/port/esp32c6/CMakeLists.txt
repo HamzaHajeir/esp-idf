@@ -4,6 +4,7 @@ set(srcs "rtc_clk_init.c"
          "rtc_clk.c"
          "pmu_param.c"
          "pmu_init.c"
+         "pmu_sleep.c"
          "rtc_time.c"
          "chip_info.c"
          "ocode_init.c"
@@ -11,6 +12,7 @@ set(srcs "rtc_clk_init.c"
 
 if(NOT non_os_build)
     list(APPEND srcs "sar_periph_ctrl.c")
+
 endif()
 
 if(NOT BOOTLOADER_BUILD AND CONFIG_ESP_ENABLE_PVT)

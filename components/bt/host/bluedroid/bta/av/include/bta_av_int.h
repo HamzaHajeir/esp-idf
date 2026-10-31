@@ -133,7 +133,6 @@ enum {
 
 /* events for AV stream control block state machine */
 #define BTA_AV_FIRST_SSM_EVT    BTA_AV_API_OPEN_EVT
-#define BTA_AV_LAST_SSM_EVT     BTA_AV_ACP_CONNECT_EVT
 
 /* events that do not go through state machine */
 #define BTA_AV_FIRST_NSM_EVT    BTA_AV_API_ENABLE_EVT
@@ -145,8 +144,8 @@ enum {
 
 #define BTA_AV_LAST_EVT             BTA_AV_API_SET_DELAY_VALUE_EVT
 
-/* maximum number of SEPS in stream discovery results (keep in sync with AVDT) */
-#define BTA_AV_NUM_SEPS         AVDT_DIS_RES_MAX_NUM_SEPS
+/* maximum number of SEPS in stream discovery results */
+#define BTA_AV_NUM_SEPS         32
 
 /* initialization value for AVRC handle */
 #define BTA_AV_RC_HANDLE_NONE   0xFF
@@ -204,9 +203,7 @@ typedef struct {
     UINT8               tsep;
     tBTA_AV_CODEC       codec_type;
     UINT8               codec_info[AVDT_CODEC_SIZE];
-    /* one media callback per stream, so the upper layer can tell which
-     * connection a media packet arrived on */
-    tBTA_AV_DATA_CBACK *p_data_cback[BTA_AV_NUM_STRS];
+    tBTA_AV_DATA_CBACK *p_data_cback;
 } tBTA_AV_API_REG_SEP;
 
 enum {
@@ -364,11 +361,6 @@ typedef struct {
     UINT8               tsep;              /* SEP type of local SEP */
     tBTA_AV_DATA_CBACK  *p_app_data_cback; /* Application callback for media packets */
 } tBTA_AV_SEP;
-
-/* TRUE when the local stream endpoint of this SCB acts as an A2DP source. The
- * multi-stream auto-start logic mirrors one local source onto several peer sinks
- * and must not run when the local role is sink. */
-#define BTA_AV_LOCAL_IS_SRC(p_scb)  ((p_scb)->seps[(p_scb)->sep_idx].tsep == AVDT_TSEP_SRC)
 
 /* data type for BTA_AV_API_SET_DELAY_VALUE_EVT */
 typedef struct {
@@ -561,7 +553,6 @@ typedef struct {
     BOOLEAN             no_rtp_hdr;     /* TRUE if add no RTP header*/
     UINT8               disc_rsn;       /* disconnection reason */
     UINT16              uuid_int;       /*intended UUID of Initiator to connect to */
-    BOOLEAN             force_incoming; /* TRUE if stream SSM state is force-switched to INCOMING due to CONFIG_IND while in INIT, else FALSE */
 } tBTA_AV_SCB;
 
 #define BTA_AV_RC_ROLE_MASK     0x10
@@ -596,10 +587,7 @@ typedef struct {
     UINT16              cover_art_max_rx;       /* max packet length we can receive */
 #endif
 } tBTA_AV_RCB;
-/* One RCB per AVCTP CCB. AVRC_Open returns a CCB index, and bta_av_rc_create
- * rejects any handle >= BTA_AV_NUM_RCB, so this must not be smaller than
- * AVCT_NUM_CONN. */
-#define BTA_AV_NUM_RCB      AVCT_NUM_CONN
+#define BTA_AV_NUM_RCB      (BTA_AV_NUM_STRS  + 2)
 
 enum {
     BTA_AV_LCB_FREE,
@@ -689,7 +677,7 @@ extern tBTA_AV_CB *bta_av_cb_ptr;
 #endif
 
 /* config struct */
-extern const tBTA_AV_CFG *p_bta_av_cfg;
+extern tBTA_AV_CFG *p_bta_av_cfg;
 
 extern const tBTA_AV_SACT bta_av_a2d_action[];
 extern const tBTA_AV_SACT bta_av_vdp_action[];

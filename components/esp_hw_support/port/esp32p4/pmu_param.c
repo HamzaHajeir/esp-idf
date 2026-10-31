@@ -13,6 +13,7 @@
 #include "soc/pmu_icg_mapping.h"
 #include "esp_private/esp_pmu.h"
 #include "soc/clk_tree_defs.h"
+#include "hal/efuse_ll.h"
 #include "hal/efuse_hal.h"
 #include "esp_hw_log.h"
 
@@ -52,7 +53,7 @@ ESP_HW_LOG_ATTR_TAG(TAG, "pmu_param");
     .clk_power = {          \
         .i2c_iso_en    = 1, \
         .i2c_retention = 1, \
-        .xpd_pll_i2c   = 0xf, \
+        .xpd_pll_i2c   = 1, \
         .xpd_pll       = 0  \
     }, \
     .xtal = {               \
@@ -335,8 +336,8 @@ uint32_t get_act_hp_dbias(void)
     uint32_t hp_cali_dbias = HP_CALI_ACTIVE_DBIAS_DEFAULT;
     uint32_t blk_version = efuse_hal_blk_version();
     uint32_t hp_cali_dbias_efuse = 0;
-    if (blk_version >= 2 && blk_version != 100) {
-        hp_cali_dbias_efuse = pmu_ll_get_active_hp_dbias();
+    if (blk_version >= 2 && blk_version < 100) {
+        hp_cali_dbias_efuse = efuse_ll_get_active_hp_dbias();
     }
     if (hp_cali_dbias_efuse > 0) {
         hp_cali_dbias = hp_cali_dbias_efuse + 16;
@@ -356,8 +357,8 @@ uint32_t get_act_lp_dbias(void)
     uint32_t lp_cali_dbias = LP_CALI_ACTIVE_DBIAS_DEFAULT;
     uint32_t blk_version = efuse_hal_blk_version();
     uint32_t lp_cali_dbias_efuse = 0;
-    if (blk_version >= 2 && blk_version != 100) {
-        lp_cali_dbias_efuse = pmu_ll_get_active_lp_dbias();
+    if (blk_version >= 2 && blk_version < 100) {
+        lp_cali_dbias_efuse = efuse_ll_get_active_lp_dbias();
     }
     if (lp_cali_dbias_efuse > 0) {
         //efuse dbias need to add 4 to near to dcdc voltage

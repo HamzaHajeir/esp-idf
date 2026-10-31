@@ -1,10 +1,11 @@
 /**
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  *  SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
@@ -1172,10 +1173,10 @@ extern "C" {
 /** I2C_COMMAND0 : R/W; bitpos: [13:0]; default: 0;
  *  Configures command 0. It consists of three parts:
  *  op_code is the command,
- *  6: RSTART,
+ *  0: RSTART,
  *  1: WRITE,
- *  3: READ,
- *  2: STOP,
+ *  2: READ,
+ *  3: STOP,
  *  4: END.
  *
  *  Byte_num represents the number of bytes that need to be sent or received.

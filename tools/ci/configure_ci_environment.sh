@@ -17,13 +17,8 @@ DEBUG_SHELL=${DEBUG_SHELL:-"0"}
 # (Depends on default options '-Wno-error=XXX' used in the IDF build system)
 
 if [ "$IDF_TOOLCHAIN" != "clang" ]; then
-    PEDANTIC_FLAGS="-Werror \
-                    -Werror=deprecated-declarations \
-                    -Werror=unused-variable \
-                    -Werror=unused-function \
-                    -Werror=unused-but-set-variable"
-    export PEDANTIC_CFLAGS="${PEDANTIC_FLAGS} \
-                            -Wstrict-prototypes"
+    PEDANTIC_FLAGS="-Werror -Werror=deprecated-declarations -Werror=unused-variable -Werror=unused-but-set-variable -Werror=unused-function"
+    export PEDANTIC_CFLAGS="${PEDANTIC_FLAGS} -Wstrict-prototypes"
 else
     export PEDANTIC_CFLAGS="-Werror"
 fi
@@ -41,13 +36,9 @@ fi
 # https://ccache.dev/manual/latest.html#_configuring_ccache
 # Set ccache base directory to the project checkout path, to cancel out differences between runners
 export CCACHE_BASEDIR="${IDF_PATH}"
-export CCACHE_COMPILERCHECK="${CCACHE_COMPILERCHECK:-content}"
 
 # host mapping volume to share ccache fbetween runner concurrent jobs
-export CCACHE_SLOPPINESS="time_macros,file_macro,include_file_mtime,include_file_ctime"
-
-# Keep per-job statistics in the checkout directory while sharing the cache itself.
-export CCACHE_STATSLOG="${CCACHE_STATSLOG:-${IDF_PATH}/.ccache-stats.log}"
+export CCACHE_SLOPPINESS="time_macros"
 
 # CCACHE_RECACHE Used when invalidating the current cache.
 # could be enabled by MR label "ccache:recache"

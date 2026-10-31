@@ -30,7 +30,6 @@
 #include "stack/avdt_api.h"
 #include "stack/a2d_api.h"
 #include "bta/bta_api.h"
-#include "common/bt_target.h"
 
 #if (BTA_AV_INCLUDED == TRUE)
 
@@ -91,16 +90,13 @@ typedef UINT8 tBTA_AV_HNDL;
 
 
 
-/* maximum number of streams created: either 1 audio + 1 video, or 2 audio
- * streams when A2DP sink multi-connection is enabled */
+/* maximum number of streams created: 1 for audio, 1 for video */
 #ifndef BTA_AV_NUM_STRS
 #define BTA_AV_NUM_STRS         2
 #endif
 
-/* number of stream endpoints registered on a single stream control block, i.e.
- * the number of codecs exposed per connection */
 #ifndef BTA_AV_MAX_SEPS
-#define BTA_AV_MAX_SEPS         BTA_AV_SEPS_PER_STRS
+#define BTA_AV_MAX_SEPS         1
 #endif
 
 #ifndef BTA_AV_MAX_A2DP_MTU
@@ -271,17 +267,12 @@ typedef UINT8 tBTA_AV_GET_TYPE;
 #define BTA_AV_CA_STATUS_EVT    26  /* Cover Art Client status event */
 #define BTA_AV_CA_DATA_EVT      27  /* Cover Art response body data */
 
-/* Incoming stream configuration indication received while local stream SSM is in INIT state.
- * This is used to notify upper layers (BTC) that the stream state was force-switched to INCOMING
- * to handle the new signalling/configuration. */
-#define BTA_AV_INCOMING_CFG_EVT 28
-
 /* Max BTA event */
-#define BTA_AV_MAX_EVT          29
+#define BTA_AV_MAX_EVT          28
 
 
 /* function types for call-out functions */
-typedef BOOLEAN (*tBTA_AV_CO_INIT) (UINT8 seid, UINT8 *p_codec_type, UINT8 *p_codec_info,
+typedef BOOLEAN (*tBTA_AV_CO_INIT) (UINT8 *p_codec_type, UINT8 *p_codec_info,
                                     UINT8 *p_num_protect, UINT8 *p_protect_info, UINT8 tsep);
 typedef void (*tBTA_AV_CO_DISC_RES) (tBTA_AV_HNDL hndl, UINT8 num_seps,
                                      UINT8 num_snk, UINT8 num_src, BD_ADDR addr, UINT16 uuid_local);
@@ -511,10 +502,6 @@ typedef struct {
     UINT16          psc_mask;
 } tBTA_AV_SNK_PSC_CFG;
 
-/* data associated with BTA_AV_INCOMING_CFG_EVT */
-typedef struct {
-    BD_ADDR         bd_addr;
-} tBTA_AV_INCOMING;
 
 #if BTA_AV_CA_INCLUDED
 
@@ -560,7 +547,6 @@ typedef union {
     tBTA_AV_RC_FEAT     rc_feat;
     tBTA_AV_DELAY       delay;
     tBTA_AV_SNK_PSC_CFG psc;
-    tBTA_AV_INCOMING    incoming;
 #if BTA_AV_CA_INCLUDED
     tBTA_AV_CA_STATUS   ca_status;
     tBTA_AV_CA_DATA     ca_data;
@@ -680,10 +666,7 @@ void BTA_AvRegister(tBTA_AV_CHNL chnl, const char *p_service_name,
                     tBTA_AV_CO_FUNCTS *bta_av_cos, tBTA_AVRC_CO_FUNCTS *bta_avrc_cos,
                     UINT8 tsep);
 
-/* 'pp_data_cback' holds one media callback per stream, indexed by stream index,
- * so that the upper layer can tell which connection a media packet arrived on. */
-void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 idx, UINT8 tsep, tBTA_AV_CODEC codec_type,
-                  UINT8 *p_codec_info, tBTA_AV_DATA_CBACK * const *pp_data_cback);
+void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 idx, UINT8 tsep, tBTA_AV_CODEC codec_type, UINT8 *p_codec_info, tBTA_AV_DATA_CBACK *p_data_cback);
 
 /*******************************************************************************
 **
@@ -745,29 +728,27 @@ void BTA_AvEnable_Sink(int enable);
 
 /*******************************************************************************
 **
-** Function         BTA_AvStartByHndl
+** Function         BTA_AvStart
 **
-** Description      Start audio/video stream data transfer on the stream given by
-**                  handle. A handle of 0 addresses every registered stream.
+** Description      Start audio/video stream data transfer.
 **
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_AvStartByHndl(tBTA_AV_HNDL hndl);
+void BTA_AvStart(void);
 
 /*******************************************************************************
 **
-** Function         BTA_AvStopByHndl
+** Function         BTA_AvStop
 **
-** Description      Stop audio/video stream data transfer on the stream given by
-**                  handle. A handle of 0 addresses every registered stream.
+** Description      Stop audio/video stream data transfer.
 **                  If suspend is TRUE, this function sends AVDT suspend signal
-**                  to the connected peer.
+**                  to the connected peer(s).
 **
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_AvStopByHndl(tBTA_AV_HNDL hndl, BOOLEAN suspend);
+void BTA_AvStop(BOOLEAN suspend);
 
 /*******************************************************************************
 **

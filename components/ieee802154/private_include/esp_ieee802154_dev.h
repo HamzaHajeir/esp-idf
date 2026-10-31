@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -260,24 +260,6 @@ void ieee802154_exit_critical(void);
  *
  */
 bool ieee802154_mac_is_inited(void);
-
-/**
- * @brief  Disable the IEEE 802.15.4 MAC interrupt.
- *
- * @return
- *      - ESP_OK on success.
- *      - ESP_ERR_INVALID_ARG returned by esp_intr_disable().
- */
-esp_err_t ieee802154_intr_disable(void);
-
-/**
- * @brief  Enable the IEEE 802.15.4 MAC interrupt.
- *
- * @return
- *      - ESP_OK on success.
- *      - ESP_ERR_INVALID_ARG returned by esp_intr_enable().
- */
-esp_err_t ieee802154_intr_enable(void);
 
 #if CONFIG_IEEE802154_TEST
 #define IEEE802154_STATIC

@@ -55,7 +55,6 @@ static inline void spimem_flash_ll_reset(spi_mem_dev_t *dev)
  *
  * @return true if last command is done, otherwise false.
  */
-__attribute__((always_inline))
 static inline bool spimem_flash_ll_cmd_is_done(const spi_mem_dev_t *dev)
 {
     return (dev->cmd.val == 0);
@@ -263,7 +262,6 @@ static inline void spimem_flash_ll_set_write_protect(spi_mem_dev_t *dev, bool wp
  *
  * @param dev Beginning address of the peripheral registers.
  */
-__attribute__((always_inline))
 static inline void spimem_flash_ll_enter_dpd(spi_mem_dev_t *dev)
 {
     dev->cmd.flash_dp = 1;
@@ -274,7 +272,6 @@ static inline void spimem_flash_ll_enter_dpd(spi_mem_dev_t *dev)
  *
  * @param dev Beginning address of the peripheral registers.
  */
-__attribute__((always_inline))
 static inline void spimem_flash_ll_exit_dpd(spi_mem_dev_t *dev)
 {
     dev->cmd.flash_res = 1;
@@ -570,9 +567,7 @@ static inline void spimem_flash_ll_set_hold(spi_mem_dev_t *dev, uint32_t hold_n)
 static inline void spimem_flash_ll_set_cs_setup(spi_mem_dev_t *dev, uint32_t cs_setup_time)
 {
     dev->user.cs_setup = (cs_setup_time > 0 ? 1 : 0);
-    if (cs_setup_time > 0) {
-        dev->ctrl2.cs_setup_time = cs_setup_time - 1;
-    }
+    dev->ctrl2.cs_setup_time = cs_setup_time - 1;
 }
 
 /**

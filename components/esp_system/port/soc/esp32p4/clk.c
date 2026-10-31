@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,13 +21,11 @@
 #include "esp_cpu.h"
 #include "mspi_timing_tuning_configs.h"
 #include "hal/clk_gate_ll.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
+#include "esp_private/esp_modem_clock.h"
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_clk.h"
 #include "esp_private/esp_pmu.h"
-#include "esp_private/esp_cache_private.h"
 #include "esp_rom_serial_output.h"
 #include "esp_rom_sys.h"
 
@@ -51,22 +49,6 @@ void IRAM_ATTR esp_rtc_init(void)
 #endif  //SOC_PMU_SUPPORTED
 }
 
-/*
- * Perform the CPU frequency switch with the external memory (PSRAM) cache
- * suspended. The frequency switch stalls the HP_ROOT clock and toggles PLL /
- * clock gating; when the switch code runs from PSRAM-XIP, a cache-coherency
- * transient during the switch can corrupt the external .bss region. Suspending
- * the external-memory cache for the duration of the switch keeps the CPU off
- * the XIP path, isolating the two.
- * Must be IRAM-resident because it runs while the external cache is suspended.
- */
-static void IRAM_ATTR esp_clk_cpu_freq_set_config_isolated(const rtc_cpu_freq_config_t *config)
-{
-    esp_cache_suspend_ext_mem_cache();
-    rtc_clk_cpu_freq_set_config(config);
-    esp_cache_resume_ext_mem_cache();
-}
-
 __attribute__((weak)) void esp_clk_init(void)
 {
     assert(rtc_clk_xtal_freq_get() == SOC_XTAL_FREQ_40M);
@@ -83,7 +65,7 @@ __attribute__((weak)) void esp_clk_init(void)
 #error "No RTC fast clock source configured"
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
     // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
@@ -104,7 +86,7 @@ __attribute__((weak)) void esp_clk_init(void)
     select_rtc_slow_clk(SOC_RTC_SLOW_CLK_SRC_RC_SLOW);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // After changing a frequency WDT timeout needs to be set for new frequency.
     stage_timeout_ticks = (uint32_t)((uint64_t)CONFIG_BOOTLOADER_WDT_TIME_MS * rtc_clk_slow_freq_get_hz() / 1000);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -128,7 +110,7 @@ __attribute__((weak)) void esp_clk_init(void)
     }
 
     if (res)  {
-        esp_clk_cpu_freq_set_config_isolated(&new_config);
+        rtc_clk_cpu_freq_set_config(&new_config);
     }
 
     // Re calculate the ccount to make time calculation correct.
@@ -155,8 +137,11 @@ static void select_rtc_slow_clk(soc_rtc_slow_clk_src_t rtc_slow_clk_src)
              * will time out, returning 0.
              */
             ESP_EARLY_LOGD(TAG, "waiting for 32k oscillator to start up");
-            rtc_clk_32k_enable(true);
-            soc_clk_freq_calculation_src_t cal_sel = CLK_CAL_32K_XTAL;
+            soc_clk_freq_calculation_src_t cal_sel = -1;
+            if (rtc_slow_clk_src == SOC_RTC_SLOW_CLK_SRC_XTAL32K) {
+                rtc_clk_32k_enable(true);
+                cal_sel = CLK_CAL_32K_XTAL;
+            }
             // When SLOW_CLK_CAL_CYCLES is set to 0, clock calibration will not be performed at startup.
             if (SLOW_CLK_CAL_CYCLES > 0) {
                 cal_val = rtc_clk_cal(cal_sel, SLOW_CLK_CAL_CYCLES);

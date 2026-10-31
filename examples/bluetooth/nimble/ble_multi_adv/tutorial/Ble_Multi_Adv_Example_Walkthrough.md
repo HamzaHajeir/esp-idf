@@ -9,6 +9,7 @@ In this tutorial, the ble_multi_adv example code for the espressif chipsets with
 This example is located in the examples folder of the ESP-IDF under the [ble_multi_adv/main](../main/). The [main.c](../main/main.c) file located in the main folder contains all the functionality that we are going to review. The header files contained in [main.c](../main/main.c) are:
 
 ```c
+#include "esp_log.h"
 #include "nvs_flash.h"
 
 /* BLE */
@@ -16,6 +17,7 @@ This example is located in the examples folder of the ESP-IDF under the [ble_mul
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
+#include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "multi_adv.h"
 ```
@@ -36,6 +38,8 @@ The program’s entry point is the app_main() function:
 void
 app_main(void)
 {
+    int rc;
+
     /* Initialize NVS — it is used to store PHY calibration data */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -46,9 +50,10 @@ app_main(void)
 
     ret = nimble_port_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(tag, "Failed to init nimble %d ", ret);
+        MODLOG_DFLT(ERROR, "Failed to init nimble %d \n", ret);
         return;
     }
+
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = ble_multi_adv_on_reset;
     ble_hs_cfg.sync_cb = ble_multi_adv_on_sync;
@@ -57,7 +62,8 @@ app_main(void)
 
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 1;
-    ble_hs_cfg.sm_sc = 1;
+    ble_hs_cfg.sm_sc = 0;
+
     /* Enable the appropriate bit masks to make sure the keys
      * that are needed are exchanged
      */
@@ -69,17 +75,12 @@ app_main(void)
         ble_instance_cb[i].cb = NULL;
     }
 
-#if MYNEWT_VAL(BLE_GATTS)
-    int rc;
     rc = gatt_svr_init();
     assert(rc == 0);
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("nimble-multi-adv");
     assert(rc == 0);
-#endif
-#endif
 
     /* XXX Need to have template for store */
     ble_store_config_init();
@@ -171,7 +172,8 @@ The Security Manager is configured by setting up the following SM's flag and att
 ```c
  ble_hs_cfg.sm_bonding = 1;
  ble_hs_cfg.sm_mitm = 1;
- ble_hs_cfg.sm_sc = 1;
+ ble_hs_cfg.sm_sc = 0;
+
 /* Enable the appropriate bit masks to make sure the keys
  * that are needed are exchanged
  */
@@ -179,12 +181,10 @@ The Security Manager is configured by setting up the following SM's flag and att
  ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC;
 ```
 
-The main function calls `ble_svc_gap_device_name_set()` to set the default device name. 'nimble-multi-adv' is passed as the default device name to this function. This is wrapped with `CONFIG_BT_NIMBLE_GAP_SERVICE` guard as the GAP service may be disabled.
+The main function calls `ble_svc_gap_device_name_set()` to set the default device name. 'nimble-multi-adv' is passed as the default device name to this function.
 
 ```c
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
 rc = ble_svc_gap_device_name_set("nimble-multi-adv");
-#endif
 ```
 
 main function calls  `ble_store_config_init()` to configure the host by setting up the storage callbacks that handle the read, write, and deletion of security material.
@@ -218,7 +218,7 @@ It provides the following benefits over legacy advertisement.
 * Non connectable extended
 * Connectable extended
 * Scannable legacy
-* Legacy with specified duration(5 sec)
+* Legacy withe specified duration(5 sec)
 
 For each instance:
 * A random address is generated which is associated with the advertising instance

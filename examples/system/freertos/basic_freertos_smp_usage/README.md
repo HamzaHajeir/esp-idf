@@ -1,5 +1,5 @@
-| Supported Targets | ESP32-C3 | ESP32-S3 | Linux |
-| ----------------- | -------- | -------- | ----- |
+| Supported Targets | ESP32-C3 | ESP32-S3 |
+| ----------------- | -------- | -------- |
 
 # FreeRTOS basic API SMP usages Example
 

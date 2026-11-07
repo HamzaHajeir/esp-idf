@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import os
 
@@ -10,6 +10,7 @@ PROMPT = 'test_intr_dump>'
 
 
 @pytest.mark.qemu
+@pytest.mark.host_test
 @idf_parametrize('target', ['esp32'], indirect=['target'])
 def test_esp_intr_dump_nonshared(dut: Dut) -> None:
     dut.expect_exact(PROMPT, timeout=30)
@@ -23,6 +24,7 @@ def test_esp_intr_dump_nonshared(dut: Dut) -> None:
 
 
 @pytest.mark.qemu
+@pytest.mark.host_test
 @idf_parametrize('target', ['esp32'], indirect=['target'])
 def test_esp_intr_dump_shared(dut: Dut) -> None:
     dut.expect_exact(PROMPT, timeout=30)
@@ -45,11 +47,12 @@ def test_esp_intr_dump_shared(dut: Dut) -> None:
     dut.expect_exact(PROMPT)
 
 
+# TODO: IDF-9512, Update the expected output of dual core RISC-V chips when the issue is resolved
 @pytest.mark.generic
 @idf_parametrize('target', ['supported_targets'], indirect=['target'])
 def test_esp_intr_dump_expected_output(dut: Dut) -> None:
     dut.expect_exact(PROMPT, timeout=30)
     dut.write('intr_dump\n')
     exp_out_file = os.path.join(os.path.dirname(__file__), 'expected_output', f'{dut.target}.txt')
-    for line in open(exp_out_file).readlines():
+    for line in open(exp_out_file, 'r').readlines():
         dut.expect_exact(line.strip())

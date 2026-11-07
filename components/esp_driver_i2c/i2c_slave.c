@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,26 +8,27 @@
 #include <stdbool.h>
 #include <string.h>
 #include "sdkconfig.h"
+#include "soc/soc_caps.h"
+#include "esp_attr.h"
+#include "esp_rom_gpio.h"
+#include "driver/gpio.h"
+#include "hal/gpio_ll.h"
+#include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/ringbuf.h"
+#include "esp_intr_alloc.h"
+#include "hal/i2c_ll.h"
+#include "i2c_private.h"
+#include "driver/i2c_slave.h"
+#include "esp_memory_utils.h"
 #if CONFIG_I2C_ENABLE_DEBUG_LOG
 // The local log level must be defined before including esp_log.h
 // Set the maximum log level for this source file
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #endif
-#include "esp_check.h"
-#include "esp_err.h"
 #include "esp_log.h"
-#include "esp_intr_alloc.h"
-#include "esp_heap_caps.h"
-#include "esp_memory_utils.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/ringbuf.h"
-#include "driver/gpio.h"
-#include "soc/soc_caps.h"
-#include "hal/i2c_ll.h"
-#include "hal/i2c_periph.h"
-#include "driver/i2c_slave.h"
-#include "i2c_private.h"
+#include "esp_check.h"
 
 static const char *TAG = "i2c.slave";
 
@@ -91,7 +92,7 @@ IRAM_ATTR static bool i2c_slave_handle_tx_fifo(i2c_slave_dev_t *i2c_slave)
 IRAM_ATTR static bool i2c_slave_handle_rx_fifo(i2c_slave_dev_t *i2c_slave, uint32_t len)
 {
     i2c_hal_context_t *hal = &i2c_slave->base->hal;
-    uint8_t data[I2C_LL_GET(FIFO_LEN)];
+    uint8_t data[SOC_I2C_FIFO_LEN];
     BaseType_t xTaskWoken = pdFALSE;
     xSemaphoreTakeFromISR(i2c_slave->operation_mux, &xTaskWoken);
     if (len) {
@@ -182,7 +183,7 @@ IRAM_ATTR static void i2c_slave_isr_handler(void *arg)
         if (slave_rw == I2C_SLAVE_READ_BY_MASTER) {
 #if !SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE
             i2c_slave_request_event_data_t evt_data = {};
-            if (i2c_slave->request_callback && i2c_ll_slave_wait_ack(hal->dev)) {
+            if (i2c_slave->request_callback) {
                 pxHigherPriorityTaskWoken |= i2c_slave->request_callback(i2c_slave, &evt_data, i2c_slave->user_ctx);
             }
 #endif
@@ -219,11 +220,6 @@ static esp_err_t i2c_slave_device_destroy(i2c_slave_dev_handle_t i2c_slave)
         i2c_ll_disable_intr_mask(i2c_slave->base->hal.dev, I2C_LL_SLAVE_EVENT_INTR);
         i2c_common_deinit_pins(i2c_slave->base);
         ret = i2c_release_bus_handle(i2c_slave->base);
-        if (ret != ESP_OK) {
-            // Non-OK here means interrupt teardown did not complete, so the ISR
-            // may still reference i2c_slave and its wrapper-owned resources.
-            return ret;
-        }
     }
     if (i2c_slave->rx_ring_buf) {
         vRingbufferDeleteWithCaps(i2c_slave->rx_ring_buf);
@@ -310,8 +306,7 @@ esp_err_t i2c_new_slave_device(const i2c_slave_config_t *slave_config, i2c_slave
     i2c_ll_set_slave_addr(hal->dev, slave_config->slave_addr, false);
     i2c_ll_set_tout(hal->dev, I2C_LL_MAX_TIMEOUT);
 
-    ESP_GOTO_ON_ERROR(i2c_select_periph_clock(i2c_slave->base, slave_config->clk_source), err, TAG, "select periph clock failed");
-    PERIPH_RCC_ATOMIC() {
+    I2C_CLOCK_SRC_ATOMIC() {
         i2c_ll_set_source_clk(hal->dev, slave_config->clk_source);
     }
     bool addr_10bit_en = slave_config->addr_bit_len != I2C_ADDR_BIT_LEN_7;
@@ -321,8 +316,8 @@ esp_err_t i2c_new_slave_device(const i2c_slave_config_t *slave_config, i2c_slave
     i2c_ll_slave_broadcast_enable(hal->dev, slave_config->flags.broadcast_en);
 #endif
 
-    i2c_ll_set_txfifo_empty_thr(hal->dev, I2C_LL_GET(FIFO_LEN) / 2);
-    i2c_ll_set_rxfifo_full_thr(hal->dev, I2C_LL_GET(FIFO_LEN) / 2);
+    i2c_ll_set_txfifo_empty_thr(hal->dev, SOC_I2C_FIFO_LEN / 2);
+    i2c_ll_set_rxfifo_full_thr(hal->dev, SOC_I2C_FIFO_LEN / 2);
     i2c_ll_set_sda_timing(hal->dev, 10, 10);
 
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
@@ -384,7 +379,7 @@ esp_err_t i2c_slave_write(i2c_slave_dev_handle_t i2c_slave, const uint8_t *data,
     i2c_ll_slave_disable_tx_it(hal->dev);
     uint32_t txfifo_len = 0;
     i2c_ll_get_txfifo_len(hal->dev, &txfifo_len);
-    if (txfifo_len < I2C_LL_GET(FIFO_LEN)) {
+    if (txfifo_len < SOC_I2C_FIFO_LEN) {
         // For the target (esp32) cannot stretch, reset the fifo when there is any dirty data in fifo.
         i2c_ll_txfifo_rst(hal->dev);
     }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,10 +8,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
+#include <esp_types.h>
 #include "sdkconfig.h"
+#include "esp_attr.h"
+#include "esp_log.h"
+#include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
-#include "esp_intr_alloc.h"
 #include "esp_cam_ctlr_csi.h"
 #include "hal/mipi_csi_hal.h"
 #include "hal/mipi_csi_types.h"
@@ -47,9 +50,8 @@ struct csi_controller_t {
     mipi_csi_hal_context_t      hal;                //hal context
     csi_fsm_t                   csi_fsm;            //driver fsm
     portMUX_TYPE                spinlock;           //spinlock
-    cam_ctlr_color_t            in_color_format;    //input color format
-    cam_ctlr_color_t            out_color_format;   //output color format
-    uint32_t                    custom_data_depth;  //custom data depth, bits per pixel
+    color_space_pixel_format_t  in_color_format;    //input color format
+    color_space_pixel_format_t  out_color_format;   //output color format
     uint32_t                    h_res;              //input horizontal resolution
     uint32_t                    v_res;              //input vertical resolution
     int                         in_bpp;             //input data type, bit per pixel
@@ -64,7 +66,6 @@ struct csi_controller_t {
     void                        *cbs_user_data;     //callback userdata
     dw_gdma_channel_handle_t    dma_chan;           //dwgdma channel handle
     size_t                      csi_transfer_size;  //csi transfer size for dwgdma
-    intr_handle_t               intr_handle;        //csi host error interrupt handle
 #if CONFIG_PM_ENABLE
     esp_pm_lock_handle_t        pm_lock;            //Power management lock
 #endif

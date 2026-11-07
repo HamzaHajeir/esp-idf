@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -158,8 +158,8 @@ extern "C" {
 #define IEEE802154_ED_RSS_S 16
 #define IEEE802154_CCA_MODE 0x00000003
 #define IEEE802154_CCA_MODE_S 14
-#define IEEE802154_ED_POWER_SEL_MODE (BIT(13))
-#define IEEE802154_ED_POWER_SEL_MODE_S 13
+#define IEEE802154_DIS_ED_POWER_SEL (BIT(13))
+#define IEEE802154_DIS_ED_POWER_SEL_S 13
 #define IEEE802154_ED_SAMPLE_MODE 0x00000003
 #define IEEE802154_ED_SAMPLE_MODE_S 11
 #define IEEE802154_CCA_ED_THRESHOLD 0x000000FF
@@ -582,11 +582,11 @@ extern "C" {
 
 #define ETM_CH_OFFSET 0x08
 
-#define ETM_EVENT_TIMER1_OVERFLOW  89
-#define ETM_EVENT_TIMER0_OVERFLOW  90
-#define ETM_TASK_ED_TRIG_TX        93
-#define ETM_TASK_RX_START          94
-#define ETM_TASK_TX_START          97
+#define ETM_EVENT_TIMER1_OVERFLOW  58
+#define ETM_EVENT_TIMER0_OVERFLOW  59
+#define ETM_TASK_ED_TRIG_TX        65
+#define ETM_TASK_RX_START          66
+#define ETM_TASK_TX_START          69
 
 #ifdef __cplusplus
 }

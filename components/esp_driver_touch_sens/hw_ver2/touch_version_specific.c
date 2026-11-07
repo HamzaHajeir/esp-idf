@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -53,107 +53,97 @@ void touch_priv_enable_module(bool enable)
 
 void IRAM_ATTR touch_priv_default_intr_handler(void *arg)
 {
-    touch_sensor_handle_t sens_handle = arg;
-    sens_handle->is_meas_timeout = false;
-
-    uint32_t intr_status = touch_ll_get_intr_status_mask();
-    touch_ll_interrupt_clear(intr_status);
-
-    touch_base_event_data_t data = {};
-    touch_ll_get_active_channel_mask(&data.status_mask);
-
-    const uint32_t curr_ch = touch_ll_get_current_meas_channel();
-
+    /* If the touch controller object has not been allocated, return directly */
+    if (!g_touch) {
+        return;
+    }
     bool need_yield = false;
-    /**
-     * The active/inactive callbacks are invoked for each channel whose state changes.
-     */
-    if (intr_status & (TOUCH_LL_INTR_MASK_ACTIVE | TOUCH_LL_INTR_MASK_INACTIVE)) {
-        TOUCH_ENTER_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
-        uint32_t prev_mask = sens_handle->active_status_mask;
-        uint32_t curr_mask = data.status_mask;
-        uint32_t became_active = curr_mask & ~prev_mask;
-        uint32_t became_inactive = prev_mask & ~curr_mask;
-        if (intr_status & TOUCH_LL_INTR_MASK_ACTIVE) {
-            sens_handle->active_status_mask |= became_active;
-            /* When the guard ring activated, disable the scanning of other channels to avoid fake touch */
-            if (sens_handle->waterproof_en && sens_handle->guard_chan &&
-                    (became_active & BIT(sens_handle->guard_chan->id))) {
-                touch_ll_enable_scan_mask(~BIT(sens_handle->guard_chan->id), false);
-            }
-        }
-        if (intr_status & TOUCH_LL_INTR_MASK_INACTIVE) {
-            sens_handle->active_status_mask &= ~became_inactive;
-            /* When the guard ring inactivated, enable the scanning of other channels again */
-            if (sens_handle->waterproof_en && sens_handle->guard_chan &&
-                    (became_inactive & BIT(sens_handle->guard_chan->id))) {
-                touch_ll_enable_scan_mask(sens_handle->chan_mask & (~BIT(sens_handle->shield_chan->id)), true);
-            }
-        }
-        TOUCH_EXIT_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
-        if (intr_status & TOUCH_LL_INTR_MASK_ACTIVE) {
-            need_yield |= touch_priv_invoke_state_callbacks(sens_handle, &data, became_active, sens_handle->cbs.on_active);
-        }
-        if (intr_status & TOUCH_LL_INTR_MASK_INACTIVE) {
-            need_yield |= touch_priv_invoke_state_callbacks(sens_handle, &data, became_inactive, sens_handle->cbs.on_inactive);
-        }
+    uint32_t status = touch_ll_get_intr_status_mask();
+    g_touch->is_meas_timeout = false;
+    touch_ll_interrupt_clear(status);
+    touch_base_event_data_t data;
+    touch_ll_get_active_channel_mask(&data.status_mask);
+    uint32_t curr_chan = touch_ll_get_current_meas_channel();
+    if (curr_chan == 0) {
+        return;
     }
-
-    /**
-     * The remaining callbacks are invoked for the channel currently being measured.
-     */
-    if (!TOUCH_IS_CHAN_ID_VALID(curr_ch) || !sens_handle->ch[curr_ch - TOUCH_MIN_CHAN_ID]) {
-        goto exit;
+    /* It actually won't be out of range in the real environment, but limit the range to pass the coverity check */
+    uint32_t curr_chan_offset = (curr_chan >= TOUCH_LL_GET(CHAN_NUM) ? TOUCH_LL_GET(CHAN_NUM) - 1 : curr_chan) - TOUCH_MIN_CHAN_ID;
+    data.chan = g_touch->ch[curr_chan_offset];
+    /* If the channel is not registered, return directly */
+    if (!data.chan) {
+        return;
     }
-    data.chan = sens_handle->ch[curr_ch - TOUCH_MIN_CHAN_ID];
     data.chan_id = data.chan->id;
-    if (intr_status & TOUCH_LL_INTR_MASK_DONE) {
+
+    if (status & TOUCH_LL_INTR_MASK_DONE) {
 #if !TOUCH_LL_SUPPORT_PROX_DONE
         /* For the target like ESP32-S2 that don't support proximity done interrupt,
            Simulate the interrupt by software by judge the scan times. */
         if (data.chan->prox_id > 0 &&
                 touch_ll_proximity_get_total_scan_times() == touch_ll_proximity_get_curr_scan_cnt(data.chan_id)) {
             /* Set the proximity scan done flag to simulate a proximity done interrupt */
-            intr_status |= TOUCH_LL_INTR_MASK_PROX_DONE;
+            status |= TOUCH_LL_INTR_MASK_PROX_DONE;
         }
 #endif
-        if (sens_handle->cbs.on_measure_done) {
-            need_yield |= sens_handle->cbs.on_measure_done(sens_handle, &data, sens_handle->user_ctx);
+        if (g_touch->cbs.on_measure_done) {
+            need_yield |= g_touch->cbs.on_measure_done(g_touch, &data, g_touch->user_ctx);
         }
     }
-    if (intr_status & TOUCH_LL_INTR_MASK_SCAN_DONE) {
+    if (status & TOUCH_LL_INTR_MASK_SCAN_DONE) {
 #if CONFIG_IDF_TARGET_ESP32S2
         /* Workaround for the fake scan done interrupt.
            (Only happens when both channel 13 and 14 are enabled)
            The scan done interrupt will be triggered twice for channel 13 and 14,
            but we only hope it be triggered after channel 14 measurement done. */
-        bool fake_scan_done = data.chan_id == 13 && (sens_handle->chan_mask >> 13 == 0x03);
-        if (sens_handle->cbs.on_scan_done && !fake_scan_done)
+        bool fake_scan_done = data.chan_id == 13 && (g_touch->chan_mask >> 13 == 0x03);
+        if (g_touch->cbs.on_scan_done && !fake_scan_done)
 #else
-        if (sens_handle->cbs.on_scan_done)
+        if (g_touch->cbs.on_scan_done)
 #endif
         {
-            need_yield |= sens_handle->cbs.on_scan_done(sens_handle, &data, sens_handle->user_ctx);
+            need_yield |= g_touch->cbs.on_scan_done(g_touch, &data, g_touch->user_ctx);
         }
     }
-    if (intr_status & TOUCH_LL_INTR_MASK_PROX_DONE) {
+    if (status & TOUCH_LL_INTR_MASK_PROX_DONE) {
         /* Accumulated proximity sensing data is stored in the benchmark data register.
            Read it out to latch the last proximity sensing data. */
         touch_ll_read_chan_data(data.chan_id, TOUCH_LL_READ_BENCHMARK, &data.chan->prox_val[0]);
         // TODO: support to judge by software if the proximity channel triggered
-        if (sens_handle->cbs.on_proximity_meas_done) {
-            need_yield |= sens_handle->cbs.on_proximity_meas_done(sens_handle, &data, sens_handle->user_ctx);
+        if (g_touch->cbs.on_proximity_meas_done) {
+            need_yield |= g_touch->cbs.on_proximity_meas_done(g_touch, &data, g_touch->user_ctx);
         }
     }
-    if (intr_status & TOUCH_LL_INTR_MASK_TIMEOUT) {
-        sens_handle->is_meas_timeout = true;
+    if (status & TOUCH_LL_INTR_MASK_ACTIVE) {
+        /* When the guard ring activated, disable the scanning of other channels to avoid fake touch */
+        TOUCH_ENTER_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
+        if (g_touch->waterproof_en && data.chan == g_touch->guard_chan) {
+            touch_ll_enable_scan_mask(~BIT(data.chan->id), false);
+        }
+        TOUCH_EXIT_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
+        if (g_touch->cbs.on_active) {
+            need_yield |= g_touch->cbs.on_active(g_touch, &data, g_touch->user_ctx);
+        }
+    }
+    if (status & TOUCH_LL_INTR_MASK_INACTIVE) {
+        /* When the guard ring inactivated, enable the scanning of other channels again */
+        TOUCH_ENTER_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
+        if (g_touch->waterproof_en && data.chan == g_touch->guard_chan) {
+            touch_ll_enable_scan_mask(g_touch->chan_mask & (~BIT(g_touch->shield_chan->id)), true);
+        }
+        TOUCH_EXIT_CRITICAL_SAFE(TOUCH_PERIPH_LOCK);
+        if (g_touch->cbs.on_inactive) {
+            need_yield |= g_touch->cbs.on_inactive(g_touch, &data, g_touch->user_ctx);
+        }
+    }
+    if (status & TOUCH_LL_INTR_MASK_TIMEOUT) {
+        g_touch->is_meas_timeout = true;
         touch_ll_force_done_curr_measurement();
-        if ((sens_handle->cbs.on_timeout)) {
-            need_yield |= sens_handle->cbs.on_timeout(sens_handle, &data, sens_handle->user_ctx);
+        if ((g_touch->cbs.on_timeout)) {
+            need_yield |= g_touch->cbs.on_timeout(g_touch, &data, g_touch->user_ctx);
         }
     }
 
-exit:
     if (need_yield) {
         portYIELD_FROM_ISR();
     }
@@ -236,11 +226,9 @@ esp_err_t touch_priv_deinit_controller(touch_sensor_handle_t sens_handle)
     if (sens_handle->proximity_en) {
         touch_sensor_config_proximity_sensing(sens_handle, NULL);
     }
-#if SOC_TOUCH_SUPPORT_SLEEP_WAKEUP
     if (sens_handle->sleep_en) {
         touch_sensor_config_sleep_wakeup(sens_handle, NULL);
     }
-#endif
     if (sens_handle->waterproof_en) {
         touch_sensor_config_waterproof(sens_handle, NULL);
     }

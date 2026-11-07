@@ -1,73 +1,73 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: CC0-1.0
  */
 
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include <string.h>
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
+#include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
+#include "periodic_adv.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs_adv.h"
 #include "cte_config.h"
 
 /* Global constants */
 static const char *TAG = "CTE_ADV_EXAMPLE";
-static char adv_device_name[32] = "CTE_Periodic_Adv";
-static uint8_t s_periodic_adv_raw_data[] = {0x0D, BLE_HS_ADV_TYPE_COMP_NAME, 'C','T','E',' ','P','e','r','i','o','d','i','c'};
+static uint8_t s_periodic_adv_raw_data[] = {0x0D, 0x09, 'C','T','E',' ','P','e','r','i','o','d','i','c'};
 
-#if !(MYNEWT_VAL(BLE_EXT_ADV) && MYNEWT_VAL(BLE_PERIODIC_ADV) && MYNEWT_VAL(BLE_AOA_AOD))
-#error "This example requires NimBLE Extended Advertising, Periodic Advertising, and CTE (AoA/AoD). " \
-       "Use a supported target from README.md (e.g. esp32h2, esp32c5, esp32c61) and run idf.py set-target before build."
+/* Configuration based on Kconfig settings */
+#if CONFIG_EXAMPLE_RANDOM_ADDR
+static uint8_t s_own_addr_type = BLE_OWN_ADDR_RANDOM;
+#else
+static uint8_t s_own_addr_type;
 #endif
+
 
 /**
  * @brief Configure and start periodic advertising with CTE
  */
-static void start_periodic_adv_cte(uint8_t own_addr_type)
+static void start_periodic_adv_cte(void)
 {
     int rc;
-    uint8_t instance = 0;
+    uint8_t instance = 1;
     ble_addr_t addr;
-    uint8_t addr_type = own_addr_type == BLE_OWN_ADDR_RANDOM ? BLE_ADDR_RANDOM : BLE_ADDR_PUBLIC;
 
-    rc = ble_hs_id_copy_addr(addr_type, addr.val, NULL);
+    /* Generate random address for instance */
+    rc = ble_hs_id_gen_rnd(1, &addr);
     assert(rc == 0);
 
     ESP_LOGI(TAG, "Device Address: ");
-    ESP_LOGI(TAG, "Bluetooth MAC: %02x:%02x:%02x:%02x:%02x:%02x",
-             addr.val[5], addr.val[4], addr.val[3], addr.val[2], addr.val[1], addr.val[0]);
+    ESP_LOGI(TAG, "%02x:%02x:%02x:%02x:%02x:%02x",
+                   addr.val[5], addr.val[4], addr.val[3], addr.val[2], addr.val[1], addr.val[0]);
 
     /* Configure extended advertising parameters */
     struct ble_gap_ext_adv_params ext_adv_params = {
-        .own_addr_type = own_addr_type,
+        .own_addr_type = BLE_OWN_ADDR_RANDOM,
         .primary_phy = BLE_HCI_LE_PHY_1M,
         .secondary_phy = BLE_HCI_LE_PHY_1M,
         .sid = 2,
-        .tx_power = 0x7f
+        .tx_power = 0
     };
 
     rc = ble_gap_ext_adv_configure(instance, &ext_adv_params, NULL, NULL, NULL);
     assert(rc == 0);
 
+    rc = ble_gap_ext_adv_set_addr(instance, &addr);
+    assert(rc == 0);
+
     /* Configure advertising data */
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(adv_device_name, esp_ble_cte_get_example_name(), sizeof(adv_device_name) - 1);
-    adv_device_name[sizeof(adv_device_name) - 1] = '\0';
-    ESP_LOGI(TAG, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             adv_device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID, CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
+    struct ble_hs_adv_fields adv_fields = {
+        .name = (const uint8_t *)"CTE_Periodic_Adv",
+        .name_len = strlen((char *)adv_fields.name)
+    };
 
-    struct ble_hs_adv_fields adv_fields = {0};
-    adv_fields.name = (const uint8_t *)adv_device_name;
-    adv_fields.name_len = strlen(adv_device_name);
-
-    struct os_mbuf *data = os_msys_get_pkthdr(BLE_HS_ADV_MAX_FIELD_SZ, 0);
+    struct os_mbuf *data = os_msys_get_pkthdr(BLE_HCI_MAX_ADV_DATA_LEN, 0);
     assert(data);
 
     rc = ble_hs_adv_set_fields_mbuf(&adv_fields, data);
@@ -79,8 +79,8 @@ static void start_periodic_adv_cte(uint8_t own_addr_type)
     /* Configure periodic advertising parameters */
     struct ble_gap_periodic_adv_params pparams = {
         .include_tx_power = 0,
-        .itvl_min = BLE_GAP_PERIODIC_ITVL_MS(200),
-        .itvl_max = BLE_GAP_PERIODIC_ITVL_MS(400)
+        .itvl_min = BLE_GAP_ADV_ITVL_MS(200),
+        .itvl_max = BLE_GAP_ADV_ITVL_MS(400)
     };
 
     rc = ble_gap_periodic_adv_configure(instance, &pparams);
@@ -98,15 +98,11 @@ static void start_periodic_adv_cte(uint8_t own_addr_type)
 
     /* Configure CTE parameters */
 #if defined(CONFIG_EXAMPLE_ADV_DIRECTION_FINDING_AOA)
-    /* Configure CTE parameters for AoA (receiver does antenna switching).
-     * A minimal switching pattern is provided to satisfy the NimBLE host
-     * API; the controller ignores it for AoA transmissions. */
+    /* Configure CTE parameters */
     struct ble_gap_periodic_adv_cte_params cte_params = {
         .cte_length = 0x14,
         .cte_type = BLE_CTE_TYPE_AOA,
         .cte_count = 1,
-        .switching_pattern_length = 2,
-        .antenna_ids = (uint8_t[]){0, 0},
     };
 #elif defined(CONFIG_EXAMPLE_ADV_DIRECTION_FINDING_AOD)
     struct ble_gap_periodic_adv_cte_params cte_params = {
@@ -155,19 +151,27 @@ static void periodic_adv_on_reset(int reason)
 static void periodic_sync_cb(void)
 {
     int rc;
-    uint8_t own_addr_type;
 #if CONFIG_EXAMPLE_RANDOM_ADDR
+    ble_addr_t addr;
+    if (ble_hs_id_gen_rnd(0, &addr) == 0) {
+        ble_hs_id_set_rnd(addr.val);
+    }
+    /* Ensure proper identity address */
     rc = ble_hs_util_ensure_addr(1);
 #else
     rc = ble_hs_util_ensure_addr(0);
 #endif
     assert(rc == 0);
 
-    rc = ble_hs_id_infer_auto(0, &own_addr_type);
-    assert(rc == 0);
+    /* Infer address type */
+    rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "Failed to infer address type (rc=%d)", rc);
+        return;
+    }
 
     /* Start advertising */
-    start_periodic_adv_cte(own_addr_type);
+    start_periodic_adv_cte();
 }
 
 /**
@@ -206,12 +210,7 @@ void app_main(void)
     ESP_LOGI(TAG, "%s", direction_finding_logo);
 #if defined(CONFIG_EXAMPLE_ADV_DIRECTION_FINDING_AOD)
     ESP_LOGI(TAG, "DIRECTION_FINDING Example Periodic Adv AOD Mode");
-    rc = ble_direction_finding_antenna_init(antenna_use_gpio, CONFIG_EXAMPLE_ANT_GPIO_BIT_COUNT);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "Antenna init failed; rc=%d", rc);
-        nimble_port_deinit();
-        return;
-    }
+    ble_direction_finding_antenna_init(antenna_use_gpio,CONFIG_EXAMPLE_AOD_GPIO_BIT_COUNT);
 #elif defined(CONFIG_EXAMPLE_ADV_DIRECTION_FINDING_AOA)
     ESP_LOGI(TAG, "DIRECTION_FINDING Example Periodic Adv AOA Mode");
 #endif
@@ -222,10 +221,8 @@ void app_main(void)
     ble_hs_cfg.sync_cb = periodic_sync_cb;
 
     /* Set device name */
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     rc = ble_svc_gap_device_name_set("Periodic ADV with CTE");
     assert(rc == 0);
-#endif
 
     /* Start BLE host task */
     nimble_port_freertos_init(periodic_adv_host_task);

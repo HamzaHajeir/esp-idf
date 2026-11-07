@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 """
 Generate Kconfig.soc_caps.in with defines from soc_caps.h
@@ -9,6 +9,7 @@ Generate Kconfig.soc_caps.in with defines from soc_caps.h
 import argparse
 import inspect
 import io
+import logging
 import os
 import sys
 from difflib import unified_diff
@@ -17,9 +18,6 @@ from pathlib import Path
 from string import Template
 
 import pyparsing
-from esp_pylib.excepthook import install_exception_reporting
-from esp_pylib.logger import Verbosity
-from esp_pylib.logger import log
 from pyparsing import CaselessLiteral
 from pyparsing import Char
 from pyparsing import Combine
@@ -79,7 +77,7 @@ class KconfigWriter:
 
     def add_entry(self, name, entry_type, value):  # type: (str, str, typing.Any) -> None
         if name in self.entries:
-            log.debug(f'Duplicate entry: {name}')
+            logging.info(f'Duplicate entry: {name}')
             return
 
         # Format values for kconfig
@@ -208,7 +206,7 @@ def generate_defines(soc_caps_dir, filename, always_write):  # type: (Path, str,
         try:
             res = parse_define(line)
         except pyparsing.ParseException:
-            log.debug(f'Failed to parse: {line}')
+            logging.debug(f'Failed to parse: {line}')
             continue
 
         if res.ignore_pragma:
@@ -235,7 +233,7 @@ def generate_defines(soc_caps_dir, filename, always_write):  # type: (Path, str,
 
 def get_defines(header_path):  # type: (Path) -> list[str]
     defines = []
-    log.debug(f'Reading macros from {header_path}...')
+    logging.info(f'Reading macros from {header_path}...')
     with open(header_path, encoding='utf-8') as f:
         output = f.read()
 
@@ -248,7 +246,6 @@ def get_defines(header_path):  # type: (Path) -> list[str]
 
 
 if __name__ == '__main__':
-    install_exception_reporting()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-d', '--dir', help='SoC caps folder paths, support wildcards', nargs='+', default=[])
     parser.add_argument('-n', '--filename', nargs='?', default='*caps.h', help='SoC caps filename, support wildcards')
@@ -261,10 +258,14 @@ if __name__ == '__main__':
     parser.add_argument('--always-write', help='Always generate new output files', action='store_true')
     args = parser.parse_args()
 
-    if args.verbose:
-        log.set_verbosity(Verbosity.VERBOSE)
+    if not args.verbose:
+        log_level = logging.WARNING
+    elif args.verbose == 1:
+        log_level = logging.INFO
     else:
-        log.set_verbosity(Verbosity.NORMAL)
+        log_level = logging.DEBUG
+
+    logging.basicConfig(level=log_level)
 
     files_updated = []
     writers = []  # type: typing.List[typing.Optional[KconfigWriter]]
@@ -292,19 +293,22 @@ if __name__ == '__main__':
                 configs[config_name] = writer.entries[config_name][0]
 
     if configs_with_differing_types:
-        details = [
+        print(
             'The following macro constants would be translated to config options with different types'
             ' for different targets (which may lead to unexpected behavior).'
-        ]
+        )
+
         for config_name in configs_with_differing_types:
-            details.append(
+            print(
                 f'  {config_name} has types'
                 f'{", ".join(config_type for config_type in configs_with_differing_types[config_name])}'
             )
-        details.append('Please ensure all the macro constants will translate to the same config type for all targets.')
-        log.die('\n'.join(details))
+
+        print('Please ensure all the macro constants will translate to the same config type for all targets.')
+
+        sys.exit(1)
 
     files_updated = [writer.update_file() for writer in writers if writer is not None]
-    log.print(f'Updated {sum(files_updated)} files')
+    print(f'Updated {sum(files_updated)} files')
 
     sys.exit(all(files_updated))

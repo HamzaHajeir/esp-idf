@@ -20,10 +20,6 @@
 
 #include "bt_common.h"
 #include "osi/allocator.h"
-#if HEAP_MEMORY_STATS
-#include <stdatomic.h>
-#include "esp_attr.h"
-#endif
 
 extern void *pvPortZalloc(size_t size);
 extern void vPortFree(void *pv);
@@ -202,49 +198,6 @@ uint32_t osi_mem_dbg_get_max_size_section(uint8_t index)
 }
 #endif
 
-#if HEAP_MEMORY_STATS
-/* Atomic instead of a mutex: updated on every osi_malloc/osi_free and must never block.
- * DRAM_ATTR keeps it in internal RAM when libbt.a .bss is placed in PSRAM, where
- * ESP32/S3 atomics fall back to a spinlock, or are unreliable before IDF v5.3 */
-static DRAM_ATTR atomic_size_t s_mem_used_size = 0;
-
-void osi_mem_stats_reset(void)
-{
-    atomic_store_explicit(&s_mem_used_size, 0, memory_order_relaxed);
-}
-
-static void osi_mem_stats_add(void *ptr)
-{
-    if (ptr != NULL) {
-        atomic_fetch_add_explicit(&s_mem_used_size, heap_caps_get_allocated_size(ptr),
-                                  memory_order_relaxed);
-    }
-}
-
-static void osi_mem_stats_sub(void *ptr)
-{
-    size_t free_size;
-    size_t used_size;
-
-    if (ptr == NULL) {
-        return;
-    }
-
-    free_size = heap_caps_get_allocated_size(ptr);
-    used_size = atomic_load_explicit(&s_mem_used_size, memory_order_relaxed);
-    /* Check and subtract as one step; a failed exchange reloads used_size and retries */
-    do {
-        if (used_size < free_size) {
-            OSI_TRACE_ERROR("The size of malloc and free not match: alloc_size=%u free_size=%u",
-                used_size, free_size);
-            return;
-        }
-    } while (!atomic_compare_exchange_weak_explicit(&s_mem_used_size, &used_size,
-                                                    used_size - free_size,
-                                                    memory_order_relaxed, memory_order_relaxed));
-}
-#endif
-
 char *osi_strdup(const char *str)
 {
     size_t size = strlen(str) + 1;  // + 1 for the null terminator
@@ -271,10 +224,6 @@ void *osi_malloc_func(size_t size)
 #endif
     }
 
-#if HEAP_MEMORY_STATS
-    osi_mem_stats_add(p);
-#endif
-
     return p;
 }
 
@@ -291,30 +240,10 @@ void *osi_calloc_func(size_t size)
 #endif
     }
 
-#if HEAP_MEMORY_STATS
-    osi_mem_stats_add(p);
-#endif
-
     return p;
 }
 
 void osi_free_func(void *ptr)
 {
-#if HEAP_MEMORY_DEBUG
-    osi_mem_dbg_clean(ptr, __func__, __LINE__);
-#endif
-
-#if HEAP_MEMORY_STATS
-    osi_mem_stats_sub(ptr);
-#endif
-
-    free(ptr);
+    osi_free(ptr);
 }
-
-#if HEAP_MEMORY_STATS
-// Get the size of memory allocated by Bluedroid but not yet freed
-uint32_t esp_host_used_heap_size_get(void)
-{
-    return (uint32_t)atomic_load_explicit(&s_mem_used_size, memory_order_relaxed);
-}
-#endif

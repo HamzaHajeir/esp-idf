@@ -3,13 +3,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2024 Espressif Systems (Shanghai) CO LTD
  */
 
 /****************************************************************************
  * apps/netutils/ptpd/ptpv2.h
- *
- * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -34,13 +32,6 @@
 /****************************************************************************
  * Included Files
  ****************************************************************************/
-
-#ifndef ESP_PTP
-#include <nuttx/compiler.h>
-#else
-#define begin_packed_struct
-#define end_packed_struct __attribute__((packed))
-#endif
 
 #include <stdint.h>
 
@@ -82,7 +73,7 @@
 
 /* Common header for all message types */
 
-begin_packed_struct struct ptp_header_s
+struct ptp_header_s
 {
   uint8_t messagetype;
   uint8_t version;
@@ -97,11 +88,11 @@ begin_packed_struct struct ptp_header_s
   uint8_t sequenceid[2];
   uint8_t controlfield;
   uint8_t logmessageinterval;
-} end_packed_struct;
+};
 
 /* Announce a master clock */
 
-begin_packed_struct struct ptp_announce_s
+struct ptp_announce_s
 {
   struct ptp_header_s header;
   uint8_t origintimestamp[10];
@@ -113,40 +104,40 @@ begin_packed_struct struct ptp_announce_s
   uint8_t gm_identity[8];
   uint8_t stepsremoved[2];
   uint8_t timesource;
-} end_packed_struct;
+};
 
 /* Sync: transmit timestamp from master clock */
 
-begin_packed_struct struct ptp_sync_s
+struct ptp_sync_s
 {
   struct ptp_header_s header;
   uint8_t origintimestamp[10];
-} end_packed_struct;
+};
 
 /* FollowUp: actual timestamp of when sync message was sent */
 
-begin_packed_struct struct ptp_follow_up_s
+struct ptp_follow_up_s
 {
   struct ptp_header_s header;
   uint8_t origintimestamp[10];
-} end_packed_struct;
+};
 
 /* DelayReq: request delay measurement */
 
-begin_packed_struct struct ptp_delay_req_s
+struct ptp_delay_req_s
 {
   struct ptp_header_s header;
   uint8_t origintimestamp[10];
-} end_packed_struct;
+};
 
 /* DelayResp: response to DelayReq */
 
-begin_packed_struct struct ptp_delay_resp_s
+struct ptp_delay_resp_s
 {
   struct ptp_header_s header;
   uint8_t receivetimestamp[10];
   uint8_t reqidentity[8];
   uint8_t reqportindex[2];
-} end_packed_struct;
+};
 
 #endif /* __APPS_NETUTILS_PTPD_PTPV2_H */

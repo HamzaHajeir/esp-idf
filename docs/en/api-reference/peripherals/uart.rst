@@ -107,8 +107,6 @@ For more information on how to configure the hardware flow control options, plea
 
     Additionally, :cpp:member:`uart_config_t::allow_pd` can be set to enable the backup of the UART configuration registers before entering sleep and restore these registers after exiting sleep. This allows the UART to continue working properly after waking up even when the UART module power domain is entirely off during sleep. This option implies an balance between power consumption and memory usage. If the power consumption is not a concern, you can disable this option to save memory.
 
-If glitches may occur on the RX signal, :cpp:member:`uart_config_t::rx_glitch_filt_thresh` can be set to filter the glitches to ensure the correct data is received (note that this feature is not supported on ESP32 and ESP32-S2). The unit of the :cpp:member:`uart_config_t::rx_glitch_filt_thresh` is nanoseconds. The default value is 0, which means no filtering.
-
 Multiple Steps
 """"""""""""""
 
@@ -150,9 +148,6 @@ The same macro :c:macro:`UART_PIN_NO_CHANGE` should be specified for pins that w
   // Set UART pins(TX: IO4, RX: IO5, RTS: IO18, CTS: IO19, DTR: UNUSED, DSR: UNUSED)
   ESP_ERROR_CHECK(uart_set_pin({IDF_TARGET_UART_EXAMPLE_PORT}, 4, 5, 18, 19, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-.. note::
-
-    The pin numbers above are only an example. On many development boards, the onboard USB-to-UART bridge is connected to the UART0 default TX/RX pins. If you need to communicate with a PC over other ports or pins, connect a separate USB-to-UART bridge to those pins.
 
 .. _uart-api-running-uart-communication:
 

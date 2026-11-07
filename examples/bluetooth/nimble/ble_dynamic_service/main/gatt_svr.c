@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -141,11 +141,9 @@ gatt_svc_access(uint16_t conn_handle, uint16_t attr_handle,
                                 sizeof(gatt_svr_chr_val),
                                 sizeof(gatt_svr_chr_val),
                                 &gatt_svr_chr_val, NULL);
-            if (rc == 0) {
-                ble_gatts_chr_updated(attr_handle);
-                MODLOG_DFLT(INFO, "Notification/Indication scheduled for "
-                            "all subscribed peers.\n");
-            }
+            ble_gatts_chr_updated(attr_handle);
+            MODLOG_DFLT(INFO, "Notification/Indication scheduled for "
+                        "all subscribed peers.\n");
             return rc;
         }
         goto unknown;
@@ -162,7 +160,7 @@ gatt_svc_access(uint16_t conn_handle, uint16_t attr_handle,
         if (ble_uuid_cmp(uuid, &gatt_svr_dsc_uuid.u) == 0) {
             rc = os_mbuf_append(ctxt->om,
                                 &gatt_svr_dsc_val,
-                                sizeof(gatt_svr_dsc_val));
+                                sizeof(gatt_svr_chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         goto unknown;
@@ -222,6 +220,7 @@ gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
  */
 int dynamic_service(const uint8_t operation, const struct ble_gatt_svc_def *svcs, const ble_uuid_t *uuid) {
     int rc = 0;
+    int i = 0;
     switch(operation) {
         case 1:
             /* add services in gatt_svr_svcs */
@@ -244,6 +243,7 @@ int dynamic_service(const uint8_t operation, const struct ble_gatt_svc_def *svcs
                     /* not able to delete service return immidietely */
                     return rc;
                 }
+                i++;
                 return rc;
             break;
     }
@@ -253,15 +253,9 @@ int dynamic_service(const uint8_t operation, const struct ble_gatt_svc_def *svcs
 int
 gatt_svr_init(void)
 {
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     ble_svc_gap_init();
-#endif /* CONFIG_BT_NIMBLE_GAP_SERVICE */
-#if MYNEWT_VAL(BLE_GATTS)
     ble_svc_gatt_init();
-#endif
-#if CONFIG_BT_NIMBLE_ANS_SERVICE
     ble_svc_ans_init();
-#endif
 
     /* Setting a value for the read-only descriptor */
     gatt_svr_dsc_val = 0x99;

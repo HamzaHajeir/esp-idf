@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,13 +9,8 @@
 #include "hal/temperature_sensor_periph.h"
 #include "hal/log.h"
 #include "esp_rom_sys.h"
-#include "esp_attr.h"
 
 __attribute__((unused)) static const char *TAG_TSENS = "temperature_sensor_hal";
-
-#ifndef TEMPERATURE_SENSOR_LL_OFFSET_SCALE
-#define TEMPERATURE_SENSOR_LL_OFFSET_SCALE 1
-#endif
 
 #define INT_NOT_USED 999999
 
@@ -24,24 +19,10 @@ static int s_hal_record_min = INT_NOT_USED;
 static int s_hal_record_max = INT_NOT_USED;
 static uint8_t s_hal_tsens_idx = 2; // Index for temperature attribute, set 2(middle) as default value
 
-#if SOC_TEMPERATURE_SENSOR_SUPPORT_SLEEP_RETENTION
-static uint8_t dac_offset_regi2c;
-
-void temperature_sensor_hal_i2c_saradc_reg_backup(void)
-{
-    dac_offset_regi2c = temperature_sensor_ll_get_offset();
-}
-
-void temperature_sensor_hal_i2c_saradc_reg_restore(void)
-{
-    temperature_sensor_ll_set_range(dac_offset_regi2c);
-}
-#endif
-
 int temperature_sensor_hal_get_raw_value(void)
 {
     int raw_value = temperature_sensor_ll_get_raw_value();
-    return (TEMPERATURE_SENSOR_LL_ADC_FACTOR_INT * raw_value - TEMPERATURE_SENSOR_LL_DAC_FACTOR_INT * temperature_sensor_attributes[s_hal_tsens_idx].offset / TEMPERATURE_SENSOR_LL_OFFSET_SCALE - TEMPERATURE_SENSOR_LL_OFFSET_FACTOR_INT) / TEMPERATURE_SENSOR_LL_DENOMINATOR;
+    return (TEMPERATURE_SENSOR_LL_ADC_FACTOR_INT * raw_value - TEMPERATURE_SENSOR_LL_DAC_FACTOR_INT * temperature_sensor_attributes[s_hal_tsens_idx].offset - TEMPERATURE_SENSOR_LL_OFFSET_FACTOR_INT) / TEMPERATURE_SENSOR_LL_DENOMINATOR;
 }
 
 int16_t temperature_sensor_hal_get_degree(bool *range_changed)

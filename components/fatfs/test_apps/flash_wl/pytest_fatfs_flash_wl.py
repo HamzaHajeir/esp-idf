@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import pytest
 from pytest_embedded import Dut
@@ -6,7 +6,6 @@ from pytest_embedded_idf.utils import idf_parametrize
 
 
 @pytest.mark.generic
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @pytest.mark.parametrize(
     'config',
     [
@@ -15,8 +14,6 @@ from pytest_embedded_idf.utils import idf_parametrize
         'fastseek',
         'auto_fsync',
         'dyn_buffers',
-        'posix_rename',
-        'self_nesting',
     ],
 )
 @idf_parametrize('target', ['esp32', 'esp32c3'], indirect=['target'])
@@ -25,7 +22,6 @@ def test_fatfs_flash_wl_generic(dut: Dut) -> None:
 
 
 @pytest.mark.generic
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @pytest.mark.psram
 @pytest.mark.parametrize(
     'config',

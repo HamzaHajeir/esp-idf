@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -53,12 +53,6 @@ extern "C" {
 #define SOC_CLK_XTAL32K_FREQ_APPROX         32768                               /*!< Approximate XTAL32K_CLK frequency in Hz */
 #define SOC_CLK_OSC_SLOW_FREQ_APPROX        32768                               /*!< Approximate OSC_SLOW_CLK (external slow clock) frequency in Hz */
 
-/* Default clock accuracy values in ppm (parts per million) at different observation durations */
-/* Row order: 1 s, 10 s, 30 s, 60 s */
-#define SOC_CLK_RC_FAST_ACCURACY_PPM_DEFAULTS    { (870), (1726), (4034), (7243) }
-#define SOC_CLK_RC_SLOW_ACCURACY_PPM_DEFAULTS    { (4445), (5838), (9391), (14759) }
-#define SOC_CLK_CRYSTAL_ACCURACY_PPM_DEFAULTS    { (500), (500), (500), (500) }
-
 // Naming convention: SOC_ROOT_CLK_{loc}_{type}_[attr]
 // {loc}: EXT, INT
 // {type}: XTAL, RC
@@ -73,7 +67,6 @@ typedef enum {
     SOC_ROOT_CLK_EXT_XTAL32K,          /*!< External 32kHz crystal/clock signal */
     SOC_ROOT_CLK_INT_RC32K,            /*!< Internal 32kHz RC oscillator */
     SOC_ROOT_CLK_EXT_OSC_SLOW,         /*!< External slow clock signal at pin13 */
-    SOC_ROOT_CLK_SRC_NUM,              /*!< Number of root clock sources */
 } soc_root_clk_t;
 
 /**
@@ -206,13 +199,6 @@ typedef enum {
     GPTIMER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F48M,  /*!< Select PLL_F48M as the default choice */
 } soc_periph_gptimer_clk_src_t;
 
-//////////////////////////////////////////////////ETM///////////////////////////////////////////////////////////////////
-
-/**
- * @brief Type of ETM clock source
- */
-typedef int soc_periph_etm_clk_src_t;
-
 //////////////////////////////////////////////////RMT///////////////////////////////////////////////////////////////////
 
 /**
@@ -282,14 +268,13 @@ typedef enum {
 /**
  * @brief Array initializer for all supported clock sources of MCPWM Timer
  */
-#define SOC_MCPWM_TIMER_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_RC_FAST, SOC_MOD_CLK_XTAL}
+#define SOC_MCPWM_TIMER_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_XTAL}
 
 /**
  * @brief Type of MCPWM timer clock source
  */
 typedef enum {
     MCPWM_TIMER_CLK_SRC_PLL96M = SOC_MOD_CLK_PLL_F96M,   /*!< Select PLL_F96M as the source clock */
-    MCPWM_TIMER_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,   /*!< Select RC_FAST as the source clock */
     MCPWM_TIMER_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
     MCPWM_TIMER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F96M,  /*!< Select PLL_F96M as the default clock choice */
 } soc_periph_mcpwm_timer_clk_src_t;
@@ -297,14 +282,13 @@ typedef enum {
 /**
  * @brief Array initializer for all supported clock sources of MCPWM Capture Timer
  */
-#define SOC_MCPWM_CAPTURE_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_RC_FAST, SOC_MOD_CLK_XTAL}
+#define SOC_MCPWM_CAPTURE_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_XTAL}
 
 /**
  * @brief Type of MCPWM capture clock source
  */
 typedef enum {
     MCPWM_CAPTURE_CLK_SRC_PLL96M = SOC_MOD_CLK_PLL_F96M,   /*!< Select PLL_F96M as the source clock */
-    MCPWM_CAPTURE_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,   /*!< Select RC_FAST as the source clock */
     MCPWM_CAPTURE_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
     MCPWM_CAPTURE_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F96M,  /*!< Select PLL_F96M as the default clock choice */
 } soc_periph_mcpwm_capture_clk_src_t;
@@ -312,14 +296,13 @@ typedef enum {
 /**
  * @brief Array initializer for all supported clock sources of MCPWM Carrier
  */
-#define SOC_MCPWM_CARRIER_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_RC_FAST, SOC_MOD_CLK_XTAL}
+#define SOC_MCPWM_CARRIER_CLKS {SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_XTAL}
 
 /**
  * @brief Type of MCPWM carrier clock source
  */
 typedef enum {
     MCPWM_CARRIER_CLK_SRC_PLL96M = SOC_MOD_CLK_PLL_F96M,   /*!< Select PLL_F96M as the source clock */
-    MCPWM_CARRIER_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,   /*!< Select RC_FAST as the source clock */
     MCPWM_CARRIER_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
     MCPWM_CARRIER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F96M,  /*!< Select PLL_F96M as the default clock choice */
 } soc_periph_mcpwm_carrier_clk_src_t;
@@ -399,7 +382,7 @@ typedef enum {
 #define SOC_ANA_CMPR_CLKS {SOC_MOD_CLK_PLL_F48M, SOC_MOD_CLK_XTAL}
 
 /**
- * @brief Analog Comparator clock source
+ * @brief Sigma Delta Modulator clock source
  */
 typedef enum {
     ANA_CMPR_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,                   /*!< Select XTAL clock as the source clock */
@@ -479,7 +462,6 @@ typedef enum {
  * @brief Array initializer for all supported clock sources of LEDC
  */
 #define SOC_LEDC_CLKS {SOC_MOD_CLK_XTAL, SOC_MOD_CLK_PLL_F96M, SOC_MOD_CLK_RC_FAST}
-#define SOC_LEDC_CLK_STRS {"LEDC_USE_XTAL_CLK", "LEDC_USE_PLL_DIV_CLK", "LEDC_USE_RC_FAST_CLK"}
 
 /**
  * @brief Type of LEDC clock source, reserved for the legacy LEDC driver

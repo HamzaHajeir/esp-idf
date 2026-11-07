@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,6 @@
 #include "esp_partition.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "rom/cache.h"
 
 #define ALIGN_UP_TO_64KB(x) (((x) + 0xFFFF) & ~0xFFFF)
 
@@ -22,7 +21,7 @@ const esp_partition_t *get_test_flash_partition(void)
 {
     /* This finds "flash_test" partition defined in custom partitions.csv */
     const esp_partition_t *result = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
-                                                             ESP_PARTITION_SUBTYPE_ANY, "flash_test");
+            ESP_PARTITION_SUBTYPE_ANY, "flash_test");
     assert(result != NULL); /* means partition table set wrong */
     return result;
 }
@@ -101,8 +100,7 @@ err:
     return ret;
 }
 
-const esp_partition_t * spi_flash_suspend_test_find_last_partition(void)
-{
+const esp_partition_t * spi_flash_suspend_test_find_last_partition(void) {
 
     const esp_partition_t *last_partition = NULL;
     esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);

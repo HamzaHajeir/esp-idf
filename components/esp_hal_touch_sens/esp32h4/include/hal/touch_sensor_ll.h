@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,6 +19,7 @@
 #include "hal/touch_sensor_periph.h"
 #include "hal/touch_sens_types.h"
 #include "hal/config.h"
+#include "soc/lp_analog_peri_struct.h"
 #include "soc/lp_clkrst_struct.h"
 #include "soc/lpperi_struct.h"
 #include "soc/touch_aon_struct.h"
@@ -313,6 +314,7 @@ static inline uint32_t touch_ll_get_chan_active_threshold(uint32_t touch_num, ui
 __attribute__((always_inline))
 static inline void touch_ll_enable_scan_mask(uint16_t chan_mask, bool enable)
 {
+    // the lowest bit takes no effect
     uint16_t mask = chan_mask & TOUCH_LL_FULL_CHANNEL_MASK;
     uint16_t prev_mask = TOUCH_AON.aon_scan_ctrl1.aon_touch_scan_pad_map;
     if (enable) {
@@ -331,9 +333,12 @@ static inline void touch_ll_enable_scan_mask(uint16_t chan_mask, bool enable)
  * @note  The touch sensor that in scan map, should be deinit GPIO function firstly.
  * @param enable_mask bitmask of touch sensor scan group.
  *        e.g. TOUCH_PAD_NUM1 -> BIT(1)
+ * @return
+ *      - ESP_OK on success
  */
 static inline void touch_ll_enable_channel_mask(uint16_t enable_mask)
 {
+    // the lowest bit takes no effect
     uint16_t mask = enable_mask & TOUCH_LL_FULL_CHANNEL_MASK;
     TOUCH_AON.aon_scan_ctrl1.aon_touch_scan_pad_map = mask;
     TOUCH_AON.aon_filter2.aon_touch_outen = mask;
@@ -591,7 +596,9 @@ static inline uint32_t touch_ll_sample_cfg_get_engaged_num(void)
  */
 static inline void touch_ll_sample_cfg_set_trigger_rise_cnt(uint8_t rise_cnt)
 {
-    TOUCH_AON.aon_scan_ctrl2.freq_scan_cnt_rise = rise_cnt;
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
+    TOUCH_AON.aon_ctrl.aon_freq_scan_cnt_rise = rise_cnt;
+#endif
 }
 
 /**
@@ -632,6 +639,19 @@ static inline void touch_ll_sample_cfg_set_bias_voltage(uint8_t sample_cfg_id, u
 {
     HAL_ASSERT(sample_cfg_id < SOC_TOUCH_SAMPLE_CFG_NUM);
     TOUCH_AON.aon_freq_scan_para[sample_cfg_id].aon_touch_freq_dbias = bias_volt;
+}
+
+/**
+ * @brief Set the internal loop capacitance
+ *        Can simulate the touch signal via the internal capacitance
+ *        Need to turn off touch pad
+ * @param cap   The internal capacitance
+ */
+static inline void touch_ll_set_internal_loop_capacitance(int cap)
+{
+    bool enable = cap > 0;
+    TOUCH_AON.aon_ana_para.aon_touch_touch_en_cal = enable;
+    TOUCH_AON.aon_ana_para.aon_touch_touch_dcap_cal = enable ? cap : 0;
 }
 
 /************************ Filter register setting ************************/
@@ -738,7 +758,7 @@ static inline void touch_ll_filter_enable(bool enable)
  * Force the update the benchmark by software
  * @note  This benchmark will be applied to all enabled channel and all sampling frequency
  *
- * @param pad_num The pad number, range [0-14]
+ * @param pad_num The pad number, range [1-14]
  * @param sample_cfg_id The sample configuration index, range [0-2]
  * @param benchmark The benchmark specified by software
  */

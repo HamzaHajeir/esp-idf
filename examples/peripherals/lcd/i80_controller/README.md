@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-P4 | ESP32-S2 | ESP32-S3 | ESP32-S31 |
-| ----------------- | ----- | -------- | -------- | -------- | --------- |
+| Supported Targets | ESP32 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
+| ----------------- | ----- | -------- | -------- | -------- |
 
 # i80 LCD LVGL porting example
 
@@ -7,24 +7,20 @@ LVGL is an open-source graphics library for creating modern GUIs. It has plenty 
 
 This example can be taken as a skeleton of porting the LVGL library onto the `esp_lcd` driver layer. **Note** that, this example only focuses on the display interface, regardless of the input device driver.
 
-The source files are split by responsibility:
+The whole porting code is located in [i80_controller_example_main.c](main/i80_controller_example_main.c), and the UI demo code is located in [lvgl_demo_ui.c](main/lvgl_demo_ui.c).
 
-* [i80_controller_example_main.c](main/i80_controller_example_main.c): demonstrates the `esp_lcd` i80 (Intel 8080) driver APIs, such as initializing the bus, the LCD panel and the backlight.
-* [lvgl_port.c](main/lvgl_port.c): the LVGL porting layer (display, flush callback, tick timer, LVGL task and LittleFS mounting).
-* [lvgl_demo_ui.c](main/lvgl_demo_ui.c): the demo UI and its animation.
-
-The UI will display two images (one Espressif logo and another Espressif text). The images are stored as LZ4-compressed LVGL binary images on a [LittleFS file system](https://github.com/joltwallet/esp_littlefs). See [Image Resource](#image-resource) for more details.
+The UI will display two images (one Espressif logo and another Espressif text), which have been converted into C arrays by the [online converting tool](https://lvgl.io/tools/imageconverter), and will be compiled directly into application binary.
 
 This example is constructed by [IDF component manager](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-component-manager.html), all the external dependency will be handled by the CMake build system automatically. In this case, it will help download the lvgl from the [ESP Component Registry](https://components.espressif.com/component/lvgl/lvgl), with the version specified in the [manifest file](main/idf_component.yml).
 
-This example uses the [esp_timer](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/esp_timer.html) to generate the ticks needed by LVGL and uses a dedicated task to run the `lv_timer_handler()`. Since the LVGL APIs are not thread-safe, this example uses a mutex which be invoked before the call of `lv_timer_handler()` and released after it. The same mutex needs to be used in other tasks and threads around every LVGL (lv_...) related function call and code.
+This example uses the [esp_timer](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/esp_timer.html) to generate the ticks needed by LVGL and uses a dedicated task to run the `lv_timer_handler()`. Since the LVGL APIs are not thread-safe, this example uses a mutex which be invoked before the call of `lv_timer_handler()` and released after it. The same mutex needs to be used in other tasks and threads around every LVGL (lv_...) related function call and code. For more porting guides, please refer to [LVGL porting doc](https://docs.lvgl.io/master/porting/index.html).
 
 ## How to use the example
 
 ### Hardware Required
 
 * An ESP development board
-* An Intel 8080 interfaced (so called MCU interface or parallel interface) LCD (this example uses ST7789)
+* An Intel 8080 interfaced (so called MCU interface or parallel interface) LCD (this example can use ST7789, NT35510 or ILI9341)
 * An USB cable for power supply and programming
 
 ### Hardware Connection
@@ -41,7 +37,7 @@ The connection between ESP Board and the LCD is as follows:
 |             |              |                |
 |  DATA[0..7] |<------------>| DATA[0..7]     |
 |             |              |                |
-|        PCLK +------------->| PCLK (WR)      |
+|        PCLK +------------->| PCLK           |
 |             |              |                |
 |          CS +------------->| CS             |
 |             |              |                |
@@ -51,14 +47,8 @@ The connection between ESP Board and the LCD is as follows:
 |             |              |                |
 |    BK_LIGHT +------------->| BCKL           |
 |             |              |                |
-|         3V3 +------------->| RD             |
-|             |              |                |
 +-------------+              +----------------+
 ```
-
-> [!IMPORTANT]
-> The 8080 interface also has an **RD** pin. The RD line must be **held high** when idle. (Connect to 3V3 or use pull-up resistors)
-
 
 Especially, please pay attention to the binary signal level used to turn the LCD backlight on, some LCD modules need a low level to turn it on, while others require a high level. You can change the backlight level macro `EXAMPLE_LCD_BK_LIGHT_ON_LEVEL` in [i80_controller_example_main.c](main/i80_controller_example_main.c).
 
@@ -68,8 +58,10 @@ Run `idf.py set-target <target-name>` to select one supported target that can ru
 
 Run `idf.py menuconfig` to open a terminal UI where you can tune specific configuration for this example in the `Example Configuration` menu.
 
+* `i80 LCD controller model`: Choose the LCD model to use by the example. If you choose `NT35510`, there will be another relevant configuration `NT35510 Data Width`, to choose the data line width for your NT35510 LCD module.
 * `Allocate color data from PSRAM`: Select this option if you want to allocate the LVGL draw buffers from PSRAM.
 * `Pixel clock frequency (Hz)`: Set the pixel clock frequency for the LCD controller.
+* `LCD image source from`: Select where to load the image resource. See [Image Resource](#image-resource) for more details.
 * `LCD GPIO Configuration`: Select the GPIO number used by this example
 
 Run `idf.py -p PORT build flash monitor` to build, flash and monitor the project. A fancy animation will show up on the LCD as expected.
@@ -99,40 +91,12 @@ I (638) example: Display LVGL animation
 
 ## Image Resource
 
-This example loads its images from a [LittleFS file system](https://github.com/joltwallet/esp_littlefs), and stores them as **LZ4-compressed LVGL binary images** to reduce the on-flash size. At runtime LVGL decodes them with its built-in binary image decoder, which supports LZ4-decompressed images out of the box.
+This example supports two ways of reading images
 
-During the build, the [LVGLImage.py](https://docs.lvgl.io/master/others/image_converter.html) tool shipped with the LVGL component is invoked to convert the source PNG files in [main/assets](main/assets) into `.bin` images (e.g. `esp_logo.bin`, `esp_text.bin`), which are then packed into a LittleFS partition image and flashed to the `storage` partition:
-
-```bash
-python3 <lvgl>/scripts/LVGLImage.py --ofmt BIN --cf RGB565A8 --compress LZ4 -o build/main/images/binary logo.png
-```
-
-The build system will:
-
-1. Use a custom [partition table](partitions.csv) that includes a `storage` partition for LittleFS.
-2. Convert each PNG in [main/assets](main/assets) into an LZ4-compressed LVGL binary image under the `build` directory (see `main/CMakeLists.txt`), so the repository stays clean.
-3. Generate a LittleFS image from those `.bin` files and flash it to the `storage` partition.
-
-At runtime, the application mounts the LittleFS partition at `/littlefs` and LVGL loads the images via its POSIX FS interface, e.g.:
-
-```c
-lv_image_set_src(img, "S:/littlefs/esp_logo.bin");
-```
-
-where `S` is the LVGL POSIX FS drive letter.
-
-The following features are enabled in [sdkconfig.defaults](sdkconfig.defaults):
-
-* `LV_USE_FS_POSIX`: Enable POSIX file system interface in LVGL.
-* `LV_FS_POSIX_LETTER`: Set to `83` (ASCII for `S`) as the drive letter.
-* `LV_USE_LZ4_INTERNAL=n`: Disable LVGL's bundled LZ4 copy so the external [`espressif/lz4`](https://components.espressif.com/components/espressif/lz4) library is used for decompression. The external library is pulled automatically via the conditional dependency declared in `lvgl/idf_component.yml`.
-* `LV_BIN_DECODER_RAM_LOAD`: Required for compressed binary images. LVGL's bin decoder cannot stream LZ4 data line-by-line; it must decompress the whole image into RAM. If this option is off, `lv_image_set_src()` fails and the logo/text widgets stay empty.
-
-The CMake configure step installs `pypng` and `lz4` into the IDF Python environment if they are missing. These packages are only needed to run `LVGLImage.py` for this example.
+* from the [SPIFFS file system](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/spiffs.html). This is the suggested way we use in the example. It may take a little bit longer to load the image because of the bottleneck of the SPI flash read speed, but it will save the binary size.
+* from the embedded binary (i.e., pre-decode the image into an array and pack it together with the application firmware). By this way, you can get faster image loading speed at the cost of bloating your application binary. What's worse, if you enabled the [XIP from PSRAM](https://github.com/espressif/esp-idf/tree/master/examples/system/xip_from_psram) feature, it will increase the PSRAM usage as well.
 
 ## Troubleshooting
-
-* **Garbled or random display, or different image on each boot:** If your LCD has an RD pin with no internal pull-up, it must be held high. You can directly connect RD to the 3V3 or use a pull-up resistor.
 
 * Can't get a stable UI when `EXAMPLE_LCD_I80_COLOR_IN_PSRAM` is enabled.
 

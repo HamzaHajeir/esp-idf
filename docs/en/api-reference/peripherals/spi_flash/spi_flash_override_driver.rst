@@ -149,17 +149,12 @@ Generic Flash Driver
 The flash driver in the application is used to read, write, erase, and save data. It also supports some advanced features like OTA. Below is a guide on how to customize the driver for your specific flash model.
 
 - Step 1: The last item of `default_registered_chips` should be the `generic chip driver <https://github.com/espressif/esp-idf/blob/master/components/spi_flash/spi_flash_chip_generic.c>`_. If your flash chip does not match any of the chip drivers listed above, it will use the generic driver. Check for any differences in behavior between your flash and the generic driver, including but not limited to different commands, dummy cycles, data bytes, and status registers.
-- Step 2: If you have found something different from the generic driver, you need to implement your own chip driver. Create a new file named ``spi_flash_chip_<vendor>.c`` to implement the specific behavior, and copy the ``esp_flash_chip_generic`` structure into it as a starting point. Remember to include ``esp_flash_chips/spi_flash_chip_generic.h``. Here is an example `esp_flash_nor <https://github.com/espressif/esp-flash-drivers/tree/main/esp_flash_nor/>`_.
-
-  .. note::
-
-      The chip driver header files are located in the ``esp_flash_chips/`` directory (e.g., ``components/spi_flash/include/esp_flash_chips/``). These headers are **semi-public** - they are intended for expert users who need to implement custom chip drivers, but they are **not considered stable API** and may change without notice.
-
+- Step 2: If you have found something different from the generic driver, you need to implement your own chip driver. Create a new file named ``spi_flash_chip_<vendor>.c`` to implement the specific behavior, and copy the ``esp_flash_chip_generic`` structure into it as a starting point. Remember to include ``spi_flash_chip_generic.h``. Here is an example `esp_flash_nor <https://github.com/espressif/esp-flash-drivers/tree/main/esp_flash_nor/>`_.
 - Step 3: Implement the functions with difference and point to them from the ``spi_flash_chip_t``. Note: if some behavior of your flash is the same as the generic one, retain the generic driver functions without customization. Only implement the parts that differ. Here is an example:
 
 .. important::
 
-    Flash work for suspend (i.e., enabling :menuitem:`CONFIG_SPI_FLASH_AUTO_SUSPEND`) should be tested carefully and systematically due to different flash hardware design. If you want to use the suspend feature for mass production, please contact `Espressif's business team <https://www.espressif.com/en/contact-us/sales-questions>`_.
+    Flash work for suspend (i.e., enabling :ref:`CONFIG_SPI_FLASH_AUTO_SUSPEND`) should be tested carefully and systematically due to different flash hardware design. If you want to use the suspend feature for mass production, please contact `Espressif's business team <https://www.espressif.com/en/contact-us/sales-questions>`_.
 
 .. code-block:: c
 
@@ -232,18 +227,20 @@ The flash driver in the application is used to read, write, erase, and save data
 
 - Step 5: The ``linker.lf`` is used to put every chip driver that you are going to use whilst cache is disabled into internal RAM. See :doc:`/api-guides/linker-script-generation` for more details. Make sure this file covers all the source files that you add.
 
-- Step 6: Add a new component in your project, e.g., ``custom_chip_driver``. List your chip object under ``default_registered_chips`` in ``custom_chip_driver/chip_drivers.c``. Then enable the :menuitem:`CONFIG_SPI_FLASH_OVERRIDE_CHIP_DRIVER_LIST` configuration option. This prevents compilation and linking of the default chip driver list (``default_registered_chips``) provided by ESP-IDF. Instead, the linker searches for the structure of the same name (``default_registered_chips``) that must be provided by you. You can refer to :example_file:`storage/custom_flash_driver/components/custom_chip_driver/chip_drivers.c`.
+- Step 6: Add a new component in your project, e.g., ``custom_chip_driver``. List your chip object under ``default_registered_chips`` in ``custom_chip_driver/chip_drivers.c``. Then enable the :ref:`CONFIG_SPI_FLASH_OVERRIDE_CHIP_DRIVER_LIST` configuration option. This prevents compilation and linking of the default chip driver list (``default_registered_chips``) provided by ESP-IDF. Instead, the linker searches for the structure of the same name (``default_registered_chips``) that must be provided by you. You can refer to :example_file:`storage/custom_flash_driver/components/custom_chip_driver/chip_drivers.c`.
 
 - Step 7: Build your project, and you will see the new flash driver in use.
 
-High Performance Flash Implementation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. only:: SOC_MEMSPI_SRC_FREQ_120M
 
-The high performance mode operates at frequencies higher than 80 MHz. Please check the datasheet for your flash and to determine which approach can reach to frequencies higher than 80 MHz, as listed in *DC Characteristics* section. Some behavior is already defined in the `high performance file <https://github.com/espressif/esp-idf/blob/master/components/spi_flash/spi_flash_hpm_enable.c>`_ . If your flash meets the specified behavior, extend the list as introduced in the ``bootloader_flash_unlock`` section. If your flash has different behavior, please add the new behavior and override the behavior table ``spi_flash_hpm_enable_list``.
+    High Performance Flash Implementation
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. important::
+    The high performance mode operates at frequencies higher than 80 MHz. Please check the datasheet for your flash and to determine which approach can reach to frequencies higher than 80 MHz, as listed in *DC Characteristics* section. Some behavior is already defined in the `high performance file <https://github.com/espressif/components/spi_flash/spi_flash_hpm_enable.c>`_ . If your flash meets the specified behavior, extend the list as introduced in the ``bootloader_flash_unlock`` section. If your flash has different behavior, please add the new behavior and override the behavior table ``spi_flash_hpm_enable_list``.
 
-    Flash with a frequency set above 80 MHz should be tested carefully due to its strict timing requirements. If you want to use the high performance mode feature for mass production, please contact `Espressif's business team <https://www.espressif.com/en/contact-us/sales-questions>`_.
+    .. important::
+
+        Flash with a frequency set above 80 MHz should be tested carefully due to its strict timing requirements. If you want to use the high performance mode feature for mass production, please contact `Espressif's business team <https://www.espressif.com/en/contact-us/sales-questions>`_.
 
 Example
 -------

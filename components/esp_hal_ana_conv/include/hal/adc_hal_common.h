@@ -1,18 +1,13 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
-#include <stdint.h>
 #include "hal/adc_types.h"
 #include "hal/adc_types_private.h"
-#include "soc/soc_caps.h"
-#if SOC_ADC_SUPPORTED
-#include "hal/adc_ll.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,47 +90,6 @@ void adc_hal_set_calibration_param(adc_unit_t adc_n, uint32_t param);
 uint32_t adc_hal_self_calibration(adc_unit_t adc_n, adc_atten_t atten, bool internal_gnd);
 
 #endif //SOC_ADC_CALIBRATION_V1_SUPPORTED
-
-#if ADC_LL_SW_WEIGHT_CALIBRATION_SUPPORTED
-/**
- * @return true if this unit already has a software-weight table.
- */
-bool adc_hal_sw_weight_is_calibrated(adc_unit_t adc_n);
-
-/**
- * Sample internal calibration muxes in oneshot mode and compute weights.
- * Subsequent calls on an already-calibrated unit only restore `cal_done`.
- */
-void adc_hal_sw_weight_calibrate(adc_unit_t adc_n, adc_oneshot_clk_src_t clk_src);
-
-/**
- * Apply the calibrated software weights to a raw conversion result.
- *
- * @param adc_n ADC index number
- * @param raw Raw conversion result
- *
- * @return Weighted ADC code
- */
-uint32_t adc_hal_sw_weight_apply(adc_unit_t adc_n, uint32_t raw);
-
-int32_t adc_hal_sw_weight_get(adc_unit_t adc_n, int bit_from_msb);
-
-#endif // ADC_LL_SW_WEIGHT_CALIBRATION_SUPPORTED
-
-/*---------------------------------------------------------------
-                    I2C SAR ADC register backup/restore
----------------------------------------------------------------*/
-#if ADC_LL_ANA_CALI_REG_PD_WORKAROUND
-/**
- * @brief Backup I2C SAR ADC analog calibration related register values
- */
-void adc_hal_i2c_saradc_reg_backup(void);
-
-/**
- * @brief Restore I2C SAR ADC analog calibration related register values
- */
-void adc_hal_i2c_saradc_reg_restore(void);
-#endif  // ADC_LL_ANA_CALI_REG_PD_WORKAROUND
 
 #ifdef __cplusplus
 }

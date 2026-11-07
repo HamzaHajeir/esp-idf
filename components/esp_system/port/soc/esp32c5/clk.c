@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,14 +19,15 @@
 #include "soc/rtc.h"
 #include "soc/rtc_periph.h"
 #include "soc/i2s_reg.h"
+#include "soc/chip_revision.h"
 #include "esp_cpu.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
+#include "hal/efuse_hal.h"
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/clk_tree_ll.h"
 #if SOC_MODEM_CLOCK_SUPPORTED
 #include "hal/modem_lpcon_ll.h"
 #endif
+#include "hal/apm_ll.h"
 #include "hal/clk_gate_ll.h"
 #include "hal/clk_tree_ll.h"
 #include "esp_private/esp_sleep_internal.h"
@@ -74,7 +75,7 @@ __attribute__((weak)) void esp_clk_init(void)
 #endif
 #endif //!CONFIG_IDF_ENV_FPGA
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
     // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
@@ -98,7 +99,7 @@ __attribute__((weak)) void esp_clk_init(void)
     select_rtc_slow_clk(SOC_RTC_SLOW_CLK_SRC_RC_SLOW);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // After changing a frequency WDT timeout needs to be set for new frequency.
     stage_timeout_ticks = (uint32_t)((uint64_t)CONFIG_BOOTLOADER_WDT_TIME_MS * rtc_clk_slow_freq_get_hz() / 1000);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -231,6 +232,13 @@ __attribute__((weak)) void esp_perip_clk_init(void)
     modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, modem_lpclk_src, 0);
 #endif
 
+    /* On ESP32-C5 ECO1, clearing BIT(31) of PCR_FPGA_DEBUG_REG is used to fix
+     * the issue where the modem module fails to transmit and receive packets
+     * due to the loss of the modem root clock caused by automatic clock gating
+     * during soc root clock source switching. For detailed information, refer
+     * to IDF-11064. */
+    clk_ll_soc_root_clk_auto_gating_bypass(true);
+
     soc_reset_reason_t rst_reason = esp_rom_get_reset_reason(0);
     periph_ll_clk_gate_config_t clk_gate_config = {0};
 
@@ -248,19 +256,6 @@ __attribute__((weak)) void esp_perip_clk_init(void)
 #endif
 #if !CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
     clk_gate_config.disable_usb_serial_jtag = true;
-#endif
-#if !CONFIG_ESP_ENABLE_PVT
-    clk_gate_config.disable_pvt_clk = true;
-#endif
-
-#if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-    /* ESP32-C5 rev <= 1.0: Do not disable UART0 sclk when USB Serial/JTAG is primary console.
-     * Disabling it would cause the chip to end in infinite loop on reset (workaround for rom code issue).
-     * See: IDFGH-17050
-     */
-    if (efuse_hal_chip_revision() <= 100) {
-        clk_gate_config.disable_uart0_clk = false;
-    }
 #endif
 
     periph_ll_clk_gate_set_default(rst_reason, &clk_gate_config);

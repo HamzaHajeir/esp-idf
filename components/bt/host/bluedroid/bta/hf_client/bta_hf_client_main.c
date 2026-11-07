@@ -20,7 +20,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include "common/bt_defs.h"
-#include "common/bt_target.h"
 #include "bta/bta_api.h"
 #include "bta/bta_sys.h"
 #include "bta/bta_hf_client_api.h"
@@ -252,11 +251,7 @@ const tBTA_HF_CLIENT_ST_TBL bta_hf_client_st_tbl[] = {
     bta_hf_client_st_closing
 };
 
-#if UC_BT_HFP_LC3_ENABLE
-const int bta_hf_client_version = HFP_HF_VERSION_1_9;
-#else
 const int bta_hf_client_version = HFP_HF_VERSION_1_7;
-#endif
 
 /* HF Client control block */
 #if BTA_DYNAMIC_MEMORY == FALSE
@@ -319,20 +314,9 @@ void bta_hf_client_scb_disable(void)
         bta_hf_client_cb.scb.p_sco_data = NULL;
     }
 
-    if (bta_hf_client_cb.scb.p_disc_db != NULL) {
-        (void)SDP_CancelServiceSearch(bta_hf_client_cb.scb.p_disc_db);
-        bta_hf_client_free_db(NULL);
-    }
-    bta_hf_client_cb.scb.colli_tmr_on = FALSE;
-    bta_sys_free_timer(&bta_hf_client_cb.scb.colli_timer);
-    bta_hf_client_at_reset();
-
     bta_hf_client_scb_init();
-    bta_sys_deregister(BTA_ID_HS);
 
-    if (bta_hf_client_cb.p_cback) {
-        (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_DISABLE_EVT, NULL);
-    }
+    (*bta_hf_client_cb.p_cback)(BTA_HF_CLIENT_DISABLE_EVT, NULL);
 }
 
 /*******************************************************************************
@@ -435,19 +419,6 @@ void bta_hf_client_collision_cback (tBTA_SYS_CONN_STATUS status, UINT8 id,
 *******************************************************************************/
 static void bta_hf_client_api_enable(tBTA_HF_CLIENT_DATA *p_data)
 {
-    if (bta_hf_client_cb.scb.p_disc_db != NULL) {
-        (void)SDP_CancelServiceSearch(bta_hf_client_cb.scb.p_disc_db);
-        bta_hf_client_free_db(NULL);
-    }
-    if (bta_hf_client_cb.scb.p_sco_data != NULL) {
-        osi_free(bta_hf_client_cb.scb.p_sco_data);
-        bta_hf_client_cb.scb.p_sco_data = NULL;
-    }
-    if (bta_hf_client_cb.scb.colli_tmr_on) {
-        bta_sys_stop_timer(&bta_hf_client_cb.scb.colli_timer);
-        bta_hf_client_cb.scb.colli_tmr_on = FALSE;
-    }
-
     /* initialize control block */
     memset(&bta_hf_client_cb, 0, sizeof(tBTA_HF_CLIENT_CB));
 
@@ -464,16 +435,6 @@ static void bta_hf_client_api_enable(tBTA_HF_CLIENT_DATA *p_data)
     } else{
         bta_hf_client_cb.msbc_enabled = FALSE;
     }
-
-#if UC_BT_HFP_LC3_ENABLE
-    if (bta_hf_client_version >= HFP_HF_VERSION_1_9) {
-        bta_hf_client_cb.lc3_enabled = TRUE;
-    } else {
-        bta_hf_client_cb.lc3_enabled = FALSE;
-    }
-#else
-    bta_hf_client_cb.lc3_enabled = FALSE;
-#endif
 
     bta_hf_client_cb.scb.negotiated_codec = BTM_SCO_CODEC_CVSD;
 
@@ -502,6 +463,9 @@ static void bta_hf_client_api_disable(tBTA_HF_CLIENT_DATA *p_data)
         APPL_TRACE_ERROR("BTA HF Client is already disabled, ignoring ...");
         return;
     }
+
+    /* De-register with BTA system manager */
+    bta_sys_deregister(BTA_ID_HS);
 
     bta_hf_client_sm_execute(BTA_HF_CLIENT_API_DEREGISTER_EVT, p_data);
 
@@ -537,7 +501,7 @@ BOOLEAN bta_hf_client_hdl_event(BT_HDR *p_msg)
         break;
 #if (BTM_SCO_HCI_INCLUDED == TRUE) && (BTA_HFP_EXT_CODEC == TRUE)
     case BTA_HF_CLIENT_SCO_DATA_SEND_EVT:
-        free_msg = FALSE;
+        free_msg = false;
         /* fall through */
 #endif
     default:

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,29 +17,29 @@ extern "C" {
 #endif
 
 /* features masks of HF AG  */
-#define ESP_HF_PEER_FEAT_3WAY       0x01        /*!< Three-way calling */
-#define ESP_HF_PEER_FEAT_ECNR       0x02        /*!< Echo cancellation and/or noise reduction */
-#define ESP_HF_PEER_FEAT_VREC       0x04        /*!< Voice recognition */
-#define ESP_HF_PEER_FEAT_INBAND     0x08        /*!< In-band ring tone */
-#define ESP_HF_PEER_FEAT_VTAG       0x10        /*!< Attach a phone number to a voice tag */
-#define ESP_HF_PEER_FEAT_REJECT     0x20        /*!< Ability to reject incoming call */
-#define ESP_HF_PEER_FEAT_ECS        0x40        /*!< Enhanced Call Status */
-#define ESP_HF_PEER_FEAT_ECC        0x80        /*!< Enhanced Call Control */
-#define ESP_HF_PEER_FEAT_EXTERR    0x100        /*!< Extended error codes */
-#define ESP_HF_PEER_FEAT_CODEC     0x200        /*!< Codec Negotiation */
+#define ESP_HF_PEER_FEAT_3WAY       0x01        /* Three-way calling */
+#define ESP_HF_PEER_FEAT_ECNR       0x02        /* Echo cancellation and/or noise reduction */
+#define ESP_HF_PEER_FEAT_VREC       0x04        /* Voice recognition */
+#define ESP_HF_PEER_FEAT_INBAND     0x08        /* In-band ring tone */
+#define ESP_HF_PEER_FEAT_VTAG       0x10        /* Attach a phone number to a voice tag */
+#define ESP_HF_PEER_FEAT_REJECT     0x20        /* Ability to reject incoming call */
+#define ESP_HF_PEER_FEAT_ECS        0x40        /* Enhanced Call Status */
+#define ESP_HF_PEER_FEAT_ECC        0x80        /* Enhanced Call Control */
+#define ESP_HF_PEER_FEAT_EXTERR    0x100        /* Extended error codes */
+#define ESP_HF_PEER_FEAT_CODEC     0x200        /* Codec Negotiation */
 /* HFP 1.7+ */
-#define ESP_HF_PEER_FEAT_HF_IND    0x400        /*!< HF Indicators */
-#define ESP_HF_PEER_FEAT_ESCO_S4   0x800        /*!< eSCO S4 Setting Supported */
+#define ESP_HF_PEER_FEAT_HF_IND    0x400        /* HF Indicators */
+#define ESP_HF_PEER_FEAT_ESCO_S4   0x800        /* eSCO S4 Setting Supported */
 
 
 /* CHLD feature masks of HF AG */
-#define ESP_HF_CHLD_FEAT_REL           0x01       /*!< 0  Release waiting call or held calls */
-#define ESP_HF_CHLD_FEAT_REL_ACC       0x02       /*!< 1  Release active calls and accept other waiting or held call */
-#define ESP_HF_CHLD_FEAT_REL_X         0x04       /*!< 1x Release specified active call only */
-#define ESP_HF_CHLD_FEAT_HOLD_ACC      0x08       /*!< 2  Active calls on hold and accept other waiting or held call */
-#define ESP_HF_CHLD_FEAT_PRIV_X        0x10       /*!< 2x Request private mode with specified call(put the rest on hold) */
-#define ESP_HF_CHLD_FEAT_MERGE         0x20       /*!< 3  Add held call to multiparty */
-#define ESP_HF_CHLD_FEAT_MERGE_DETACH  0x40       /*!< 4  Connect two calls and leave(disconnect from multiparty) */
+#define ESP_HF_CHLD_FEAT_REL           0x01       /* 0  Release waiting call or held calls */
+#define ESP_HF_CHLD_FEAT_REL_ACC       0x02       /* 1  Release active calls and accept other waiting or held call */
+#define ESP_HF_CHLD_FEAT_REL_X         0x04       /* 1x Release specified active call only */
+#define ESP_HF_CHLD_FEAT_HOLD_ACC      0x08       /* 2  Active calls on hold and accept other waiting or held call */
+#define ESP_HF_CHLD_FEAT_PRIV_X        0x10       /* 2x Request private mode with specified call(put the rest on hold) */
+#define ESP_HF_CHLD_FEAT_MERGE         0x20       /* 3  Add held call to multiparty */
+#define ESP_HF_CHLD_FEAT_MERGE_DETACH  0x40       /* 4  Connect two calls and leave(disconnect from multiparty) */
 
 /// HF callback events
 typedef enum
@@ -60,12 +60,11 @@ typedef enum
 
     ESP_HF_ATA_RESPONSE_EVT,                  /*!< Answer an Incoming Call */
     ESP_HF_CHUP_RESPONSE_EVT,                 /*!< Reject an Incoming Call */
-    ESP_HF_DIAL_EVT,                          /*!< Originate an outgoing call with specific number or dial the last number */
-    ESP_HF_WBS_RESPONSE_EVT,                  /*!< Result of esp_hf_ag_set_codec() */
+    ESP_HF_DIAL_EVT,                          /*!< Origin an outgoing call with specific number or the dial the last number */
+    ESP_HF_WBS_RESPONSE_EVT,                  /*!< Codec Status */
     ESP_HF_BCS_RESPONSE_EVT,                  /*!< Final Codec Choice */
     ESP_HF_PKT_STAT_NUMS_GET_EVT,             /*!< Request number of packet different status */
     ESP_HF_PROF_STATE_EVT,                    /*!< Indicate HF init or deinit complete */
-    ESP_HF_BAC_RESPONSE_EVT,                  /*!< Peer codec capabilities from AT+BAC */
 } esp_hf_cb_event_t;
 
 /// Dial type of ESP_HF_DIAL_EVT
@@ -84,24 +83,6 @@ typedef struct {
     uint8_t sync_conn_num;                     /*!< Number of (e)SCO Connections */
 } esp_hf_profile_status_t;
 
-/// HF AG service bit mask
-typedef enum {
-    ESP_HF_AG_SERVICE_HFP = 0x01,              /*!< HFP AG service */
-    ESP_HF_AG_SERVICE_HSP = 0x02,              /*!< HSP AG service */
-} esp_hf_ag_service_t;
-
-#define ESP_HF_AG_SERVICE_MASK_ALL    (ESP_HF_AG_SERVICE_HFP | ESP_HF_AG_SERVICE_HSP)  /*!< All supported AG services */
-
-/// HF AG initialization configuration
-typedef struct {
-    uint8_t service_mask;                      /*!< Bit mask of services to register, combine with OR, e.g. ESP_HF_AG_SERVICE_HFP | ESP_HF_AG_SERVICE_HSP */
-} esp_hf_ag_cfg_t;
-
-#define ESP_HF_AG_INIT_CONFIG_DEFAULT()                \
-    {                                                  \
-        .service_mask = ESP_HF_AG_SERVICE_MASK_ALL,    \
-    }
-
 /// HFP AG callback parameters
 typedef union
 {
@@ -109,11 +90,10 @@ typedef union
      * @brief  ESP_HF_CONNECTION_STATE_EVT
      */
     struct hf_conn_stat_param {
-        esp_bd_addr_t remote_bda;                 /*!< Remote Bluetooth device address */
+        esp_bd_addr_t remote_bda;                 /*!< Remote bluetooth device address */
         esp_hf_connection_state_t state;          /*!< Connection state */
         uint32_t peer_feat;                       /*!< HF supported features */
         uint32_t chld_feat;                       /*!< AG supported features on call hold and multiparty services */
-        esp_hf_ag_service_t peer_service;         /*!< Service of this link, ESP_HF_AG_SERVICE_HFP or ESP_HF_AG_SERVICE_HSP. Set when RFCOMM opens and reported again for SLC and disconnect. 0 when the open failed */
     } conn_stat;                                  /*!< AG callback param of ESP_HF_CONNECTION_STATE_EVT */
 
     /**
@@ -230,24 +210,15 @@ typedef union
      */
     struct hf_wbs_rep_param {
         esp_bd_addr_t remote_addr;                /*!< Remote bluetooth device address */
-        esp_hf_codec_mode_t codec;                /*!< Requested codec CVSD, mSBC or LC3 */
-        esp_bt_status_t status;                   /*!< ESP_BT_STATUS_SUCCESS or FAIL */
+        esp_hf_wbs_config_t codec;                /*!< codec mode CVSD or mSBC */
     } wbs_rep;                                    /*!< AG callback param of ESP_HF_WBS_RESPONSE_EVT */
-
-    /**
-     * @brief ESP_HF_BAC_RESPONSE_EVT
-     */
-    struct hf_bac_rep_param {
-        esp_bd_addr_t remote_addr;                /*!< Remote bluetooth device address */
-        uint16_t peer_codecs;                     /*!< Bitmap: ESP_HF_CODEC_CAP_CVSD | MSBC | LC3 */
-    } bac_rep;                                    /*!< AG callback param of ESP_HF_BAC_RESPONSE_EVT */
 
     /**
      * @brief ESP_HF_BCS_RESPONSE_EVT
      */
     struct hf_bcs_rep_param {
         esp_bd_addr_t remote_addr;                /*!< Remote bluetooth device address */
-        esp_hf_codec_mode_t mode;                 /*!< Final negotiated codec mode CVSD, mSBC or LC3 */
+        esp_hf_wbs_config_t mode;                 /*!< codec mode CVSD or mSBC */
     } bcs_rep;                                    /*!< AG callback param of ESP_HF_BCS_RESPONSE_EVT */
 
     /**
@@ -257,10 +228,10 @@ typedef union
         uint32_t rx_total;        /*!< the total number of packets received */
         uint32_t rx_correct;      /*!< the total number of packets data correctly received */
         uint32_t rx_err;          /*!< the total number of packets data with possible invalid */
-        uint32_t rx_none;         /*!< the total number of packets data not received */
+        uint32_t rx_none;         /*!< the total number of packets data no received */
         uint32_t rx_lost;         /*!< the total number of packets data partially lost */
-        uint32_t tx_total;        /*!< the total number of packets sent */
-        uint32_t tx_discarded;    /*!< the total number of packets sent and lost */
+        uint32_t tx_total;        /*!< the total number of packets send */
+        uint32_t tx_discarded;    /*!< the total number of packets send lost */
     } pkt_nums;                   /*!< AG callback param of ESP_HF_PKT_STAT_NUMS_GET_EVT */
 
     /**
@@ -275,9 +246,9 @@ typedef union
 /**
  * @brief           HF AG callback function type
  *
- * @param[in]       event : Event type
+ * @param           event : Event type
  *
- * @param[in]       param : Pointer to callback parameter
+ * @param           param : Pointer to callback parameter
  */
 typedef void (* esp_hf_cb_t) (esp_hf_cb_event_t event, esp_hf_cb_param_t *param);
 
@@ -317,9 +288,6 @@ esp_err_t esp_hf_ag_register_callback(esp_hf_cb_t callback);
  * @brief           Initialize the bluetooth HF AG module.
  *                  This function should be called after esp_bluedroid_enable() completes successfully.
  *                  ESP_HF_PROF_STATE_EVT with ESP_HF_INIT_SUCCESS will reported to the APP layer.
- *                  Both HFP and HSP AG services are registered.
- *
- * @deprecated      Please use `esp_hf_ag_init_with_cfg` instead.
  *
  * @return
  *                  - ESP_OK: if the initialization request is sent successfully
@@ -327,27 +295,7 @@ esp_err_t esp_hf_ag_register_callback(esp_hf_cb_t callback);
  *                  - ESP_FAIL: others
  *
  */
-__attribute__((deprecated("esp_hf_ag_init is deprecated, please use esp_hf_ag_init_with_cfg instead")))
 esp_err_t esp_hf_ag_init(void);
-
-/**
- *
- * @brief           Initialize the bluetooth HF AG module with configuration.
- *                  This function should be called after esp_bluedroid_enable() completes successfully.
- *                  ESP_HF_PROF_STATE_EVT with ESP_HF_INIT_SUCCESS will reported to the APP layer.
- *
- * @param[in]       cfg: initialization configuration.
- *                       Use ESP_HF_AG_INIT_CONFIG_DEFAULT() for both HFP and HSP.
- *                       Set service_mask to ESP_HF_AG_SERVICE_HSP to register HSP only.
- *
- * @return
- *                  - ESP_OK: if the initialization request is sent successfully
- *                  - ESP_ERR_INVALID_STATE: if bluetooth stack is not yet enabled
- *                  - ESP_ERR_INVALID_ARG: if cfg is NULL or service_mask is invalid
- *                  - ESP_FAIL: others
- *
- */
-esp_err_t esp_hf_ag_init_with_cfg(const esp_hf_ag_cfg_t *cfg);
 
 /**
  *
@@ -366,8 +314,7 @@ esp_err_t esp_hf_ag_deinit(void);
 /**
  *
  * @brief           To establish a Service Level Connection to remote bluetooth HFP client device.
- *                  This function must be called after esp_hf_ag_init_with_cfg()/esp_hf_ag_init()
- *                  and before esp_hf_ag_deinit().
+ *                  This function must be called after esp_hf_ag_init() and before esp_hf_ag_deinit().
  *
  * @param[in]       remote_bda: remote bluetooth HFP client device address
  *
@@ -382,7 +329,7 @@ esp_err_t esp_hf_ag_slc_connect(esp_bd_addr_t remote_bda);
 /**
  *
  * @brief           Disconnect from the remote HFP client. This function must be called
- *                  after esp_hf_ag_init_with_cfg() and before esp_hf_ag_deinit().
+ *                  after esp_hf_ag_init() and before esp_hf_ag_deinit().
  *
  * @param[in]       remote_bda: remote bluetooth device address
  *
@@ -426,32 +373,7 @@ esp_err_t esp_hf_ag_audio_disconnect(esp_bd_addr_t remote_bda);
 
 /**
  *
- * @brief           Set preferred codec for subsequent SCO connections with a remote HF.
- *                  Should be called after receiving ESP_HF_BAC_RESPONSE_EVT to know peer capabilities.
- *                  Result is reported via ESP_HF_WBS_RESPONSE_EVT.
- *                  HFP only. On an HSP link the request is ignored, a warning is logged, and
- *                  ESP_HF_WBS_RESPONSE_EVT reports failure.
- *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
- *
- * @param[in]       remote_bda: remote bluetooth HFP client device address
- * @param[in]       mode: ESP_HF_CODEC_CVSD, ESP_HF_CODEC_MSBC, ESP_HF_CODEC_LC3,
- *                  or ESP_HF_CODEC_NONE to reset to stack default
- *
- * @return
- *                  - ESP_OK: request sent to lower layer
- *                  - ESP_ERR_INVALID_STATE: if bluetooth stack is not yet enabled or SLC not connected
- *                  - ESP_ERR_INVALID_ARG: invalid codec mode or address
- *                  - ESP_FAIL: others
- *
- */
-esp_err_t esp_hf_ag_set_codec(esp_bd_addr_t remote_bda, esp_hf_codec_mode_t mode);
-
-/**
- *
  * @brief           Response of Volume Recognition Command(AT+VRA) from HFP client.
- *                  HFP only. On an HSP link, or when the peer does not support voice recognition,
- *                  +BVRA is not sent and a warning is logged. Audio is still connected or
- *                  disconnected according to the requested state.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_bda: the device address of voice recognition initiator
@@ -523,7 +445,6 @@ esp_err_t esp_hf_ag_cmee_send(esp_bd_addr_t remote_bda, esp_hf_at_response_code_
  *
  * @brief           Send indicator report "+CIEV: <ind> <value>" to HFP Client. "CIEV" means “indicator events reporting",
  *                  and all indicator types can be sent one type at a time.
- *                  HFP only. On an HSP link the request is ignored and a warning is logged.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_addr: remote bluetooth device address
@@ -540,7 +461,6 @@ esp_err_t esp_hf_ag_ciev_report(esp_bd_addr_t remote_addr, esp_hf_ciev_report_ty
 /**
  *
  * @brief           Response to device individual indicators to HFP Client.
- *                  HFP only. On an HSP link the request is ignored and a warning is logged.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_addr: remote bluetooth device address
@@ -567,7 +487,6 @@ esp_err_t esp_hf_ag_cind_response(esp_bd_addr_t remote_addr,
 /**
  *
  * @brief           Response for AT+COPS command from HF Client.
- *                  HFP only. On an HSP link the request is ignored and a warning is logged.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_addr: remote bluetooth device address
@@ -583,7 +502,6 @@ esp_err_t esp_hf_ag_cops_response(esp_bd_addr_t remote_addr, char *name);
 /**
  *
  * @brief           Response to AT+CLCC command from HFP Client.
- *                  HFP only. On an HSP link the request is ignored and a warning is logged.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_addr: remote bluetooth device address
@@ -607,7 +525,6 @@ esp_err_t esp_hf_ag_clcc_response(esp_bd_addr_t remote_addr, int index, esp_hf_c
 /**
  *
  * @brief           Response for AT+CNUM command from HF Client.
- *                  HFP only. On an HSP link the request is ignored and a warning is logged.
  *                  As a precondition to use this API, Service Level Connection shall exist with HFP client.
  *
  * @param[in]       remote_addr: remote bluetooth device address
@@ -772,8 +689,6 @@ void esp_hf_ag_audio_buff_free(esp_hf_audio_buff_t *audio_buf);
  *                  If the length of the audio data is equal to preferred_frame_size indicated by
  *                  ESP_HF_AUDIO_STATE_EVT, then we can reduce one memory copy inside the Bluedroid stack.
  *                  This function is only used in the case that Voice Over HCI is enabled.
- *                  On success, the stack takes ownership of audio_buf and will free it internally.
- *                  On failure, the caller is responsible for freeing audio_buf with esp_hf_ag_audio_buff_free.
  *
  * @param[in]       sync_conn_hdl: (e)SCO connection handle
  *

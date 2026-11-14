@@ -130,7 +130,23 @@ blehr_advertise(void)
 static void
 blehr_tx_hrate_stop(void)
 {
-    xTimerStop(blehr_tx_timer, 0);
+    xTimerStop( blehr_tx_timer, 1000 / portTICK_PERIOD_MS );
+}
+
+/* Reset heart rate measurement */
+static void
+blehr_tx_hrate_reset(void)
+{
+    int rc;
+
+    if (xTimerReset(blehr_tx_timer, 1000 / portTICK_PERIOD_MS ) == pdPASS) {
+        rc = 0;
+    } else {
+        rc = 1;
+    }
+
+    assert(rc == 0);
+
 }
 
 /* This function simulates heart beat and notifies it to the client */
@@ -157,15 +173,11 @@ blehr_tx_hrate(TimerHandle_t ev)
     }
 
     om = ble_hs_mbuf_from_flat(hrm, sizeof(hrm));
-    if (om == NULL) {
-        MODLOG_DFLT(WARN, "ble_hs_mbuf_from_flat failed; out of memory\n");
-        return;
-    }
-
     rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
-    if (rc != 0) {
-        MODLOG_DFLT(WARN, "ble_gatts_notify_custom failed; rc=%d\n", rc);
-    }
+
+    assert(rc == 0);
+
+    blehr_tx_hrate_reset();
 }
 
 static int
@@ -188,9 +200,6 @@ blehr_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         MODLOG_DFLT(INFO, "disconnect; reason=%d\n", event->disconnect.reason);
 
-        notify_state = false;
-        blehr_tx_hrate_stop();
-        conn_handle = BLE_HS_CONN_HANDLE_NONE;
         /* Connection terminated; resume advertising */
         blehr_advertise();
         break;
@@ -206,11 +215,10 @@ blehr_gap_event(struct ble_gap_event *event, void *arg)
                     event->subscribe.cur_notify, hrs_hrm_handle);
         if (event->subscribe.attr_handle == hrs_hrm_handle) {
             notify_state = event->subscribe.cur_notify;
-            if (notify_state) {
-                xTimerStart(blehr_tx_timer, 0);
-            } else {
-                blehr_tx_hrate_stop();
-            }
+            blehr_tx_hrate_reset();
+        } else if (event->subscribe.attr_handle != hrs_hrm_handle) {
+            notify_state = event->subscribe.cur_notify;
+            blehr_tx_hrate_stop();
         }
         ESP_LOGI("BLE_GAP_SUBSCRIBE_EVENT", "conn_handle from subscribe=%d", conn_handle);
         break;
@@ -289,11 +297,9 @@ void app_main(void)
     rc = gatt_svr_init();
     assert(rc == 0);
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name */
     rc = ble_svc_gap_device_name_set(device_name);
     assert(rc == 0);
-#endif
 #endif
 
     /* Start the task */

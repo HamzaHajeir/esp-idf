@@ -1,5 +1,4 @@
 include(${CMAKE_CURRENT_LIST_DIR}/toolchain_flags.cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/linux_toolchain.cmake)
 #
 # Get target from single sdkconfig file
 #
@@ -95,7 +94,7 @@ macro(__target_init config_file)
 
     # Check if selected target is consistent with CMake cache
     if(DEFINED CACHE{IDF_TARGET})
-        if(NOT $CACHE{IDF_TARGET} STREQUAL "${env_idf_target}")
+        if(NOT $CACHE{IDF_TARGET} STREQUAL ${env_idf_target})
             message(FATAL_ERROR " IDF_TARGET '$CACHE{IDF_TARGET}' in CMake"
                 " cache does not match currently selected IDF_TARGET '${env_idf_target}'."
                 " To change the target, clear the build directory and sdkconfig file,"
@@ -106,7 +105,7 @@ macro(__target_init config_file)
     # Check if selected target is consistent with sdkconfig
     __target_from_config("${config_file}" sdkconfig_target where)
     if(sdkconfig_target)
-        if(NOT "${sdkconfig_target}" STREQUAL "${env_idf_target}")
+        if(NOT ${sdkconfig_target} STREQUAL ${env_idf_target})
             message(FATAL_ERROR " Target '${sdkconfig_target}' in sdkconfig '${where}'"
                 " does not match currently selected IDF_TARGET '${IDF_TARGET}'."
                 " To change the target, clear the build directory and sdkconfig file,"
@@ -125,21 +124,6 @@ endmacro()
 # Used by the project CMake file to set the toolchain before project() call.
 #
 macro(__target_set_toolchain)
-    # For the linux target, a user-provided toolchain file (e.g. for cross-compiling)
-    # takes precedence over ESP-IDF's toolchain-linux.cmake.
-    __get_linux_custom_toolchain_file("${IDF_TARGET}" "${CMAKE_TOOLCHAIN_FILE}" custom_toolchain_file)
-    if(custom_toolchain_file)
-        message(STATUS "Using custom toolchain file: ${custom_toolchain_file}")
-        set(CMAKE_TOOLCHAIN_FILE "${custom_toolchain_file}")
-    else()
-        __target_set_idf_toolchain()
-    endif()
-endmacro()
-
-#
-# Set CMAKE_TOOLCHAIN_FILE to ESP-IDF's toolchain file for the selected target.
-#
-macro(__target_set_idf_toolchain)
     idf_build_get_property(idf_path IDF_PATH)
 
     # See if Clang toolchain should be used
@@ -159,7 +143,7 @@ macro(__target_set_idf_toolchain)
                 " the build directory and sdkconfig file, and build the project again.")
     endif()
 
-    if("${env_idf_toolchain}" STREQUAL "clang")
+    if(${env_idf_toolchain} STREQUAL "clang")
         # TODO IDF-14338: remove the line below since it will be set in toolchain.cmake
         set(IDF_TOOLCHAIN ${env_idf_toolchain} CACHE STRING "IDF Build Toolchain Type")
         set(toolchain_filename "toolchain-clang-${IDF_TARGET}.cmake")

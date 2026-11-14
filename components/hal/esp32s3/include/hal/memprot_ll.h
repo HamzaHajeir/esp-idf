@@ -63,35 +63,21 @@ static inline void *memprot_ll_get_split_addr_from_reg(const uint32_t regval, co
     uint32_t level_off = 0;
 
     do {
-        if (reg_val.cat0 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
-        level_off += I_D_SRAM_SEGMENT_SIZE / 2;
-        if (reg_val.cat1 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat0 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
+        level_off += I_D_SRAM_SEGMENT_SIZE/2;
+        if (reg_val.cat1 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         level_off += I_D_SRAM_SEGMENT_SIZE;
-        if (reg_val.cat2 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat2 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         level_off += I_D_SRAM_SEGMENT_SIZE;
-        if (reg_val.cat3 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat3 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         level_off += I_D_SRAM_SEGMENT_SIZE;
-        if (reg_val.cat4 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat4 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         level_off += I_D_SRAM_SEGMENT_SIZE;
-        if (reg_val.cat5 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat5 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         level_off += I_D_SRAM_SEGMENT_SIZE;
-        if (reg_val.cat6 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) {
-            break;
-        }
+        if (reg_val.cat6 == MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA) break;
         return NULL; //wrong configuration
-    } while (0);
+    } while(0);
 
     return (void *)(base + level_off + off);
 }
@@ -158,14 +144,14 @@ static inline void memprot_ll_icache_get_pms_area_1(bool *r, bool *w, bool *x)
 static inline memprot_hal_err_t memprot_ll_iram0_get_intr_source_num(const int core, uint32_t* src_num)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *src_num = ETS_CORE0_IRAM0_PMS_INTR_SOURCE;
-        break;
-    case APP_CPU_NUM:
-        *src_num = ETS_CORE1_IRAM0_PMS_INTR_SOURCE;
-        break;
-    default:
-        return MEMP_HAL_FAIL;
+        case PRO_CPU_NUM:
+            *src_num = ETS_CORE0_IRAM0_PMS_INTR_SOURCE;
+            break;
+        case APP_CPU_NUM:
+            *src_num = ETS_CORE1_IRAM0_PMS_INTR_SOURCE;
+            break;
+        default:
+            return MEMP_HAL_FAIL;
     }
 
     return MEMP_HAL_OK;
@@ -197,9 +183,8 @@ static inline void memprot_ll_prepare_iram0_split_line_regval(const uint32_t add
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
-                        MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA
-                      };
-    for (size_t x = 0; x < 7; x++) {
+                        MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA };
+    for (size_t x=0; x<7; x++) {
         if (addr <= SRAM_RG3_LEVEL_HLIMITS(x)) {
             cat[x] = MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA;
             break;
@@ -213,15 +198,15 @@ static inline void memprot_ll_prepare_iram0_split_line_regval(const uint32_t add
 
     //write values to required configuration-register
     constrain_reg_fields_t cfg_reg_val = {
-        .cat0 = cat[0],
-        .cat1 = cat[1],
-        .cat2 = cat[2],
-        .cat3 = cat[3],
-        .cat4 = cat[4],
-        .cat5 = cat[5],
-        .cat6 = cat[6],
-        .splitaddr = conf_add,
-        .reserved = 0
+            .cat0 = cat[0],
+            .cat1 = cat[1],
+            .cat2 = cat[2],
+            .cat3 = cat[3],
+            .cat4 = cat[4],
+            .cat5 = cat[5],
+            .cat6 = cat[6],
+            .splitaddr = conf_add,
+            .reserved = 0
     };
 
     *regval = cfg_reg_val.val;
@@ -397,6 +382,7 @@ static inline void memprot_ll_iram0_get_pms_area_3(bool *r, bool *w, bool *x)
     memprot_ll_iram0_get_permissions(permissions, r, w, x);
 }
 
+
 ///////////////////////////////////
 // IRAM0 - MONITOR
 
@@ -404,20 +390,20 @@ static inline void memprot_ll_iram0_get_pms_area_3(bool *r, bool *w, bool *x)
 static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_lock(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG, 1);
+        case PRO_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG, 1);
+            break;
+        case APP_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -426,14 +412,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_lock(const int core
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_lock(const int core, bool* locked)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG) == 1;
-        break;
-    case APP_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG) == 1;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_0_REG) == 1;
+            break;
+        case APP_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_0_REG) == 1;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -443,34 +429,34 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_lock(const int core
 static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_en(const int core, const bool enable)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN);
+        case PRO_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    case APP_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN);
+            }
+            break;
+        case APP_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            }
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -479,14 +465,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_en(const int core, 
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_en(const int core, bool* enabled)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *enabled = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) == 1;
-        break;
-    case APP_CPU_NUM:
-        *enabled = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) == 1;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *enabled = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_EN) == 1;
+            break;
+        case APP_CPU_NUM:
+            *enabled = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_EN) == 1;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -495,20 +481,20 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_en(const int core, 
 static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -517,20 +503,20 @@ static inline memprot_hal_err_t memprot_ll_iram0_set_monitor_intrclr(const int c
 static inline memprot_hal_err_t memprot_ll_iram0_reset_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -539,14 +525,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_reset_monitor_intrclr(const int
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_intrclr(const int core, bool* cleared)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    case APP_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        case APP_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -555,14 +541,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_intrclr(const int c
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_enable_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_1_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_1_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -572,14 +558,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_enable_register(con
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_intr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -588,14 +574,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_intr(const i
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_wr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -604,14 +590,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_wr(con
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_loadstore(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_LOADSTORE);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_LOADSTORE);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_LOADSTORE);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_LOADSTORE);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -620,14 +606,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_loadst
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_world(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -638,14 +624,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_addr(c
     uint32_t reg_off;
 
     switch (core) {
-    case PRO_CPU_NUM:
-        reg_off = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
-        break;
-    case APP_CPU_NUM:
-        reg_off = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            reg_off = REG_GET_FIELD(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
+            break;
+        case APP_CPU_NUM:
+            reg_off = REG_GET_FIELD(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     *addr = (void*)(reg_off > 0 ? (reg_off << I_FAULT_ADDR_SHIFT) + IRAM0_VIOLATE_STATUS_ADDR_OFFSET : 0);
@@ -656,18 +642,19 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_fault_addr(c
 static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_IRAM0_PMS_MONITOR_2_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_IRAM0_PMS_MONITOR_2_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
 }
+
 
 /* ******************************************************************************************************
  * *** RTC_FAST ***
@@ -676,14 +663,14 @@ static inline memprot_hal_err_t memprot_ll_iram0_get_monitor_status_register(con
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_intr_source_num(const int core, uint32_t* src_num)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *src_num = ETS_CORE0_PIF_PMS_INTR_SOURCE;
-        break;
-    case APP_CPU_NUM:
-        *src_num = ETS_CORE1_PIF_PMS_INTR_SOURCE;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *src_num = ETS_CORE0_PIF_PMS_INTR_SOURCE;
+            break;
+        case APP_CPU_NUM:
+            *src_num = ETS_CORE1_PIF_PMS_INTR_SOURCE;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -694,20 +681,20 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_intr_source_num(const int
 static inline memprot_hal_err_t memprot_ll_set_pif_constraint_lock(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG, 1);
+        case PRO_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG, 1);
+            break;
+        case APP_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -716,14 +703,14 @@ static inline memprot_hal_err_t memprot_ll_set_pif_constraint_lock(const int cor
 static inline memprot_hal_err_t memprot_ll_get_pif_constraint_lock(const int core, bool* locked)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG) == 1;
-        break;
-    case APP_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG) == 1;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_0_REG) == 1;
+            break;
+        case APP_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_0_REG) == 1;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -732,14 +719,14 @@ static inline memprot_hal_err_t memprot_ll_get_pif_constraint_lock(const int cor
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_splitaddr_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_9_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_9_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_9_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_9_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -969,14 +956,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_pms_area(const int core, 
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_permission_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_10_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_10_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_CONSTRAIN_10_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_CONSTRAIN_10_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -989,20 +976,20 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_permission_register(const
 static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_lock(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG, 1);
+        case PRO_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG, 1);
+            break;
+        case APP_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1011,14 +998,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_lock(const int co
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_lock(const int core, bool* locked)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG) == 1;
-        break;
-    case APP_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG) == 1;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_0_REG) == 1;
+            break;
+        case APP_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_0_REG) == 1;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1028,34 +1015,34 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_lock(const int co
 static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_en(const int core, const bool enable)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN);
+        case PRO_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    case APP_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN);
+            }
+            break;
+        case APP_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            }
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1064,14 +1051,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_en(const int core
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_en(const int core, bool* enabled)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *enabled = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) > 0;
-        break;
-    case APP_CPU_NUM:
-        *enabled = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) > 0;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *enabled = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_EN) > 0;
+            break;
+        case APP_CPU_NUM:
+            *enabled = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_EN) > 0;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1080,14 +1067,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_en(const int core
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_intrclr(const int core, bool* cleared)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    case APP_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        case APP_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1096,20 +1083,20 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_intrclr(const int
 static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1118,20 +1105,20 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_set_monitor_intrclr(const int
 static inline memprot_hal_err_t memprot_ll_rtcfast_reset_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1140,14 +1127,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_reset_monitor_intrclr(const i
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_1_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_1_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1157,14 +1144,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_register(const in
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_intr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1173,14 +1160,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_intr(const
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_addr(const int core, void** addr)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *addr = (void*)REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_3_REG);
-        break;
-    case APP_CPU_NUM:
-        *addr = (void*)REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_3_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *addr = (void*)REG_READ(SENSITIVE_CORE_0_PIF_PMS_MONITOR_3_REG);
+            break;
+        case APP_CPU_NUM:
+            *addr = (void*)REG_READ(SENSITIVE_CORE_1_PIF_PMS_MONITOR_3_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1189,14 +1176,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_addr
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_world(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HWORLD);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HWORLD);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HWORLD);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HWORLD);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1205,14 +1192,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_worl
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_loadstore(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HPORT_0);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HPORT_0);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HPORT_0);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HPORT_0);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1221,18 +1208,19 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_load
 static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_wr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HWRITE);
-        break;
-    case APP_CPU_NUM:
-        *regval =  REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HWRITE);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_PIF_PMS_MONITOR_VIOLATE_STATUS_HWRITE);
+            break;
+        case APP_CPU_NUM:
+            *regval =  REG_GET_FIELD(SENSITIVE_CORE_1_PIF_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_PIF_PMS_MONITOR_VIOLATE_STATUS_HWRITE);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
 }
+
 
 /* ******************************************************************************************************
  * *** DRAM0 ***
@@ -1241,14 +1229,14 @@ static inline memprot_hal_err_t memprot_ll_rtcfast_get_monitor_status_fault_wr(c
 static inline memprot_hal_err_t memprot_ll_dram0_get_intr_source_num(const int core, uint32_t* src_num)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *src_num = ETS_CORE0_DRAM0_PMS_INTR_SOURCE;
-        break;
-    case APP_CPU_NUM:
-        *src_num = ETS_CORE1_DRAM0_PMS_INTR_SOURCE;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *src_num = ETS_CORE0_DRAM0_PMS_INTR_SOURCE;
+            break;
+        case APP_CPU_NUM:
+            *src_num = ETS_CORE1_DRAM0_PMS_INTR_SOURCE;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1275,10 +1263,9 @@ static inline void memprot_ll_prepare_dram0_split_line_regval(const uint32_t add
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
                         MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA,
-                        MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA
-                      };
+                        MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_ABOVE_SA };
 
-    for (size_t x = 0; x < 7; x++) {
+    for (size_t x=0; x<7; x++) {
         if (addr <= MAP_IRAM_TO_DRAM(SRAM_RG3_LEVEL_HLIMITS(x))) {
             cat[x] = MEMP_HAL_CORE_X_IRAM0_DRAM0_DMA_SRAM_CATEGORY_BITS_EQUAL_SA;
             break;
@@ -1292,16 +1279,17 @@ static inline void memprot_ll_prepare_dram0_split_line_regval(const uint32_t add
 
     //write values to required configuration-register
     constrain_reg_fields_t cfg_reg_val = {
-        .cat0 = cat[0],
-        .cat1 = cat[1],
-        .cat2 = cat[2],
-        .cat3 = cat[3],
-        .cat4 = cat[4],
-        .cat5 = cat[5],
-        .cat6 = cat[6],
-        .splitaddr = conf_add,
-        .reserved = 0
+            .cat0 = cat[0],
+            .cat1 = cat[1],
+            .cat2 = cat[2],
+            .cat3 = cat[3],
+            .cat4 = cat[4],
+            .cat5 = cat[5],
+            .cat6 = cat[6],
+            .splitaddr = conf_add,
+            .reserved = 0
     };
+
 
     *regval = cfg_reg_val.val;
 }
@@ -1422,7 +1410,7 @@ static inline void memprot_ll_dram0_set_pms_area_3(const bool r, const bool w)
 #endif
 }
 
-static inline void memprot_ll_dram0_get_permissions(const uint32_t perms, bool *r, bool *w)
+static inline void memprot_ll_dram0_get_permissions(const uint32_t perms, bool *r, bool *w )
 {
     *r = perms & SENSITIVE_CORE_X_DRAM0_PMS_CONSTRAIN_SRAM_WORLD_X_R;
     *w = perms & SENSITIVE_CORE_X_DRAM0_PMS_CONSTRAIN_SRAM_WORLD_X_W;
@@ -1452,6 +1440,7 @@ static inline void memprot_ll_dram0_get_pms_area_3(bool *r, bool *w)
     memprot_ll_dram0_get_permissions(permissions, r, w);
 }
 
+
 ///////////////////////////////////
 // DRAM0 - MONITOR
 
@@ -1459,20 +1448,20 @@ static inline void memprot_ll_dram0_get_pms_area_3(bool *r, bool *w)
 static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_lock(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG, 1);
+        case PRO_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_WRITE(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG, 1);
+            break;
+        case APP_CPU_NUM:
+            REG_WRITE(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG, 1);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
+            HAL_ASSERT((REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG) == 1) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1481,14 +1470,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_lock(const int core
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_lock(const int core, bool* locked)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG) == 1;
-        break;
-    case APP_CPU_NUM:
-        *locked = REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG) == 1;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_0_REG) == 1;
+            break;
+        case APP_CPU_NUM:
+            *locked = REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_0_REG) == 1;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1498,34 +1487,34 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_lock(const int core
 static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_en(const int core, const bool enable)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN);
+        case PRO_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    case APP_CPU_NUM:
-        if (enable) {
-            REG_SET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN);
+            }
+            break;
+        case APP_CPU_NUM:
+            if (enable) {
+                REG_SET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0) && "Value not stored to required register");
 #endif
-        } else {
-            REG_CLR_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN);
+            } else {
+                REG_CLR_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN);
 #ifdef PMS_DEBUG_ASSERTIONS
-            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
+                HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) == 0) && "Value not stored to required register");
 #endif
-        }
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            }
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1534,14 +1523,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_en(const int core, 
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_en(const int core, bool* enabled)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *enabled = REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0;
-        break;
-    case APP_CPU_NUM:
-        *enabled = REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *enabled = REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0;
+            break;
+        case APP_CPU_NUM:
+            *enabled = REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_EN) > 0;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1550,20 +1539,20 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_en(const int core, 
 static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_SET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_SET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1572,20 +1561,20 @@ static inline memprot_hal_err_t memprot_ll_dram0_set_monitor_intrclr(const int c
 static inline memprot_hal_err_t memprot_ll_dram0_reset_monitor_intrclr(const int core)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR);
+        case PRO_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    case APP_CPU_NUM:
-        REG_CLR_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR);
+            break;
+        case APP_CPU_NUM:
+            REG_CLR_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR);
 #ifdef PMS_DEBUG_ASSERTIONS
-        HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
+            HAL_ASSERT((REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) == 0) && "Value not stored to required register");
 #endif
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1594,14 +1583,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_reset_monitor_intrclr(const int
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_intrclr(const int core, bool* cleared)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    case APP_CPU_NUM:
-        *cleared = REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        case APP_CPU_NUM:
+            *cleared = REG_GET_BIT(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_CLR) > 0;
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1610,14 +1599,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_intrclr(const int c
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_enable_register(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_1_REG);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_READ(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_1_REG);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1627,14 +1616,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_enable_register(con
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_intr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_INTR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_INTR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1643,14 +1632,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_intr(const i
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_world(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WORLD);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1661,14 +1650,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_addr(c
     uint32_t reg_off;
 
     switch (core) {
-    case PRO_CPU_NUM:
-        reg_off = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
-        break;
-    case APP_CPU_NUM:
-        reg_off = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            reg_off = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
+            break;
+        case APP_CPU_NUM:
+            reg_off = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_ADDR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     *addr = (void*)(reg_off > 0 ? (reg_off << D_FAULT_ADDR_SHIFT) + DRAM0_VIOLATE_STATUS_ADDR_OFFSET : 0);
@@ -1679,14 +1668,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_addr(c
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_wr(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_3_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_3_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_3_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_3_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_WR);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;
@@ -1695,14 +1684,14 @@ static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_wr(con
 static inline memprot_hal_err_t memprot_ll_dram0_get_monitor_status_fault_byte_en(const int core, uint32_t* regval)
 {
     switch (core) {
-    case PRO_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_BYTEEN);
-        break;
-    case APP_CPU_NUM:
-        *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_BYTEEN);
-        break;
-    default:
-        return MEMP_HAL_ERR_CORE_INVALID;
+        case PRO_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_0_DRAM0_PMS_MONITOR_VIOLATE_STATUS_BYTEEN);
+            break;
+        case APP_CPU_NUM:
+            *regval = REG_GET_FIELD(SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_2_REG, SENSITIVE_CORE_1_DRAM0_PMS_MONITOR_VIOLATE_STATUS_BYTEEN);
+            break;
+        default:
+            return MEMP_HAL_ERR_CORE_INVALID;
     }
 
     return MEMP_HAL_OK;

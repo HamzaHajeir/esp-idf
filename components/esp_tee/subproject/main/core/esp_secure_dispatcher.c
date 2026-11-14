@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -53,7 +53,7 @@ int esp_tee_service_dispatcher(int argc, va_list ap)
     argc--;
 
     const secure_service_entry_t *service = find_service_by_id(sid);
-    if (service == NULL || service->func == NULL) {
+    if (service == NULL) {
         ESP_LOGE(TAG, "Invalid service ID!");
         return ret;
     }
@@ -71,16 +71,13 @@ int esp_tee_service_dispatcher(int argc, va_list ap)
     uint32_t *argp = &argv[0];
 
     asm volatile(
-        // Reserve outgoing-argument area for stack args 9+
-        "addi sp, sp, -16 \n"
-
         "mv t0, %1 \n"            // t0 = argc
         "mv t1, %3 \n"            // t1 = argp
 
         "li t2, 8 \n"              // t2 = 8 (max register args)
         "ble t0, t2, load_regs \n" // If argc <= 8 (a0-a7), skip stack routine
 
-        // Store extra args (argc > 8) on the reserved area
+        // Store extra args (argc > 8) on stack
         "mv t3, sp \n"
         "addi t1, t1, 32 \n"
 
@@ -90,7 +87,7 @@ int esp_tee_service_dispatcher(int argc, va_list ap)
         "addi t1, t1, 4 \n"
         "addi t3, t3, 4 \n"
         "addi t0, t0, -1 \n"
-        "bgt t0, t2, stack_loop \n"
+        "bge t0, t2, stack_loop \n"
 
         // Load the first 8 arguments into a0-a7
         "load_regs: \n"
@@ -107,13 +104,10 @@ int esp_tee_service_dispatcher(int argc, va_list ap)
         "mv t1, %2 \n"            // Load function pointer
         "jalr 0(t1) \n"           // Call function
         "mv %0, a0 \n"            // Store return value
-
-        // Restore the outgoing-argument area
-        "addi sp, sp, 16 \n"
         : "=r"(ret)
         : "r"(argc), "r"(fp_secure_service), "r"(argp)
         : "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
-        "t0", "t1", "t2", "t3", "t4", "t5", "t6", "ra", "memory"
+        "t0", "t1", "t2", "t3", "t4"
     );
 
     return ret;

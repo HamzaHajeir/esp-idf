@@ -1,11 +1,16 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
 #include "host/ble_hs.h"
+#include "host/ble_uuid.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "bleprph.h"
 #include "services/ans/ble_svc_ans.h"
 
 /*** Maximum number of characteristics with the notify flag ***/
@@ -145,11 +150,9 @@ gatt_svc_access(uint16_t conn_handle, uint16_t attr_handle,
                                 sizeof(gatt_svr_chr_val),
                                 sizeof(gatt_svr_chr_val),
                                 &gatt_svr_chr_val, NULL);
-            if (rc == 0) {
-                ble_gatts_chr_updated(attr_handle);
-                MODLOG_DFLT(INFO, "Notification/Indication scheduled for "
-                            "all subscribed peers.\n");
-            }
+            ble_gatts_chr_updated(attr_handle);
+            MODLOG_DFLT(INFO, "Notification/Indication scheduled for "
+                        "all subscribed peers.\n");
             return rc;
         }
         goto unknown;
@@ -166,7 +169,7 @@ gatt_svc_access(uint16_t conn_handle, uint16_t attr_handle,
         if (ble_uuid_cmp(uuid, &gatt_svr_dsc_uuid.u) == 0) {
             rc = os_mbuf_append(ctxt->om,
                                 &gatt_svr_dsc_val,
-                                sizeof(gatt_svr_dsc_val));
+                                sizeof(gatt_svr_chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         goto unknown;
@@ -223,15 +226,9 @@ gatt_svr_init(void)
 {
     int rc;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     ble_svc_gap_init();
-#endif /* CONFIG_BT_NIMBLE_GAP_SERVICE */
-#if MYNEWT_VAL(BLE_GATTS)
     ble_svc_gatt_init();
-#endif
-#if CONFIG_BT_NIMBLE_ANS_SERVICE
     ble_svc_ans_init();
-#endif
 
     rc = ble_gatts_count_cfg(gatt_svr_svcs);
     if (rc != 0) {

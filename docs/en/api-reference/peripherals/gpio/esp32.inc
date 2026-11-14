@@ -25,7 +25,8 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO0
       - ADC2_CH1
       - RTC_GPIO11
-      -
+      - Strapping pin
+
     * - GPIO1
       -
       -
@@ -34,7 +35,8 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO2
       - ADC2_CH2
       - RTC_GPIO12
-      -
+      - Strapping pin
+
     * - GPIO3
       -
       -
@@ -44,10 +46,12 @@ The table below provides more information on pin usage, and please note the comm
       - ADC2_CH0
       - RTC_GPIO10
       -
+
     * - GPIO5
       -
       -
-      -
+      - Strapping pin
+
     * - GPIO6
       -
       -
@@ -81,7 +85,7 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO12
       - ADC2_CH5
       - RTC_GPIO15
-      - JTAG
+      - Strapping pin; JTAG
 
     * - GPIO13
       - ADC2_CH4
@@ -96,7 +100,7 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO15
       - ADC2_CH3
       - RTC_GPIO13
-      - JTAG
+      - Strapping pin; JTAG
 
     * - GPIO16
       -
@@ -112,42 +116,52 @@ The table below provides more information on pin usage, and please note the comm
       -
       -
       -
+
     * - GPIO19
       -
       -
       -
+
     * - GPIO21
       -
       -
       -
+
     * - GPIO22
       -
       -
       -
+
     * - GPIO23
       -
       -
       -
+
     * - GPIO25
-      - ADC2_CH8, DAC0
+      - ADC2_CH8
       - RTC_GPIO6
       -
+
     * - GPIO26
-      - ADC2_CH9, DAC1
+      - ADC2_CH9
       - RTC_GPIO7
       -
+
     * - GPIO27
       - ADC2_CH7
       - RTC_GPIO17
       -
+
     * - GPIO32
       - ADC1_CH4
       - RTC_GPIO9
       -
+
     * - GPIO33
       - ADC1_CH5
       - RTC_GPIO8
       -
+
     * - GPIO34
       - ADC1_CH6
       - RTC_GPIO4
@@ -180,7 +194,7 @@ The table below provides more information on pin usage, and please note the comm
 
 .. note::
 
-    - Strapping pin: Some pins are used as strapping pins. For more information, please refer to *{IDF_TARGET_NAME} datasheet* > *Boot Configurations* [`PDF <{IDF_TARGET_DATASHEET_EN_URL}#cd-pins-strap>`__].
+    - Strapping pin: GPIO0, GPIO2, GPIO5, GPIO12 (MTDI), and GPIO15 (MTDO) are strapping pins. For more information, please refer to `ESP32 datasheet <{IDF_TARGET_DATASHEET_EN_URL}>`_.
     - SPI0/1: GPIO6-11 and GPIO16-17 are usually connected to the SPI flash and PSRAM integrated on the module and therefore should not be used for other purposes.
     - JTAG: GPIO12-15 are usually used for inline debug.
     - GPI: GPIO34-39 can only be set as input mode and do not have software-enabled pullup or pulldown functions.

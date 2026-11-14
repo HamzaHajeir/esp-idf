@@ -10,7 +10,6 @@ set(includes
     "unity/src")
 
 set(requires "")
-set(priv_requires "")
 
 if(CONFIG_UNITY_ENABLE_BACKTRACE_ON_FAIL)
     list(APPEND COMPONENT_PRIV_INCLUDEDIRS "include/priv")
@@ -34,7 +33,6 @@ list(APPEND srcs "unity_utils_memory.c")
 if(NOT "${target}" STREQUAL "linux")
     list(APPEND srcs "unity_port_esp32.c")
     list(APPEND srcs "port/esp/unity_utils_memory_esp.c")
-    list(APPEND priv_requires "esp_timer")
 else()
     list(APPEND srcs "unity_port_linux.c")
     list(APPEND srcs "port/linux/unity_utils_memory_linux.c")
@@ -42,11 +40,10 @@ endif()
 
 idf_component_register(SRCS "${srcs}"
                     INCLUDE_DIRS ${includes}
-                    REQUIRES ${requires}
-                    PRIV_REQUIRES ${priv_requires})
+                    REQUIRES ${requires})
 
 if(CONFIG_UNITY_ENABLE_IDF_TEST_RUNNER)
-    idf_component_optional_requires(PRIVATE esp_mspi)
+    idf_component_optional_requires(PRIVATE spi_flash)
 endif()
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,8 +18,7 @@
 #include "flash_qio_mode.h"
 #include "bootloader_flash_config.h"
 #include "bootloader_common.h"
-#include "esp_private/bootloader_flash_internal.h"
-#include "spi_flash_defs.h"
+#include "bootloader_flash_priv.h"
 #include "bootloader_init.h"
 #include "hal/mmu_hal.h"
 #include "hal/mmu_ll.h"
@@ -129,7 +128,7 @@ static void update_flash_config(const esp_image_header_t *bootloader_hdr)
         size = 2;
     }
     // Set flash chip size
-    esp_rom_spiflash_config_param(rom_spiflash_legacy_data->chip.device_id, size * 0x100000, 0x10000, 0x1000, 0x100, 0xffff);    // TODO: IDF-15747 set mode
+    esp_rom_spiflash_config_param(rom_spiflash_legacy_data->chip.device_id, size * 0x100000, 0x10000, 0x1000, 0x100, 0xffff);    // TODO: set mode
 }
 
 static void print_flash_info(const esp_image_header_t *bootloader_hdr)
@@ -231,12 +230,6 @@ esp_err_t bootloader_init_spi_flash(void)
 {
     bootloader_init_mspi_clock();
     bootloader_init_flash_configure();
-
-#if CONFIG_BOOTLOADER_FLASH_DC_AWARE
-    // Reset flash, clear volatile bits DC[0:1]. Make it work under default mode to boot.
-    bootloader_spi_flash_reset();
-#endif
-
     bootloader_spi_flash_resume();
     if ((void*)bootloader_flash_unlock != (void*)bootloader_flash_unlock_default) {
         ESP_EARLY_LOGD(TAG, "Using overridden bootloader_flash_unlock");
@@ -245,10 +238,6 @@ esp_err_t bootloader_init_spi_flash(void)
 
 #if CONFIG_ESPTOOLPY_FLASHMODE_QIO || CONFIG_ESPTOOLPY_FLASHMODE_QOUT
     bootloader_enable_qio_mode();
-#endif
-
-#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
-    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
 #endif
 
     print_flash_info(&bootloader_image_hdr);
@@ -317,10 +306,6 @@ void bootloader_flash_hardware_init(void)
 
     bootloader_spi_flash_resume();
     bootloader_flash_unlock();
-
-#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
-    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
-#endif
 
     cache_hal_disable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
     update_flash_config(&hdr);

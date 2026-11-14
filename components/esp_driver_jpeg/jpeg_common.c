@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,6 +10,7 @@
 #include "esp_private/periph_ctrl.h"
 #include "jpeg_private.h"
 #include "hal/jpeg_hal.h"
+#include "esp_memory_utils.h"
 #include "driver/jpeg_types.h"
 #include "sys/lock.h"
 #include "sys/queue.h"
@@ -21,10 +22,6 @@
 #endif
 #include "esp_log.h"
 #include "esp_check.h"
-#include "hal/jpeg_periph.h"
-#if JPEG_USE_RETENTION_LINK
-#include "esp_private/sleep_retention.h"
-#endif
 
 static const char *TAG = "jpeg.common";
 
@@ -36,33 +33,6 @@ typedef struct jpeg_platform_t {
 
 static jpeg_platform_t s_jpeg_platform = {};  // singleton platform
 
-#if JPEG_USE_RETENTION_LINK
-static esp_err_t s_jpeg_sleep_retention_init_cb(void *arg)
-{
-    esp_err_t ret = sleep_retention_entries_create(jpeg_reg_retention_info.entry_array, jpeg_reg_retention_info.array_size, REGDMA_LINK_PRI_JPEG, jpeg_reg_retention_info.module_id);
-    ESP_RETURN_ON_ERROR(ret, TAG, "failed to allocate mem for sleep retention");
-    return ret;
-}
-
-void jpeg_create_retention_module(jpeg_codec_handle_t jpeg_codec)
-{
-    _lock_acquire(&s_jpeg_platform.mutex);
-    if (jpeg_codec->retention_link_created == false) {
-        if (sleep_retention_module_allocate(jpeg_reg_retention_info.module_id) != ESP_OK) {
-            // even though the sleep retention module create failed, JPEG driver should still work, so just warning here
-            ESP_LOGW(TAG, "create retention module failed, power domain can't turn off");
-        } else {
-            jpeg_codec->retention_link_created = true;
-            if (sleep_retention_module_attach(jpeg_reg_retention_info.module_id) != ESP_OK) {
-                ESP_LOGW(TAG, "attach retention module failed, power domain can't turn off");
-            }
-        }
-    }
-    _lock_release(&s_jpeg_platform.mutex);
-
-}
-#endif
-
 esp_err_t jpeg_acquire_codec_handle(jpeg_codec_handle_t *jpeg_new_codec)
 {
 #if CONFIG_JPEG_ENABLE_DEBUG_LOG
@@ -70,10 +40,6 @@ esp_err_t jpeg_acquire_codec_handle(jpeg_codec_handle_t *jpeg_new_codec)
 #endif
     esp_err_t ret = ESP_OK;
     bool new_codec = false;
-#if JPEG_USE_RETENTION_LINK
-    bool retention_module_inited = false;
-#endif
-    bool bus_clock_enabled = false;
     jpeg_codec_t *codec = NULL;
     _lock_acquire(&s_jpeg_platform.mutex);
     if (!s_jpeg_platform.jpeg_codec) {
@@ -84,37 +50,16 @@ esp_err_t jpeg_acquire_codec_handle(jpeg_codec_handle_t *jpeg_new_codec)
             codec->intr_priority = -1;
             codec->spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
             codec->codec_mutex = xSemaphoreCreateBinaryWithCaps(JPEG_MEM_ALLOC_CAPS);
-            ESP_GOTO_ON_FALSE(codec->codec_mutex, ESP_ERR_NO_MEM, err, TAG, "No memory for codec mutex");
+            ESP_RETURN_ON_FALSE(codec->codec_mutex, ESP_ERR_NO_MEM, TAG, "No memory for codec mutex");
             SLIST_INIT(&codec->jpeg_isr_handler_list);
             xSemaphoreGive(codec->codec_mutex);
-
-#if JPEG_USE_RETENTION_LINK
-            sleep_retention_module_init_param_t init_param = {
-                .cbs = {
-                    .create = {
-                        .handle = s_jpeg_sleep_retention_init_cb,
-                        .arg = (void *)codec
-                    },
-                },
-                .attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH,
-                .depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)
-            };
-            esp_err_t err = sleep_retention_module_init(jpeg_reg_retention_info.module_id, &init_param);
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "init sleep retention failed on jpeg, jpeg configuration maybe lost after sleep wakeup");
-            } else {
-                retention_module_inited = true;
-            }
-#endif
             // init the clock
             PERIPH_RCC_ATOMIC() {
                 jpeg_ll_enable_bus_clock(true);
                 jpeg_ll_reset_module_register();
             }
-            bus_clock_enabled = true;
 #if CONFIG_PM_ENABLE
-            ESP_GOTO_ON_ERROR(esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, soc_jpeg_signals[0].module_name, &codec->pm_lock),
-                              err, TAG, "create pm lock failed");
+            ESP_RETURN_ON_ERROR(esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "jpeg_codec", &codec->pm_lock), TAG, "create pm lock failed");
 #endif
             jpeg_hal_init(&codec->hal);
         } else {
@@ -131,32 +76,6 @@ esp_err_t jpeg_acquire_codec_handle(jpeg_codec_handle_t *jpeg_new_codec)
     }
 
     *jpeg_new_codec = s_jpeg_platform.jpeg_codec;
-    _lock_release(&s_jpeg_platform.mutex);
-    return ret;
-
-err:
-    if (codec) {
-        if (codec->codec_mutex) {
-            vSemaphoreDeleteWithCaps(codec->codec_mutex);
-        }
-#if CONFIG_PM_ENABLE
-        if (codec->pm_lock) {
-            esp_pm_lock_delete(codec->pm_lock);
-        }
-#endif
-#if JPEG_USE_RETENTION_LINK
-        if (retention_module_inited) {
-            sleep_retention_module_deinit(jpeg_reg_retention_info.module_id);
-        }
-#endif
-        if (bus_clock_enabled) {
-            PERIPH_RCC_ATOMIC() {
-                jpeg_ll_enable_bus_clock(false);
-            }
-        }
-        free(codec);
-    }
-    s_jpeg_platform.jpeg_codec = NULL;
     _lock_release(&s_jpeg_platform.mutex);
     return ret;
 }
@@ -181,15 +100,6 @@ esp_err_t jpeg_release_codec_handle(jpeg_codec_handle_t jpeg_codec)
                 esp_pm_lock_delete(jpeg_codec->pm_lock);
             }
 #endif
-
-#if JPEG_USE_RETENTION_LINK
-            if (jpeg_codec->retention_link_created) {
-                sleep_retention_module_detach(jpeg_reg_retention_info.module_id);
-                sleep_retention_module_free(jpeg_reg_retention_info.module_id);
-            }
-            sleep_retention_module_deinit(jpeg_reg_retention_info.module_id);
-#endif
-
             PERIPH_RCC_ATOMIC() {
                 jpeg_ll_enable_bus_clock(false);
             }
@@ -226,7 +136,7 @@ esp_err_t jpeg_isr_register(jpeg_codec_handle_t jpeg_codec, intr_handler_t handl
 {
     if (jpeg_codec->intr_handle == NULL) {
         // The jpeg codec interrupt has not been allocated.
-        esp_err_t err = esp_intr_alloc_intrstatus(soc_jpeg_signals[0].irq_id, flags, (uint32_t)jpeg_ll_get_interrupt_status_reg(jpeg_codec->hal.dev), JPEG_LL_DECODER_EVENT_INTR | JPEG_LL_ENCODER_EVENT_INTR, &jpeg_isr, jpeg_codec, &jpeg_codec->intr_handle);
+        esp_err_t err = esp_intr_alloc_intrstatus(ETS_JPEG_INTR_SOURCE, flags, (uint32_t)jpeg_ll_get_interrupt_status_reg(jpeg_codec->hal.dev), JPEG_LL_DECODER_EVENT_INTR | JPEG_LL_ENCODER_EVENT_INTR, &jpeg_isr, jpeg_codec, &jpeg_codec->intr_handle);
         if (err != ESP_OK) {
             return err;
         }

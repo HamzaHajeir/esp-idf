@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -35,21 +35,11 @@ extern "C" {
  *    XTAL32K_CLK can also be calibrated to get its exact frequency.
  */
 
-/* The pin number to connect the external 32kHz crystal clock (XTAL32K_CLK) */
-#define SOC_XTAL32K_P_GPIO_NUM              0
-#define SOC_XTAL32K_N_GPIO_NUM              1
-
 /* With the default value of CK8M_DFREQ = 100, RC_FAST clock frequency is 17.5 MHz +/- 7% */
 #define SOC_CLK_RC_FAST_FREQ_APPROX         17500000                            /*!< Approximate RC_FAST_CLK frequency in Hz */
 #define SOC_CLK_RC_SLOW_FREQ_APPROX         136000                              /*!< Approximate RC_SLOW_CLK frequency in Hz */
 #define SOC_CLK_RC_FAST_D256_FREQ_APPROX    (SOC_CLK_RC_FAST_FREQ_APPROX / 256) /*!< Approximate RC_FAST_D256_CLK frequency in Hz */
 #define SOC_CLK_XTAL32K_FREQ_APPROX         32768                               /*!< Approximate XTAL32K_CLK frequency in Hz */
-
-/* Default clock accuracy values in ppm (parts per million) at different observation durations */
-/* Row order: 1 s, 10 s, 30 s, 60 s */
-#define SOC_CLK_RC_FAST_ACCURACY_PPM_DEFAULTS    { (1376), (1952), (2553), (4059) }
-#define SOC_CLK_RC_SLOW_ACCURACY_PPM_DEFAULTS    { (2137), (4697), (10375), (18206) }
-#define SOC_CLK_CRYSTAL_ACCURACY_PPM_DEFAULTS    { (500), (500), (500), (500) }
 
 // Naming convention: SOC_ROOT_CLK_{loc}_{type}_[attr]
 // {loc}: EXT, INT
@@ -63,7 +53,6 @@ typedef enum {
     SOC_ROOT_CLK_INT_RC_SLOW,          /*!< Internal 136kHz RC oscillator */
     SOC_ROOT_CLK_EXT_XTAL,             /*!< External 40MHz crystal */
     SOC_ROOT_CLK_EXT_XTAL32K,          /*!< External 32kHz crystal/clock signal */
-    SOC_ROOT_CLK_SRC_NUM,              /*!< Number of root clock sources */
 } soc_root_clk_t;
 
 /**
@@ -364,7 +353,6 @@ typedef enum {
  * @brief Array initializer for all supported clock sources of LEDC
  */
 #define SOC_LEDC_CLKS {SOC_MOD_CLK_XTAL, SOC_MOD_CLK_APB, SOC_MOD_CLK_RC_FAST}
-#define SOC_LEDC_CLK_STRS {"LEDC_USE_XTAL_CLK", "LEDC_USE_APB_CLK", "LEDC_USE_RC_FAST_CLK"}
 
 /**
  * @brief Type of LEDC clock source, reserved for the legacy LEDC driver

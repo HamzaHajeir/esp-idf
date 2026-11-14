@@ -6,8 +6,6 @@ set(original_srcs "spiffs/src/spiffs_cache.c"
                   "spiffs/src/spiffs_hydrogen.c"
                   "spiffs/src/spiffs_nucleus.c")
 
-set(srcs)
-set(pr)
 list(APPEND srcs "spiffs_api.c" ${original_srcs})
 
 if(NOT ${target} STREQUAL "linux")
@@ -21,10 +19,9 @@ idf_component_register(SRCS ${srcs}
                        REQUIRES esp_partition
                        PRIV_REQUIRES ${pr})
 
-# Upstream SPIFFS code uses format specifiers in debug logging macros inconsistently
-list(TRANSFORM original_srcs PREPEND "${CMAKE_CURRENT_LIST_DIR}/")
-set_source_files_properties(${original_srcs} PROPERTIES COMPILE_FLAGS -Wno-format)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU")
+    set_source_files_properties(spiffs/src/spiffs_nucleus.c PROPERTIES COMPILE_FLAGS -Wno-stringop-truncation)
+endif()
 
-get_source_file_property(nucleus_cc_flags "${CMAKE_CURRENT_LIST_DIR}/spiffs/src/spiffs_nucleus.c" COMPILE_FLAGS)
-set_source_files_properties("${CMAKE_CURRENT_LIST_DIR}/spiffs/src/spiffs_nucleus.c"
-  PROPERTIES COMPILE_FLAGS "${nucleus_cc_flags} -Wno-tautological-compare")
+# Upstream SPIFFS code uses format specifiers in debug logging macros inconsistently
+set_source_files_properties(${original_srcs} PROPERTIES COMPILE_FLAGS -Wno-format)

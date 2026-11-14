@@ -83,10 +83,6 @@ config SOC_RTC_MEM_SUPPORTED
     bool
     default y
 
-config SOC_RTC_TIMER_SUPPORTED
-    bool
-    default y
-
 config SOC_I2S_SUPPORTED
     bool
     default y
@@ -159,19 +155,11 @@ config SOC_CLK_TREE_SUPPORTED
     bool
     default y
 
-config SOC_REGI2C_SUPPORTED
-    bool
-    default y
-
 config SOC_MPU_SUPPORTED
     bool
     default y
 
 config SOC_WDT_SUPPORTED
-    bool
-    default y
-
-config SOC_RTC_WDT_SUPPORTED
     bool
     default y
 
@@ -231,9 +219,17 @@ config SOC_ADC_PERIPH_NUM
     int
     default 2
 
+config SOC_ADC_MAX_CHANNEL_NUM
+    int
+    default 10
+
 config SOC_ADC_ATTEN_NUM
     int
     default 4
+
+config SOC_ADC_DIGI_CONTROLLER_NUM
+    int
+    default 2
 
 config SOC_ADC_PATT_LEN_MAX
     int
@@ -258,6 +254,22 @@ config SOC_ADC_DIGI_DATA_BYTES_PER_CONV
 config SOC_ADC_DIGI_MONITOR_NUM
     int
     default 0
+
+config SOC_ADC_SAMPLE_FREQ_THRES_HIGH
+    int
+    default 2000000
+
+config SOC_ADC_SAMPLE_FREQ_THRES_LOW
+    int
+    default 20000
+
+config SOC_ADC_RTC_MIN_BITWIDTH
+    int
+    default 9
+
+config SOC_ADC_RTC_MAX_BITWIDTH
+    int
+    default 12
 
 config SOC_ADC_SHARED_POWER
     bool
@@ -323,14 +335,6 @@ config SOC_GPIO_PIN_COUNT
     int
     default 40
 
-config SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP
-    bool
-    default y
-
-config SOC_GPIO_HP_PERIPH_PD_SLEEP_WAKEABLE_MASK
-    int
-    default 0
-
 config SOC_GPIO_VALID_GPIO_MASK
     hex
     default 0xFFFFFFFFFF
@@ -363,15 +367,23 @@ config SOC_HP_I2C_NUM
     int
     default 2
 
+config SOC_I2C_FIFO_LEN
+    int
+    default 32
+
+config SOC_I2C_CMD_REG_NUM
+    int
+    default 16
+
+config SOC_I2C_SUPPORT_SLAVE
+    bool
+    default y
+
 config SOC_I2C_SUPPORT_APB
     bool
     default y
 
 config SOC_I2C_SUPPORT_10BIT_ADDR
-    bool
-    default y
-
-config SOC_I2C_SUPPORT_SLAVE
     bool
     default y
 
@@ -491,10 +503,6 @@ config SOC_RTCIO_WAKE_SUPPORTED
     bool
     default y
 
-config SOC_RTC_CNTL_NEEDS_ATOMIC_ACCESS
-    bool
-    default y
-
 config SOC_SPI_PERIPH_NUM
     int
     default 3
@@ -507,6 +515,22 @@ config SOC_SPI_MAXIMUM_BUFFER_SIZE
     int
     default 64
 
+config SOC_MEMSPI_SRC_FREQ_80M_SUPPORTED
+    bool
+    default y
+
+config SOC_MEMSPI_SRC_FREQ_40M_SUPPORTED
+    bool
+    default y
+
+config SOC_MEMSPI_SRC_FREQ_26M_SUPPORTED
+    bool
+    default y
+
+config SOC_MEMSPI_SRC_FREQ_20M_SUPPORTED
+    bool
+    default y
+
 config SOC_LP_TIMER_BIT_WIDTH_LO
     int
     default 32
@@ -514,10 +538,6 @@ config SOC_LP_TIMER_BIT_WIDTH_LO
 config SOC_LP_TIMER_BIT_WIDTH_HI
     int
     default 16
-
-config SOC_RTC_TIMER_V1
-    bool
-    default y
 
 config SOC_TOUCH_SENSOR_VERSION
     int
@@ -582,10 +602,6 @@ config SOC_SPIRAM_SUPPORTED
 config SOC_SPI_MEM_SUPPORT_CONFIG_GPIO_BY_EFUSE
     bool
     default y
-
-config SOC_MEMSPI_ENCRYPTION_ALIGNMENT
-    int
-    default 16
 
 config SOC_SHA_SUPPORT_PARALLEL_ENG
     bool
@@ -699,10 +715,6 @@ config SOC_PM_MODEM_PD_BY_SW
     bool
     default y
 
-config SOC_PM_RTC_NOT_SUPPORT_UART2_WAKEUP
-    bool
-    default y
-
 config SOC_CLK_APLL_SUPPORTED
     bool
     default y
@@ -796,9 +808,5 @@ config SOC_PHY_COMBO_MODULE
     default y
 
 config SOC_EMAC_RMII_CLK_OUT_INTERNAL_LOOPBACK
-    bool
-    default y
-
-config SOC_EMAC_REF_CLK_FROM_APLL
     bool
     default y

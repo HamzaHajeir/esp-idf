@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,11 +21,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define I2C_LL_GET(_attr)       I2C_LL_ ## _attr
-
-#define I2C_LL_FIFO_LEN         32 /*!< I2C hardware FIFO depth */
-#define I2C_LL_CMD_REG_NUM      16 /*!< Number of I2C command registers */
 
 /**
  * @brief I2C hardware cmd register fields.
@@ -490,7 +485,7 @@ static inline void i2c_ll_get_rxfifo_cnt(i2c_dev_t *hw, uint32_t *length)
 __attribute__((always_inline))
 static inline void i2c_ll_get_txfifo_len(i2c_dev_t *hw, uint32_t *length)
 {
-    *length = (hw->status_reg.tx_fifo_cnt >= I2C_LL_GET(FIFO_LEN)) ? 0 : (I2C_LL_GET(FIFO_LEN) - hw->status_reg.tx_fifo_cnt);
+    *length = (hw->status_reg.tx_fifo_cnt >= SOC_I2C_FIFO_LEN) ? 0 : (SOC_I2C_FIFO_LEN - hw->status_reg.tx_fifo_cnt);
 }
 
 /**
@@ -877,18 +872,6 @@ __attribute__((always_inline))
 static inline i2c_slave_read_write_status_t i2c_ll_slave_get_read_write_status(i2c_dev_t *hw)
 {
     return (hw->status_reg.slave_rw == 0) ? I2C_SLAVE_WRITE_BY_MASTER : I2C_SLAVE_READ_BY_MASTER;
-}
-
-/**
- * @brief Check whether the slave is waiting for ACK
- *
- * @param hw Beginning address of the peripheral registers
- * @return true if this slave is waiting for ACK, false otherwise
- */
-__attribute__((always_inline))
-static inline bool i2c_ll_slave_wait_ack(i2c_dev_t *hw)
-{
-    return hw->status_reg.scl_main_state_last == 6;
 }
 
 //////////////////////////////////////////Deprecated Functions//////////////////////////////////////////////////////////

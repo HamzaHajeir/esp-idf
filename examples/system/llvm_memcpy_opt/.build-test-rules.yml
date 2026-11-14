@@ -1,3 +1,0 @@
-examples/system/llvm_memcpy_opt:
-  enable:
-    - if: IDF_TARGET == "esp32p4" and CONFIG_NAME == "default"

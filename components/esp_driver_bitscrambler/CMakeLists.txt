@@ -11,6 +11,6 @@ endif()
 
 idf_component_register(SRCS ${srcs}
                        REQUIRES "esp_hal_dma"
-                       PRIV_REQUIRES "esp_mm" "esp_driver_dma"
+                       PRIV_REQUIRES "esp_mm"
                        INCLUDE_DIRS "include"
                        LDFRAGMENTS "linker.lf")

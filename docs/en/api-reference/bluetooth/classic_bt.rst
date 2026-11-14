@@ -9,12 +9,10 @@ The Bluetooth Classic API provides the following main features:
 
 - Core protocol support (**GAP**, **L2CAP**, and **SDP**)
 - Serial data communication (**SPP**)
-- Object push (**OPP**)
 - High-quality audio streaming (**A2DP**)
 - Media playback control (**AVRCP**)
 - Hands-free calling support (**HFP**)
 - Input device connectivity (**HID** host and device roles)
-- Personal Area Networking (**PAN**)
 
 ----
 
@@ -34,15 +32,11 @@ The Bluetooth Classic API in ESP-IDF is organized into the following parts:
 
   **Service Discovery Protocol (SDP):** Discovers remote device services and attributes
 
-**Communication Profiles**
+**Communication Profile**
 
 - :doc:`Bluetooth SPP <esp_spp>`
 
   **Serial Port Profile (SPP):** Emulates a serial communication channel over Bluetooth for data exchange
-
-- :doc:`Bluetooth OPP <esp_opp>`
-
-  **Object Push Profile (OPP):** Pushes objects such as vCards and files between Bluetooth devices
 
 **Audio and Media Profiles**
 
@@ -65,10 +59,6 @@ The Bluetooth Classic API in ESP-IDF is organized into the following parts:
 - :doc:`Bluetooth HID Device <esp_hidd>`: Implements peripheral roles such as keyboard, mouse, or game controller
 - :doc:`Bluetooth HID Host <esp_hidh>`: Implements the host role for connecting to remote HID devices
 
-**Personal Area Networking (PAN)**
-
-- :doc:`Bluetooth PAN <esp_pan>`: BNEP-based networking with PANU, NAP, and GN roles
-
 Each part typically includes an **Overview**, **Application Examples**, and **API Reference**, covering purpose, main functionality, sample usage, and detailed API documentation.
 
 
@@ -80,7 +70,6 @@ Each part typically includes an **Overview**, **Application Examples**, and **AP
    Bluetooth L2CAP <esp_l2cap_bt>
    Bluetooth SDP <esp_sdp>
    Bluetooth SPP <esp_spp>
-   Bluetooth OPP <esp_opp>
    Bluetooth A2DP <esp_a2dp>
    Bluetooth AVRCP <esp_avrc>
    Bluetooth HFP Define <esp_hf_defs>
@@ -88,4 +77,3 @@ Each part typically includes an **Overview**, **Application Examples**, and **AP
    Bluetooth HFP AG <esp_hf_ag>
    Bluetooth HID Device <esp_hidd>
    Bluetooth HID Host <esp_hidh>
-   Bluetooth PAN <esp_pan>

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import typing as t
@@ -9,7 +9,6 @@ import pytest
 import yaml
 from _pytest.config import Config
 from _pytest.python import Function
-from _pytest.python import Metafunc
 from _pytest.runner import CallInfo
 from dynamic_pipelines.constants import KNOWN_GENERATE_TEST_CHILD_PIPELINE_WARNINGS_FILEPATH
 from idf_ci import IdfPytestPlugin
@@ -21,7 +20,7 @@ from pytest_embedded.utils import find_by_suffix
 from pytest_ignore_test_results.ignore_results import ChildCase
 from pytest_ignore_test_results.ignore_results import ChildCasesStashKey
 
-from .constants import REV_MARKERS
+from .constants import ECO_MARKERS
 from .utils import format_case_id
 from .utils import merge_junit_files
 from .utils import normalize_testcase_file_path
@@ -115,40 +114,6 @@ class IdfLocalPlugin:
 
         return item.callspec.params.get(key, default) or default
 
-    @staticmethod
-    def _has_parametrized_arg(metafunc: Metafunc, arg_name: str) -> bool:
-        for marker in metafunc.definition.iter_markers(name='parametrize'):
-            if not marker.args:
-                continue
-
-            argnames = marker.args[0]
-            if isinstance(argnames, str):
-                names = [name.strip() for name in argnames.split(',')]
-            else:
-                names = list(argnames)
-
-            if arg_name in names:
-                return True
-
-        for callspec in getattr(metafunc, '_calls', []):
-            if arg_name in callspec.params:
-                return True
-
-        return False
-
-    @staticmethod
-    def _is_linux_target_run(config: Config) -> bool:
-        target = config.getoption('target')
-        if not target:
-            return False
-
-        if isinstance(target, str):
-            targets = [_t.strip() for _t in target.split(',')]
-        else:
-            targets = [str(_t).strip() for _t in target]
-
-        return 'linux' in targets
-
     @pytest.hookimpl(wrapper=True)
     def pytest_collection_modifyitems(self, config: Config, items: list[Function]) -> t.Generator[None, None, None]:
         yield  # throw it back to idf-ci
@@ -216,11 +181,11 @@ class IdfLocalPlugin:
             if 'esp32c2' in case.targets and 'xtal_26mhz' not in case.all_markers:
                 item.add_marker('xtal_40mhz')
 
-            for rev_marker in REV_MARKERS:
-                if rev_marker in case.all_markers:
+            for eco_marker in ECO_MARKERS:
+                if eco_marker in case.all_markers:
                     break
             else:
-                item.add_marker('rev_default')
+                item.add_marker('eco_default')
 
             if 'host_test' in case.all_markers:
                 item.add_marker('skip_app_downloader')  # host_test jobs will build the apps itself

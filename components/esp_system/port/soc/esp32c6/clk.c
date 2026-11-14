@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,9 +13,7 @@
 #include "soc/soc.h"
 #include "soc/rtc.h"
 #include "esp_cpu.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/clk_gate_ll.h"
 #include "hal/pmu_ll.h"
 #include "esp_private/esp_modem_clock.h"
@@ -28,8 +26,6 @@
  * detection (i.e. oscillator runs for a few cycles and then stops).
  */
 #define SLOW_CLK_CAL_CYCLES     CONFIG_RTC_CLK_CAL_CYCLES
-
-#define RTC_XTAL_CAL_RETRY 3
 
 #define MHZ (1000000)
 
@@ -60,7 +56,7 @@ __attribute__((weak)) void esp_clk_init(void)
     rtc_clk_fast_src_set(SOC_RTC_FAST_CLK_SRC_RC_FAST);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
     // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
@@ -84,7 +80,7 @@ __attribute__((weak)) void esp_clk_init(void)
     select_rtc_slow_clk(SOC_RTC_SLOW_CLK_SRC_RC_SLOW);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // After changing a frequency WDT timeout needs to be set for new frequency.
     stage_timeout_ticks = (uint32_t)((uint64_t)CONFIG_BOOTLOADER_WDT_TIME_MS * rtc_clk_slow_freq_get_hz() / 1000);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -121,7 +117,7 @@ static void select_rtc_slow_clk(soc_rtc_slow_clk_src_t rtc_slow_clk_src)
     /* number of times to repeat 32k XTAL calibration
      * before giving up and switching to the internal RC
      */
-    int retry_32k_xtal = RTC_XTAL_CAL_RETRY;
+    int retry_32k_xtal = 3;
 
     soc_rtc_slow_clk_src_t old_rtc_slow_clk_src = rtc_clk_slow_src_get();
     do {
@@ -137,13 +133,6 @@ static void select_rtc_slow_clk(soc_rtc_slow_clk_src_t rtc_slow_clk_src)
             ESP_EARLY_LOGD(TAG, "waiting for 32k oscillator to start up");
             soc_clk_freq_calculation_src_t cal_sel = -1;
             if (rtc_slow_clk_src == SOC_RTC_SLOW_CLK_SRC_XTAL32K) {
-                /* 1、The bootloader should already have it enabled.
-                 * 2、Because 32kHz crystal oscillators have a slow startup time, if they are not enabled beforehand,
-                 *  there is a high probability that they will not be detected if enabled here.
-                 */
-                if (!rtc_clk_32k_enabled()) {
-                    ESP_EARLY_LOGW(TAG, "32 kHz XTAL not enabled in advance");
-                }
                 rtc_clk_32k_enable(true);
                 cal_sel = CLK_CAL_32K_XTAL;
             } else if (rtc_slow_clk_src == SOC_RTC_SLOW_CLK_SRC_OSC_SLOW) {
@@ -251,9 +240,6 @@ __attribute__((weak)) void esp_perip_clk_init(void)
 #endif
 #if !CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
     clk_gate_config.disable_usb_serial_jtag = true;
-#endif
-#if !CONFIG_ESP_ENABLE_PVT
-    clk_gate_config.disable_pvt_clk = true;
 #endif
 
     periph_ll_clk_gate_set_default(rst_reason, &clk_gate_config);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +28,6 @@ typedef struct {
     int reset_gpio_num;                /*!< Reset GPIO number, -1 means no hardware reset */
     int32_t hw_reset_assert_time_us;   /*!< Time the reset pin is asserted (Unit: us) */
     int32_t post_hw_reset_delay_ms;    /*!< Time to wait after the HW reset (Unit: ms) */
-    bool hold_reset_gpio;              /*!< Latch PHY nRST high after HW reset */
 } phy_802_3_t;
 
 /**
@@ -164,32 +163,6 @@ esp_err_t esp_eth_phy_802_3_set_speed(phy_802_3_t *phy_802_3, eth_speed_t speed)
 esp_err_t esp_eth_phy_802_3_set_duplex(phy_802_3_t *phy_802_3, eth_duplex_t duplex);
 
 /**
- * @brief Set Ethernet PHY master/slave mode for 1000BASE-T
- *
- * @note Required before forcing 1000 Mbps speed when auto-negotiation is disabled.
- *
- * @param phy_802_3 IEEE 802.3 PHY object infostructure
- * @param master set true to configure as master; set false to configure as slave
- * @return
- *      - ESP_OK: Ethernet PHY master/slave mode set successfully
- *      - ESP_ERR_NOT_SUPPORTED: PHY does not support 1000BASE-T
- *      - ESP_FAIL: Set Ethernet PHY master/slave mode failed because some error occurred
- */
-esp_err_t esp_eth_phy_802_3_set_master_mode(phy_802_3_t *phy_802_3, bool master);
-
-/**
- * @brief Get Ethernet PHY master/slave mode for 1000BASE-T
- *
- * @param phy_802_3 IEEE 802.3 PHY object infostructure
- * @param master set to true if PHY is configured as master; false if configured as slave
- * @return
- *      - ESP_OK: Ethernet PHY master/slave mode read successfully
- *      - ESP_ERR_NOT_SUPPORTED: PHY does not support 1000BASE-T
- *      - ESP_FAIL: Get Ethernet PHY master/slave mode failed because some error occurred
- */
-esp_err_t esp_eth_phy_802_3_get_master_mode(phy_802_3_t *phy_802_3, bool *master);
-
-/**
  * @brief Set Ethernet PHY link status
  *
  * @param phy_802_3 IEEE 802.3 PHY object infostructure
@@ -220,10 +193,6 @@ esp_err_t esp_eth_phy_802_3_deinit(phy_802_3_t *phy_802_3);
 /**
  * @brief Delete Ethernet PHY infostructure
  *
- * @note De-initializes the IEEE 802.3 object configuration first. PHY drivers
- *       that free the object through this function do not need to call
- *       esp_eth_phy_802_3_obj_config_deinit() themselves.
- *
  * @param phy_802_3 IEEE 802.3 PHY object infostructure
  * @return
  *      - ESP_OK: Ethernet PHY infostructure deleted
@@ -236,6 +205,7 @@ esp_err_t esp_eth_phy_802_3_del(phy_802_3_t *phy_802_3);
  * @param phy_802_3 IEEE 802.3 PHY object infostructure
  * @return
  *      - ESP_OK: reset Ethernet PHY successfully
+ *      - ESP_ERR_NOT_ALLOWED: reset GPIO not defined
  */
 esp_err_t esp_eth_phy_802_3_reset_hw(phy_802_3_t *phy_802_3);
 
@@ -412,21 +382,8 @@ inline __attribute__((always_inline)) phy_802_3_t *esp_eth_phy_into_phy_802_3(es
  * @return
  *      - ESP_OK: configuration initialized successfully
  *      - ESP_ERR_INVALID_ARG: invalid @c config argument
- *      - ESP_ERR_NOT_SUPPORTED: reset GPIO does not support pad hold
- *      - ESP_ERR_INVALID_STATE: reset GPIO is already reserved
  */
 esp_err_t esp_eth_phy_802_3_obj_config_init(phy_802_3_t *phy_802_3, const eth_phy_config_t *config);
-
-/**
- * @brief De-initializes configuration of parent IEEE 802.3 PHY object infostructure
- *
- * @note Revokes or frees resources possibly reserved or allocated by esp_eth_phy_802_3_obj_config_init
- *
- * @param phy_802_3 Address to IEEE 802.3 PHY object infostructure
- * @return
- *      - ESP_OK: configuration de-initialized successfully
- */
-esp_err_t esp_eth_phy_802_3_obj_config_deinit(phy_802_3_t *phy_802_3);
 
 #ifdef __cplusplus
 }

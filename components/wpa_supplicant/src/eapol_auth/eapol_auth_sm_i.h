@@ -171,9 +171,6 @@ struct eapol_state_machine {
 	int remediation;
 
 	u64 acct_multi_session_id;
-#ifdef ESP_SUPPLICANT
-	bool exit_sm_step_run;
-#endif
 };
 
 #endif /* EAPOL_AUTH_SM_I_H */

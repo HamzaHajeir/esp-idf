@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,13 +36,6 @@ typedef enum {
 #if SOC_RTC_MEM_SUPPORTED
     COREDUMP_MEMORY_RTC,
     COREDUMP_MEMORY_RTC_FAST,
-#endif
-    COREDUMP_MEMORY_NOINIT,
-#if CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
-    COREDUMP_MEMORY_EXTRAM,
-#endif
-#if CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY
-    COREDUMP_MEMORY_EXTRAM_NOINIT,
 #endif
     COREDUMP_MEMORY_MAX,
     COREDUMP_MEMORY_START = COREDUMP_MEMORY_IRAM
@@ -107,11 +100,6 @@ bool esp_core_dump_in_isr_context(void);
  * @return Size, in bytes, of all the memory regions.
  */
 uint32_t esp_core_dump_get_user_ram_size(void);
-
-/**
- * @brief Reads the uptime for the ESP_UPTIME note. Call it before any delay in the write.
- */
-void esp_core_dump_uptime_capture(void);
 
 /**
  * @brief Prints write start info string according to destination.

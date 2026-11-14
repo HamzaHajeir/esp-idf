@@ -23,7 +23,7 @@ Configurations
 Destination
 ^^^^^^^^^^^
 
-The :menuitem:`CONFIG_ESP_COREDUMP_TO_FLASH_OR_UART` option enables or disables core dump, and selects the core dump destination if enabled. When a crash occurs, the generated core dump file can either be saved to flash, or output to a connected host over UART.
+The :ref:`CONFIG_ESP_COREDUMP_TO_FLASH_OR_UART` option enables or disables core dump, and selects the core dump destination if enabled. When a crash occurs, the generated core dump file can either be saved to flash, or output to a connected host over UART.
 
 
 Format & Size
@@ -31,7 +31,7 @@ Format & Size
 
 Core dump files are generated in ELF format, which contains extended features and allows comprehensive information regarding erroneous tasks and crashed software to be saved. The ELF format is flexible and can be extended in future revisions to save additional information.
 
-The :menuitem:`CONFIG_ESP_COREDUMP_MAX_TASKS_NUM` option configures the number of task snapshots saved by the core dump. Crashed task registers and the stack are always saved, regardless of this configuration option. Other tasks are included in order of their priority (starting with the highest-priority ready task).
+The :ref:`CONFIG_ESP_COREDUMP_MAX_TASKS_NUM` option configures the number of task snapshots saved by the core dump. Crashed task registers and the stack are always saved, regardless of this configuration option. Other tasks are included in order of their priority (starting with the highest-priority ready task).
 
 Data Integrity Check
 ^^^^^^^^^^^^^^^^^^^^
@@ -41,7 +41,7 @@ Core dump files include a SHA256 checksum that verifies the integrity of the fil
 Reserved Stack Size
 ^^^^^^^^^^^^^^^^^^^
 
-Core dump routines run from a separate stack due to core dump itself needing to parse and save all other task stacks. The :menuitem:`CONFIG_ESP_COREDUMP_STACK_SIZE` option controls the size of the core dump's stack in number of bytes.
+Core dump routines run from a separate stack due to core dump itself needing to parse and save all other task stacks. The :ref:`CONFIG_ESP_COREDUMP_STACK_SIZE` option controls the size of the core dump's stack in number of bytes.
 
 Setting this option to 0 bytes will cause the core dump routines to run from the ISR stack, thus saving a bit of memory. Setting the option greater than zero will cause a separate stack to be instantiated.
 
@@ -55,9 +55,7 @@ Setting this option to 0 bytes will cause the core dump routines to run from the
     Core Dump Memory Regions
     ^^^^^^^^^^^^^^^^^^^^^^^^
 
-    By default, core dumps typically save CPU registers, tasks data and summary of the panic reason. When the :menuitem:`CONFIG_ESP_COREDUMP_CAPTURE_DRAM` option is selected, ``.bss`` and ``.data`` sections and ``heap`` data will also be part of the dump.
-
-    Core dumps also save the uptime, which ``idf.py coredump-info`` prints in the ``Uptime`` line. It is the value of :cpp:func:`esp_timer_get_time` at the start of ``esp_core_dump_write()``, and it counts from ``esp_timer_early_init()`` in the application startup. It does not include the time spent in the bootloader and in the startup code before ``esp_timer_early_init()``, so it is lower than the log timestamps, which count from the chip reset.
+    By default, core dumps typically save CPU registers, tasks data and summary of the panic reason. When the :ref:`CONFIG_ESP_COREDUMP_CAPTURE_DRAM` option is selected, ``.bss`` and ``.data`` sections and ``heap`` data will also be part of the dump.
 
     For a better debugging experience, it is recommended to dump these sections. However, this will result in a larger coredump file. The required additional storage space may vary based on the amount of DRAM the application uses.
 
@@ -115,13 +113,13 @@ or
 Core Dump to UART
 -----------------
 
-When the core dump file is output to UART, the output file is Base64-encoded. The :menuitem:`CONFIG_ESP_COREDUMP_DECODE` option allows for selecting whether the output file is automatically decoded by the ESP-IDF monitor or kept encoded for manual decoding.
+When the core dump file is output to UART, the output file is Base64-encoded. The :ref:`CONFIG_ESP_COREDUMP_DECODE` option allows for selecting whether the output file is automatically decoded by the ESP-IDF monitor or kept encoded for manual decoding.
 
 
 Automatic Decoding
 ^^^^^^^^^^^^^^^^^^
 
-If :menuitem:`CONFIG_ESP_COREDUMP_DECODE` is set to automatically decode the UART core dump, ESP-IDF monitor will automatically decode the data, translate any function addresses to source code lines, and display it in the monitor. The output to ESP-IDF monitor would resemble the following output:
+If :ref:`CONFIG_ESP_COREDUMP_DECODE` is set to automatically decode the UART core dump, ESP-IDF monitor will automatically decode the data, translate any function addresses to source code lines, and display it in the monitor. The output to ESP-IDF monitor would resemble the following output:
 
 .. code-block:: none
 
@@ -131,7 +129,6 @@ If :menuitem:`CONFIG_ESP_COREDUMP_DECODE` is set to automatically decode the UAR
     Crashed task handle: 0x3ffafba0, name: 'main', GDB name: 'process 1073413024'
     Crashed task is not in the interrupt context
     Panic reason: abort() was called at PC 0x400d66b9 on core 0
-    Uptime: 5123456 us (5.123 s)
 
     ================== CURRENT THREAD REGISTERS ===================
     exccause       0x1d (StoreProhibitedCause)
@@ -172,12 +169,12 @@ If :menuitem:`CONFIG_ESP_COREDUMP_DECODE` is set to automatically decode the UAR
     ===================== ESP32 CORE DUMP END =====================
     ===============================================================
 
-The :menuitem:`CONFIG_ESP_COREDUMP_UART_DELAY` allows for an optional delay to be added before the core dump file is output to UART.
+The :ref:`CONFIG_ESP_COREDUMP_UART_DELAY` allows for an optional delay to be added before the core dump file is output to UART.
 
 Manual Decoding
 ^^^^^^^^^^^^^^^
 
-If you set :menuitem:`CONFIG_ESP_COREDUMP_DECODE` to no decoding, then the raw  Base64-encoded body of core dump is output to UART between the following header and footer of the UART output:
+If you set :ref:`CONFIG_ESP_COREDUMP_DECODE` to no decoding, then the raw  Base64-encoded body of core dump is output to UART between the following header and footer of the UART output:
 
 .. code-block:: none
 
@@ -210,17 +207,6 @@ ESP-IDF provides special commands to retrieve and analyze core dumps:
 
 ``idf.py coredump-info --help`` and ``idf.py coredump-debug --help`` commands can be used to get more details on usage. For example, they can save the coredump into a file and avoid the need to read it from flash every time these commands are run.
 
-``idf.py coredump-info`` can also print variables from the core dump:
-
-* ``--print-var`` prints a variable or expression. Use it once per value, for example ``--print-var g_batt.mv --print-var "/x g_state.flags"``. The GDB format letter, such as ``/x``, is optional.
-* ``--print-all-vars`` prints all variables placed in the core dump with a ``COREDUMP_*_ATTR`` attribute, in hex.
-
-The values are printed in the ``USER VARIABLES`` section, one ``name = value`` line each. A value that is not in the core dump is printed as ``<not in core dump>``. To place a variable in the core dump, see :ref:`core_dump_dumping_variables`.
-
-.. code-block:: bash
-
-    idf.py coredump-info --print-all-vars --print-var g_batt.mv --print-var "/x g_state.flags"
-
 For advanced users who want to pass additional arguments or use custom ELF files, it is possible to use the `esp-coredump <https://github.com/espressif/esp-coredump>`_ tool directly. For more information, use in ESP-IDF environment:
 
 .. code-block:: bash
@@ -235,8 +221,6 @@ It is a possible that at the moment of a crash, some tasks and/or the crashed ta
 
 To overcome this issue, the `ROM ELF <https://github.com/espressif/esp-rom-elfs/releases>`_ provided by Espressif is loaded automatically by ESP-IDF monitor based on the target and its revision. More details about ROM ELFs can be found in `esp-rom-elfs <https://github.com/espressif/esp-rom-elfs/blob/master/README.md>`_.
 
-
-.. _core_dump_dumping_variables:
 
 Dumping Variables on Demand
 ---------------------------
@@ -257,7 +241,7 @@ Supported Notations and RAM Regions
 Example
 ^^^^^^^
 
-1. In :ref:`project-configuration-menu`, enable :menuitem:`COREDUMP TO FLASH <CONFIG_ESP_COREDUMP_TO_FLASH_OR_UART>`, then save and exit.
+1. In :ref:`project-configuration-menu`, enable :ref:`COREDUMP TO FLASH <CONFIG_ESP_COREDUMP_TO_FLASH_OR_UART>`, then save and exit.
 
 2. In your project, create a global variable in the DRAM area, such as:
 

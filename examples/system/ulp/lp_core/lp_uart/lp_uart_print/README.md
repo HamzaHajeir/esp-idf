@@ -1,5 +1,5 @@
-| Supported Targets | ESP32-C5 | ESP32-C6 | ESP32-P4 | ESP32-S31 |
-| ----------------- | -------- | -------- | -------- | --------- |
+| Supported Targets | ESP32-C5 | ESP32-C6 | ESP32-P4 |
+| ----------------- | -------- | -------- | -------- |
 
 # LP UART Print Example
 
@@ -25,7 +25,6 @@ To run this example, you should have an ESP based development board that support
 | ESP32-C6                | GPIO5  |
 | ESP32-C5                | GPIO5  |
 | ESP32-P4                | GPIO14 |
-| ESP32-S31               | GPIO6  |
 | Host machine            | Rx     |
 
 ### Build and Flash

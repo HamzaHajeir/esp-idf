@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -51,8 +51,6 @@
 #define SOC_RISCV_COPROC_SUPPORTED      1
 #define SOC_BT_SUPPORTED                1
 #define SOC_USB_OTG_SUPPORTED           1
-#define SOC_USB_DFU_SUPPORTED           1
-#define SOC_USB_OTG_CONSOLE_SUPPORTED   1
 #define SOC_USB_SERIAL_JTAG_SUPPORTED   1
 #define SOC_CCOMP_TIMER_SUPPORTED       1
 #define SOC_ASYNC_MEMCPY_SUPPORTED      1
@@ -63,7 +61,6 @@
 #define SOC_RTC_FAST_MEM_SUPPORTED      1
 #define SOC_RTC_SLOW_MEM_SUPPORTED      1
 #define SOC_RTC_MEM_SUPPORTED           1
-#define SOC_RTC_TIMER_SUPPORTED         1
 #define SOC_PSRAM_DMA_CAPABLE           1
 #define SOC_XT_WDT_SUPPORTED            1
 #define SOC_I2S_SUPPORTED               1
@@ -86,10 +83,8 @@
 #define SOC_TOUCH_SENSOR_SUPPORTED      1
 #define SOC_BOD_SUPPORTED               1
 #define SOC_CLK_TREE_SUPPORTED          1
-#define SOC_REGI2C_SUPPORTED            1
 #define SOC_MPU_SUPPORTED               1
 #define SOC_WDT_SUPPORTED               1
-#define SOC_RTC_WDT_SUPPORTED           1
 #define SOC_SPI_FLASH_SUPPORTED         1
 #define SOC_RNG_SUPPORTED               1
 #define SOC_LIGHT_SLEEP_SUPPORTED       1
@@ -113,16 +108,29 @@
 #define SOC_ADC_DIG_IIR_FILTER_SUPPORTED        1
 #define SOC_ADC_MONITOR_SUPPORTED               1
 #define SOC_ADC_DMA_SUPPORTED                   1
+#define SOC_ADC_DIG_SUPPORTED_UNIT(UNIT)        ((UNIT == 0) ? 1 : 0)    //Digital controller supported ADC unit
 #define SOC_ADC_PERIPH_NUM                      (2)
+#define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         (10)
+#define SOC_ADC_MAX_CHANNEL_NUM                 (10)
 #define SOC_ADC_ATTEN_NUM                       (4)
 
 /*!< Digital */
+#define SOC_ADC_DIGI_CONTROLLER_NUM             (2)
 #define SOC_ADC_PATT_LEN_MAX                    (24)    //Two pattern table, each contains 12 items. Each item takes 1 byte
 #define SOC_ADC_DIGI_MIN_BITWIDTH               (12)
 #define SOC_ADC_DIGI_MAX_BITWIDTH               (12)
 #define SOC_ADC_DIGI_RESULT_BYTES               (4)
 #define SOC_ADC_DIGI_DATA_BYTES_PER_CONV        (4)
+#define SOC_ADC_DIGI_IIR_FILTER_NUM             (2)
 #define SOC_ADC_DIGI_MONITOR_NUM                (2)
+/*!< F_sample = F_digi_con / 2 / interval. F_digi_con = 5M for now. 30 <= interval<= 4095 */
+#define SOC_ADC_SAMPLE_FREQ_THRES_HIGH          83333
+#define SOC_ADC_SAMPLE_FREQ_THRES_LOW           611
+
+/*!< RTC */
+#define SOC_ADC_RTC_MIN_BITWIDTH                (12)
+#define SOC_ADC_RTC_MAX_BITWIDTH                (12)
+
 /*!< Calibration */
 #define SOC_ADC_CALIBRATION_V1_SUPPORTED        (1) /*!< support HW offset calibration version 1*/
 #define SOC_ADC_SELF_HW_CALI_SUPPORTED          (1) /*!< support HW offset self calibration */
@@ -191,22 +199,26 @@
 #define SOC_GPIO_CLOCKOUT_BY_IO_MUX    (1)
 #define SOC_GPIO_CLOCKOUT_CHANNEL_NUM  (3)
 
-// GPIO0~21 on ESP32-S3 can support chip deep sleep wakeup
-#define SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP          (1)
-#define SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP                   SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP
-#define SOC_GPIO_HP_PERIPH_PD_SLEEP_WAKEABLE_MASK           (0ULL | BIT0 | BIT1 | BIT2 | BIT3 | BIT4 | BIT5 | BIT6 | BIT7 | BIT8 | BIT9 | BIT10 | BIT11 | BIT12 | BIT13 | BIT14 | BIT15 | BIT16 | BIT17 | BIT18 | BIT19 | BIT20 | BIT21)
-
 /*-------------------------- I2C CAPS ----------------------------------------*/
-#define SOC_I2C_NUM                             (2U)
-#define SOC_HP_I2C_NUM                          (2U)
+// ESP32-S3 has 2 I2C
+#define SOC_I2C_NUM                 (2U)
+#define SOC_HP_I2C_NUM              (2U)
 
-#define SOC_I2C_SUPPORT_XTAL                    (1)
-#define SOC_I2C_SUPPORT_RTC                     (1)
-#define SOC_I2C_SUPPORT_10BIT_ADDR              (1)
+#define SOC_I2C_FIFO_LEN       (32) /*!< I2C hardware FIFO depth */
+#define SOC_I2C_CMD_REG_NUM         (8)  /*!< Number of I2C command registers */
+#define SOC_I2C_SUPPORT_SLAVE       (1)
 
-#define SOC_I2C_SUPPORT_SLAVE                   (1)
-#define SOC_I2C_SLAVE_SUPPORT_BROADCAST         (1)
-#define SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE     (1)
+// FSM_RST only resets the FSM, not using it. So SOC_I2C_SUPPORT_HW_FSM_RST not defined.
+//ESP32-S3 support hardware clear bus
+#define SOC_I2C_SUPPORT_HW_CLR_BUS  (1)
+
+#define SOC_I2C_SUPPORT_XTAL       (1)
+#define SOC_I2C_SUPPORT_RTC        (1)
+
+#define SOC_I2C_SUPPORT_10BIT_ADDR  (1)
+#define SOC_I2C_SLAVE_SUPPORT_BROADCAST    (1)
+#define SOC_I2C_SLAVE_SUPPORT_I2CRAM_ACCESS   (1)
+#define SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE (1)
 
 /*-------------------------- I2S CAPS ----------------------------------------*/
 #define SOC_I2S_HW_VERSION_2        (1)
@@ -261,10 +273,6 @@
 #define SOC_RTC_CNTL_TAGMEM_PD_DMA_BUS_WIDTH    (128)
 #define SOC_RTC_CNTL_TAGMEM_PD_DMA_ADDR_ALIGN   (SOC_RTC_CNTL_TAGMEM_PD_DMA_BUS_WIDTH >> 3)
 
-/* RTC_CNTL registers on this SoC are not atomic and require software protection
- * (e.g., spinlocks) when accessed from multiple cores or threads. */
-#define SOC_RTC_CNTL_NEEDS_ATOMIC_ACCESS 1
-
 /*-------------------------- RTCIO CAPS --------------------------------------*/
 #define SOC_RTCIO_PIN_COUNT   22
 #define SOC_RTCIO_INPUT_OUTPUT_SUPPORTED 1  /* This macro indicates that the target has separate RTC IOMUX hardware feature,
@@ -278,19 +286,37 @@
 
 /*-------------------------- SPI CAPS ----------------------------------------*/
 #define SOC_SPI_PERIPH_NUM                  3
+#define SOC_SPI_PERIPH_CS_NUM(i)            (((i)==0)? 2: (((i)==1)? 6: 3))
 #define SOC_SPI_MAXIMUM_BUFFER_SIZE         64
 #define SOC_SPI_SUPPORT_SLAVE_HD_VER2       1
 #define SOC_SPI_SUPPORT_OCT                 1
-#define SOC_SPI_SUPPORT_DDR_CLOCK           1
+#define SOC_SPI_MAX_BITWIDTH(host_id)       ((host_id == 2) ? 4 : 8) // Supported line mode: SPI3: 1, 2, 4, SPI1/2: 1, 2, 4, 8
+#define SOC_SPI_SCT_SUPPORTED(host_id)      ((host_id) == 1)
+
+// Peripheral supports output given level during its "dummy phase"
+#define SOC_MEMSPI_SUPPORT_CONTROL_DUMMY_OUT       1
+#define SOC_MEMSPI_IS_INDEPENDENT                  1
+#define SOC_MEMSPI_SRC_FREQ_120M_SUPPORTED         1
+#define SOC_MEMSPI_SRC_FREQ_80M_SUPPORTED          1
+#define SOC_MEMSPI_SRC_FREQ_40M_SUPPORTED          1
+#define SOC_MEMSPI_SRC_FREQ_20M_SUPPORTED          1
 
 /*-------------------------- SPIRAM CAPS ----------------------------------------*/
 #define SOC_SPIRAM_SUPPORTED            1
 #define SOC_SPIRAM_XIP_SUPPORTED        1
 
+/*-------------------------- SYS TIMER CAPS ----------------------------------*/
+#define SOC_SYSTIMER_COUNTER_NUM            2  // Number of counter units
+#define SOC_SYSTIMER_ALARM_NUM              3  // Number of alarm units
+#define SOC_SYSTIMER_BIT_WIDTH_LO           32 // Bit width of systimer low part
+#define SOC_SYSTIMER_BIT_WIDTH_HI           20 // Bit width of systimer high part
+#define SOC_SYSTIMER_FIXED_DIVIDER          1  // Clock source divider is fixed: 2.5
+#define SOC_SYSTIMER_INT_LEVEL              1  // Systimer peripheral uses level
+#define SOC_SYSTIMER_ALARM_MISS_COMPENSATE  1  // Systimer peripheral can generate interrupt immediately if t(target) > t(current)
+
 /*-------------------------- LP_TIMER CAPS ----------------------------------*/
 #define SOC_LP_TIMER_BIT_WIDTH_LO           32 // Bit width of lp_timer low part
 #define SOC_LP_TIMER_BIT_WIDTH_HI           16 // Bit width of lp_timer high part
-#define SOC_RTC_TIMER_V1                    1
 
 /*-------------------------- TOUCH SENSOR CAPS -------------------------------*/
 #define SOC_TOUCH_SENSOR_VERSION                    (2)  /*!< Hardware version of touch sensor */
@@ -322,9 +348,11 @@
 
 #define SOC_UART_WAKEUP_SUPPORT_ACTIVE_THRESH_MODE (1)
 
+/*--------------------------- UHCI CAPS -------------------------------------*/
+#define SOC_UHCI_NUM               (1UL)
+
 /*-------------------------- USB CAPS ----------------------------------------*/
 #define SOC_USB_OTG_PERIPH_NUM          (1U)
-#define SOC_USB_FSLS_PHY_NUM            (1U)
 
 /*--------------------------- SHA CAPS ---------------------------------------*/
 /* Max amount of bytes in a single DMA operation is 4095,
@@ -389,8 +417,6 @@
 #define SOC_PM_MODEM_RETENTION_BY_BACKUPDMA     (1)
 #define SOC_PM_MODEM_PD_BY_SW                   (1)
 
-#define SOC_PM_RTC_NOT_SUPPORT_UART2_WAKEUP     (1)
-
 /*--------------------------- CLOCK SUBSYSTEM CAPS -------------------------- */
 #define SOC_CLK_RC_FAST_D256_SUPPORTED            (1)
 #define SOC_RTC_SLOW_CLK_SUPPORT_RC_FAST_D256     (1)
@@ -449,18 +475,11 @@
 #define SOC_MEMSPI_CORE_CLK_SHARED_WITH_PSRAM             (1)
 #define SOC_SPI_MEM_SUPPORT_CACHE_32BIT_ADDR_MAP          (1)
 
-#define SOC_SPI_MEM_FLASH_SUPPORT_HPM                         (1) /*!< Support High Performance Mode */
-
-// Peripheral supports output given level during its "dummy phase"
-#define SOC_MEMSPI_SUPPORT_CONTROL_DUMMY_OUT       1
-#define SOC_MEMSPI_IS_INDEPENDENT                  1
-
-#define SOC_MEMSPI_ENCRYPTION_ALIGNMENT           16    /*!< 16-byte alignment restriction to mem addr and size if encryption is enabled */
-
 /*-------------------------- COEXISTENCE HARDWARE PTI CAPS -------------------------------*/
 #define SOC_COEX_HW_PTI                 (1)
 
 /*-------------------------- EXTERNAL COEXISTENCE CAPS -------------------------------------*/
+#define SOC_EXTERNAL_COEX_ADVANCE              (0) /*!< HARDWARE ADVANCED EXTERNAL COEXISTENCE CAPS */
 #define SOC_EXTERNAL_COEX_LEADER_TX_LINE       (1) /*!< EXTERNAL COEXISTENCE TX LINE CAPS */
 
 /*-------------------------- SDMMC CAPS -----------------------------------------*/
@@ -471,6 +490,8 @@
 #define SOC_SDMMC_USE_GPIO_MATRIX  1
 #define SOC_SDMMC_NUM_SLOTS        2
 #define SOC_SDMMC_DATA_WIDTH_MAX   8
+/* Indicates that there is an option to use XTAL clock instead of PLL for SDMMC */
+#define SOC_SDMMC_SUPPORT_XTAL_CLOCK    1
 /* Supported host clock delay phase number */
 #define SOC_SDMMC_DELAY_PHASE_NUM    4
 

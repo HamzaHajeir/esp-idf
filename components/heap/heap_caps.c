@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +13,6 @@
 #include "multi_heap.h"
 #include "esp_log.h"
 #include "heap_private.h"
-#include "heap_kasan_layout.h"
 #include "esp_system.h"
 
 /*
@@ -116,8 +115,7 @@ HEAP_IRAM_ATTR void *heap_caps_malloc_default( size_t size )
 
         void *r;
         if (size <= (size_t)malloc_alwaysinternal_limit) {
-            // skip low priority DEFAULT heaps (e.g. the DMA reserve pool), so they are used after PSRAM
-            r=heap_caps_malloc_base( size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL | MALLOC_CAP_SKIP_LOW_PRIO );
+            r=heap_caps_malloc_base( size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL );
         } else {
             r=heap_caps_malloc_base( size, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM );
         }
@@ -150,8 +148,7 @@ HEAP_IRAM_ATTR void *heap_caps_realloc_default( void *ptr, size_t size )
 
         void *r;
         if (size <= (size_t)malloc_alwaysinternal_limit) {
-            // skip low priority DEFAULT heaps (e.g. the DMA reserve pool), so they are used after PSRAM
-            r=heap_caps_realloc_base( ptr, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL | MALLOC_CAP_SKIP_LOW_PRIO);
+            r=heap_caps_realloc_base( ptr, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
         } else {
             r=heap_caps_realloc_base( ptr, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM);
         }
@@ -348,12 +345,10 @@ esp_err_t heap_caps_monitor_local_minimum_free_size_start(void)
 
     heap = SLIST_FIRST(&registered_heaps);
     for (size_t counter = 0; counter < min_free_bytes_monitoring.counter; counter++) {
-        if (heap->heap != NULL) {
-            size_t old_minimum = multi_heap_reset_minimum_free_bytes(heap->heap);
+        size_t old_minimum = multi_heap_reset_minimum_free_bytes(heap->heap);
 
-            if (min_free_bytes_monitoring.values[counter] > old_minimum) {
-                min_free_bytes_monitoring.values[counter] = old_minimum;
-            }
+        if (min_free_bytes_monitoring.values[counter] > old_minimum) {
+            min_free_bytes_monitoring.values[counter] = old_minimum;
         }
 
         heap = SLIST_NEXT(heap, next);
@@ -372,9 +367,7 @@ esp_err_t heap_caps_monitor_local_minimum_free_size_stop(void)
     MULTI_HEAP_LOCK(&min_free_bytes_monitoring.mux);
     heap_t *heap = SLIST_FIRST(&registered_heaps);
     for (size_t counter = 0; counter < min_free_bytes_monitoring.counter; counter++) {
-        if (heap->heap != NULL) {
-            multi_heap_restore_minimum_free_bytes(heap->heap, min_free_bytes_monitoring.values[counter]);
-        }
+        multi_heap_restore_minimum_free_bytes(heap->heap, min_free_bytes_monitoring.values[counter]);
 
         heap = SLIST_NEXT(heap, next);
     }
@@ -483,22 +476,13 @@ void heap_caps_dump_all(void)
 
 size_t heap_caps_get_allocated_size( void *ptr )
 {
-    /* The heap layout is:
-     * [block-owner][left redzone][user][right redzone]
-     * so undo the KASAN shift before removing the block-owner word.
-     */
-    ptr = KASAN_USER_TO_PTR(ptr);
     // add the block owner bytes back to ptr before handing over
     // to multi heap layer.
     ptr = MULTI_HEAP_REMOVE_BLOCK_OWNER_OFFSET(ptr);
     heap_t *heap = find_containing_heap(ptr);
     assert(heap);
     size_t size = multi_heap_get_allocated_size(heap->heap, ptr);
-    size = MULTI_HEAP_REMOVE_BLOCK_OWNER_SIZE(size);
-    if (size > 2 * KASAN_RZ) {
-        size -= 2 * KASAN_RZ;
-    }
-    return size;
+    return MULTI_HEAP_REMOVE_BLOCK_OWNER_SIZE(size);
 }
 
 size_t heap_caps_get_containing_block_size(void *ptr)
@@ -548,8 +532,7 @@ HEAP_IRAM_ATTR void *heap_caps_aligned_alloc_default(size_t alignment, size_t si
     }
 
     if (size <= (size_t)malloc_alwaysinternal_limit) {
-        // skip low priority DEFAULT heaps (e.g. the DMA reserve pool), so they are used after PSRAM
-        ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL | MALLOC_CAP_SKIP_LOW_PRIO);
+        ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
     } else {
         ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM);
     }

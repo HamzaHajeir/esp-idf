@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,9 +10,8 @@
 #include "esp_ieee802154_dev.h"
 #include "esp_ieee802154_frame.h"
 #include "esp_ieee802154_util.h"
-#include "esp_rom_sys.h"
 
-bool ieee802154_frame_is_security_enabled(const uint8_t *frame)
+IEEE802154_STATIC IEEE802154_INLINE bool is_security_enabled(const uint8_t *frame)
 {
     return frame[IEEE802154_FRAME_SECURITY_OFFSET] & IEEE802154_FRAME_SECURITY_BIT;
 }
@@ -43,50 +42,14 @@ IEEE802154_STATIC IEEE802154_INLINE bool is_panid_compression(const uint8_t *fra
     return frame[IEEE802154_FRAME_PANID_COMP_OFFSET] & IEEE802154_FRAME_PANID_COMP_BIT;
 }
 
-IEEE802154_STATIC IEEE802154_INLINE bool is_valid_dst_mode(uint8_t dst_mode)
-{
-    return (dst_mode == IEEE802154_FRAME_DST_MODE_NONE ||
-            dst_mode == IEEE802154_FRAME_DST_MODE_SHORT ||
-            dst_mode == IEEE802154_FRAME_DST_MODE_EXT);
-}
-
-IEEE802154_STATIC IEEE802154_INLINE bool is_valid_src_mode(uint8_t src_mode)
-{
-    return (src_mode == IEEE802154_FRAME_SRC_MODE_NONE ||
-            src_mode == IEEE802154_FRAME_SRC_MODE_SHORT ||
-            src_mode == IEEE802154_FRAME_SRC_MODE_EXT);
-}
-
-/**
- * @brief Check whether a range is within the received MAC frame data.
- *
- * The PHR at frame[0] contains the PSDU length, including the FCS. On RX,
- * the hardware replaces the FCS with RSSI and LQI, so it must not be parsed
- * as MAC data. The valid MAC byte range is therefore
- * [IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_PHR_SIZE + frame_len - FCS).
- */
-IEEE802154_STATIC IEEE802154_INLINE bool frame_has_mac_bytes(const uint8_t *frame, uint8_t offset, uint8_t count)
-{
-    const uint8_t frame_len = frame[0] & IEEE802154_FRAME_MAX_LEN;
-
-    if (frame_len < IEEE802154_FRAME_FCS_SIZE) {
-        return false;
-    }
-
-    const uint8_t mac_end = IEEE802154_FRAME_PHR_SIZE + frame_len - IEEE802154_FRAME_FCS_SIZE;
-
-    return offset >= IEEE802154_FRAME_PHR_SIZE && offset <= mac_end && count <= mac_end - offset;
-}
-
 IEEE802154_STATIC IEEE802154_NOINLINE bool is_dst_panid_present(const uint8_t *frame)
 {
     uint8_t dst_mode = dst_addr_mode(frame);
-    uint8_t src_mode = src_addr_mode(frame);
     bool dst_panid_present = false;
-    bool panid_compression = is_panid_compression(frame);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(is_valid_dst_mode(dst_mode) && is_valid_src_mode(src_mode), false);
 
     if (ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_2) {
+        uint8_t src_mode = src_addr_mode(frame);
+        bool panid_compression = is_panid_compression(frame);
 
         if (dst_mode != IEEE802154_FRAME_DST_MODE_NONE) { // dest address is present/short/extended
             if ((src_mode == IEEE802154_FRAME_SRC_MODE_NONE && panid_compression) ||
@@ -111,13 +74,13 @@ IEEE802154_STATIC IEEE802154_NOINLINE bool is_dst_panid_present(const uint8_t *f
 
 IEEE802154_STATIC IEEE802154_NOINLINE bool is_src_panid_present(const uint8_t *frame)
 {
-    uint8_t dst_mode = dst_addr_mode(frame);
     uint8_t src_mode = src_addr_mode(frame);
-    bool src_panid_present = false;
     bool panid_compression = is_panid_compression(frame);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(is_valid_dst_mode(dst_mode) && is_valid_src_mode(src_mode), false);
+    bool src_panid_present = false;
 
     if (ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_2) {
+        uint8_t dst_mode = dst_addr_mode(frame);
+
         if (src_mode != IEEE802154_FRAME_SRC_MODE_NONE) {
             if (dst_mode == IEEE802154_FRAME_DST_MODE_EXT && src_mode == IEEE802154_FRAME_SRC_MODE_EXT && !panid_compression) {
                 src_panid_present = false;
@@ -138,16 +101,6 @@ IEEE802154_STATIC IEEE802154_NOINLINE bool is_src_panid_present(const uint8_t *f
     return src_panid_present;
 }
 
-uint8_t IEEE802154_INLINE ieee802154_frame_get_type(const uint8_t *frame)
-{
-    return frame[IEEE802154_FRAME_TYPE_OFFSET] & IEEE802154_FRAME_TYPE_MASK;
-}
-
-uint8_t IEEE802154_INLINE ieee802154_frame_get_version(const uint8_t *frame)
-{
-    return frame[IEEE802154_FRAME_VERSION_OFFSET] & IEEE802154_FRAME_VERSION_MASK;
-}
-
 IEEE802154_STATIC uint8_t IEEE802154_INLINE ieee802154_frame_address_offset(const uint8_t *frame)
 {
     return IEEE802154_FRAME_PHR_SIZE + IEEE802154_FRAME_FCF_SIZE + (is_dsn_present(frame) ? IEEE802154_FRAME_DSN_SIZE : 0);
@@ -156,17 +109,12 @@ IEEE802154_STATIC uint8_t IEEE802154_INLINE ieee802154_frame_address_offset(cons
 IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_address_size(const uint8_t *frame)
 {
     uint8_t address_size = 0;
-    uint8_t dst_mode = dst_addr_mode(frame);
-    uint8_t src_mode = src_addr_mode(frame);
-
-    ESP_RETURN_ON_FALSE_ISR(is_valid_src_mode(src_mode) && is_valid_dst_mode(dst_mode), IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid address mode");
-
 
     if (is_dst_panid_present(frame)) {
         address_size += IEEE802154_FRAME_PANID_SIZE;
     }
 
-    switch (dst_mode) {
+    switch (dst_addr_mode(frame)) {
     case IEEE802154_FRAME_DST_MODE_NONE:
         break;
 
@@ -179,14 +127,14 @@ IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_address_size(const uint8_t 
         break;
 
     default:
-        break;
+        return IEEE802154_FRAME_INVALID_OFFSET;
     }
 
     if (is_src_panid_present(frame)) {
         address_size += IEEE802154_FRAME_PANID_SIZE;
     }
 
-    switch (src_mode) {
+    switch (src_addr_mode(frame)) {
     case IEEE802154_FRAME_SRC_MODE_NONE:
         break;
 
@@ -199,7 +147,7 @@ IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_address_size(const uint8_t 
         break;
 
     default:
-        break;
+        return IEEE802154_FRAME_INVALID_OFFSET;
     }
 
     return address_size;
@@ -207,21 +155,26 @@ IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_address_size(const uint8_t 
 
 IEEE802154_STATIC IEEE802154_NOINLINE uint8_t ieee802154_frame_security_header_offset(const uint8_t *frame)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), IEEE802154_FRAME_INVALID_VALUE);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_VALUE);
+    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_ADDR_MODE, IEEE802154_TAG, "invalid frame type");
     uint8_t offset = ieee802154_frame_address_offset(frame);
     uint8_t address_size = ieee802154_frame_address_size(frame);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, address_size), IEEE802154_FRAME_INVALID_VALUE);
 
-    return offset + address_size;
+    ESP_RETURN_ON_FALSE_ISR(offset != IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_TAG, "invalid offset");
+    ESP_RETURN_ON_FALSE_ISR(address_size != IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_TAG, "invalid offset");
+
+    offset += address_size;
+
+    return offset;
 }
 
-// Security must be enabled, and offset must come from a successful ieee802154_frame_security_header_offset() call.
-IEEE802154_STATIC IEEE802154_NOINLINE uint8_t ieee802154_frame_get_security_field_len(const uint8_t *frame, uint8_t offset)
+IEEE802154_STATIC IEEE802154_NOINLINE uint8_t ieee802154_frame_get_security_field_len(const uint8_t *frame)
 {
-    uint8_t security_field_len = 0;
+    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_TAG, "invalid frame type");
 
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, IEEE802154_FRAME_SE_HEAD_SIZE), IEEE802154_FRAME_INVALID_VALUE);
+    uint8_t security_field_len = 0;
+    uint8_t offset = ieee802154_frame_security_header_offset(frame);
+
+    ESP_RETURN_ON_FALSE_ISR(offset != IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_FRAME_INVALID_OFFSET, IEEE802154_TAG, "invalid offset");
 
     security_field_len += IEEE802154_FRAME_SE_HEAD_SIZE;
     uint8_t security_header = frame[offset];
@@ -247,14 +200,24 @@ IEEE802154_STATIC IEEE802154_NOINLINE uint8_t ieee802154_frame_get_security_fiel
         break;
     }
 
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, security_field_len), IEEE802154_FRAME_INVALID_VALUE);
-
     return security_field_len;
 }
 
-IEEE802154_STATIC uint8_t ieee802154_frame_get_mic_len(uint8_t security_header)
+IEEE802154_STATIC uint8_t ieee802154_frame_ie_header_offset(const uint8_t *frame)
 {
+    uint8_t offset = ieee802154_frame_security_header_offset(frame);
+    uint8_t security_field_len = ieee802154_frame_get_security_field_len(frame);
+
+    offset += security_field_len;
+
+    return offset;
+}
+
+IEEE802154_STATIC uint8_t ieee802154_frame_get_mic_len(const uint8_t *frame)
+{
+    uint8_t offset = ieee802154_frame_security_header_offset(frame);
     uint8_t mic_len = 0;
+    uint8_t security_header = frame[offset];
 
     switch (security_header & IEEE802154_FRAME_SECURITY_MASK) {
     case IEEE802154_FRAME_SECURITY_MIC_32:
@@ -276,15 +239,11 @@ IEEE802154_STATIC uint8_t ieee802154_frame_get_mic_len(uint8_t security_header)
     return mic_len;
 }
 
-// offset is the validated IE-header offset; mic_len is decoded from the validated security header.
-IEEE802154_STATIC uint8_t ieee802154_frame_get_ie_field_len(const uint8_t *frame, uint8_t offset, uint8_t mic_len)
+IEEE802154_STATIC uint8_t ieee802154_frame_get_ie_field_len(const uint8_t *frame)
 {
-    uint8_t frame_len = frame[0] & IEEE802154_FRAME_MAX_LEN;
+    uint8_t offset = ieee802154_frame_ie_header_offset(frame);
     uint8_t ie_field_len = 0;
-    uint8_t frame_footer_len = mic_len + IEEE802154_FRAME_FCS_SIZE;
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(offset + frame_footer_len <= IEEE802154_FRAME_PHR_SIZE + frame_len, IEEE802154_FRAME_INVALID_VALUE);
-
-    const uint8_t ie_end = IEEE802154_FRAME_PHR_SIZE + frame_len - frame_footer_len;
+    uint8_t frame_footer_len = ieee802154_frame_get_mic_len(frame) + IEEE802154_FRAME_FCS_SIZE;
 
     /* If the `offset + frame_footer_len == frame_len`, we exit the `while()`
        loop. This covers the case where frame contains one or more Header IEs
@@ -293,52 +252,37 @@ IEEE802154_STATIC uint8_t ieee802154_frame_get_ie_field_len(const uint8_t *frame
        since the end of frame can be determined from frame length and
        footer length. (for details, please reference 2015 - spec table 7 - 6 in page 169) */
 
-    while (offset + ie_field_len < ie_end) {
-        uint8_t ie_offset = offset + ie_field_len;
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(IEEE802154_FRAME_IE_HEAD_LEN <= ie_end - ie_offset, IEEE802154_FRAME_INVALID_VALUE);
-
-        uint16_t ie_header = frame[ie_offset + 1] << 8 | frame[ie_offset];
+    while (frame[0] > offset + ie_field_len + frame_footer_len) {
+        uint16_t ie_header = frame[offset + ie_field_len + 1] << 8 | frame[offset + ie_field_len];
         // Header Termination IE 2 is used in to signal end of the MHR and beginning of the MAC Payload.
         if ((ie_header & IEEE802154_FRAME_IE_HEAD_ID_MASK) == IEEE802154_IE_TYPE_HT2) {
             ie_field_len += IEEE802154_FRAME_IE_HEAD_LEN;
             break;
         } else {
-            uint8_t ie_subfield_len = ie_header & IEEE802154_FRAME_IE_SUBFIELD_LEN_MASK;
-            uint8_t ie_subfield_size = IEEE802154_FRAME_IE_HEAD_LEN + ie_subfield_len;
-
-            IEEE802154_RETURN_ON_FALSE_SILENTLY(ie_subfield_size <= ie_end - ie_offset, IEEE802154_FRAME_INVALID_VALUE);
-            ie_field_len += ie_subfield_size;
+            uint8_t ie_subfield_len = (ie_header & IEEE802154_FRAME_IE_SUBFIELD_LEN_MASK);
+            ie_field_len += IEEE802154_FRAME_IE_HEAD_LEN + ie_subfield_len;
         }
     }
-
     return ie_field_len;
 }
 
 IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_payload_offset(const uint8_t *frame)
 {
-    uint8_t security_offset = ieee802154_frame_security_header_offset(frame);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(security_offset != IEEE802154_FRAME_INVALID_VALUE, IEEE802154_FRAME_INVALID_VALUE);
-    uint8_t offset = security_offset;
-    if (ieee802154_frame_is_security_enabled(frame)) {
+    uint8_t offset = ieee802154_frame_security_header_offset(frame);
+    if (is_security_enabled(frame)) {
         // skip security field.
-        uint8_t security_field_len = ieee802154_frame_get_security_field_len(frame, security_offset);
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(security_field_len != IEEE802154_FRAME_INVALID_VALUE, IEEE802154_FRAME_INVALID_VALUE);
-        offset += security_field_len;
+        offset += ieee802154_frame_get_security_field_len(frame);
     }
 
     if (ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_2 && is_ie_present(frame)) {
         // skip IE fields.
-        uint8_t mic_len = ieee802154_frame_is_security_enabled(frame) ? ieee802154_frame_get_mic_len(frame[security_offset]) : 0;
-        uint8_t ie_field_len = ieee802154_frame_get_ie_field_len(frame, offset, mic_len);
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(ie_field_len != IEEE802154_FRAME_INVALID_VALUE, IEEE802154_FRAME_INVALID_VALUE);
-        offset += ie_field_len;
+        offset += ieee802154_frame_get_ie_field_len(frame);
     }
     if (ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_0 || ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_1) {
         if (ieee802154_frame_get_type(frame) == IEEE802154_FRAME_TYPE_BEACON) {
             // TODO: skip beacon payload.
         }
         if (ieee802154_frame_get_type(frame) == IEEE802154_FRAME_TYPE_COMMAND) {
-            IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, IEEE802154_FRAME_COMMAND_ID_LEN), IEEE802154_FRAME_INVALID_VALUE);
             offset += IEEE802154_FRAME_COMMAND_ID_LEN;
         }
     }
@@ -346,62 +290,37 @@ IEEE802154_STATIC IRAM_ATTR uint8_t ieee802154_frame_payload_offset(const uint8_
     return offset - 1;
 }
 
-bool ieee802154_is_data_request(const uint8_t *frame)
+uint8_t IEEE802154_INLINE ieee802154_frame_get_type(const uint8_t *frame)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), false);
-    if (ieee802154_frame_get_type(frame) != IEEE802154_FRAME_TYPE_COMMAND) {
-        return false;
-    }
-    uint8_t security_offset = ieee802154_frame_security_header_offset(frame);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(security_offset != IEEE802154_FRAME_INVALID_VALUE, false);
-    uint8_t offset = security_offset;
-    if (ieee802154_frame_is_security_enabled(frame)) {
-        // skip security field.
-        uint8_t security_field_len = ieee802154_frame_get_security_field_len(frame, security_offset);
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(security_field_len != IEEE802154_FRAME_INVALID_VALUE, false);
-        offset += security_field_len;
-    }
+    return frame[IEEE802154_FRAME_TYPE_OFFSET] & IEEE802154_FRAME_TYPE_MASK;
+}
 
-    if (ieee802154_frame_get_version(frame) == IEEE802154_FRAME_VERSION_2 && is_ie_present(frame)) {
-        // skip IE fields.
-        uint8_t mic_len = ieee802154_frame_is_security_enabled(frame) ? ieee802154_frame_get_mic_len(frame[security_offset]) : 0;
-        uint8_t ie_field_len = ieee802154_frame_get_ie_field_len(frame, offset, mic_len);
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(ie_field_len != IEEE802154_FRAME_INVALID_VALUE, false);
-        offset += ie_field_len;
-    }
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, IEEE802154_FRAME_COMMAND_ID_LEN), false);
-    if (frame[offset] == IEEE802154_CMD_DATA_REQ) {
-        return true;
-    }
-
-    return false;
+uint8_t IEEE802154_INLINE ieee802154_frame_get_version(const uint8_t *frame)
+{
+    return frame[IEEE802154_FRAME_VERSION_OFFSET] & IEEE802154_FRAME_VERSION_MASK;
 }
 
 bool IEEE802154_INLINE ieee802154_frame_is_ack_required(const uint8_t *frame)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), false);
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), false);
-    return (frame[IEEE802154_FRAME_AR_OFFSET] & IEEE802154_FRAME_AR_BIT);
+    return (ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame))) && (frame[IEEE802154_FRAME_AR_OFFSET] & IEEE802154_FRAME_AR_BIT);
 }
 
 uint8_t ieee802154_frame_get_dst_addr(const uint8_t *frame, uint8_t *addr)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), IEEE802154_FRAME_INVALID_VALUE);
-    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid frame type");
+    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_ADDR_MODE, IEEE802154_TAG, "invalid frame type");
 
     uint8_t offset = ieee802154_frame_address_offset(frame);
     uint8_t dst_mode = dst_addr_mode(frame);
-    uint8_t addr_size = 0;
+    uint8_t addr_size;
 
-    ESP_RETURN_ON_FALSE_ISR(is_valid_dst_mode(dst_mode), IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid destination address mode");
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(dst_mode != IEEE802154_FRAME_DST_MODE_NONE, IEEE802154_FRAME_DST_MODE_NONE);
+    ESP_RETURN_ON_FALSE_ISR(dst_mode == IEEE802154_FRAME_DST_MODE_SHORT || dst_mode == IEEE802154_FRAME_DST_MODE_EXT, dst_mode, IEEE802154_TAG, "invalid address mode");
+
     addr_size = (dst_mode == IEEE802154_FRAME_DST_MODE_SHORT) ? IEEE802154_FRAME_SHORT_ADDR_SIZE : IEEE802154_FRAME_EXT_ADDR_SIZE;
 
     if (is_dst_panid_present(frame)) {
         offset += IEEE802154_FRAME_PANID_SIZE;
     }
 
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, addr_size), IEEE802154_FRAME_INVALID_VALUE);
     memcpy(addr, frame + offset, addr_size);
 
     return dst_mode;
@@ -409,17 +328,15 @@ uint8_t ieee802154_frame_get_dst_addr(const uint8_t *frame, uint8_t *addr)
 
 uint8_t ieee802154_frame_get_src_addr(const uint8_t *frame, uint8_t *addr)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), IEEE802154_FRAME_INVALID_VALUE);
-    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid frame type");
+    ESP_RETURN_ON_FALSE_ISR(ieee802154_is_supported_frame_type(ieee802154_frame_get_type(frame)), IEEE802154_FRAME_INVALID_ADDR_MODE, IEEE802154_TAG, "invalid frame type");
 
     uint8_t offset = ieee802154_frame_address_offset(frame);
     uint8_t dst_mode = dst_addr_mode(frame);
     uint8_t src_mode = src_addr_mode(frame);
-    uint8_t addr_size = 0;
+    uint8_t addr_size;
 
-    ESP_RETURN_ON_FALSE_ISR(is_valid_src_mode(src_mode) && is_valid_dst_mode(dst_mode), IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid address mode");
+    ESP_RETURN_ON_FALSE_ISR(src_mode == IEEE802154_FRAME_SRC_MODE_SHORT || src_mode == IEEE802154_FRAME_SRC_MODE_EXT, src_mode, IEEE802154_TAG, "invalid address mode");
 
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(src_mode != IEEE802154_FRAME_SRC_MODE_NONE, IEEE802154_FRAME_SRC_MODE_NONE);
     addr_size = (src_mode == IEEE802154_FRAME_SRC_MODE_SHORT) ? IEEE802154_FRAME_SHORT_ADDR_SIZE : IEEE802154_FRAME_EXT_ADDR_SIZE;
 
     if (is_dst_panid_present(frame)) {
@@ -443,7 +360,6 @@ uint8_t ieee802154_frame_get_src_addr(const uint8_t *frame, uint8_t *addr)
         offset += IEEE802154_FRAME_PANID_SIZE;
     }
 
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, addr_size), IEEE802154_FRAME_INVALID_VALUE);
     memcpy(addr, frame + offset, addr_size);
 
     return src_mode;
@@ -451,18 +367,14 @@ uint8_t ieee802154_frame_get_src_addr(const uint8_t *frame, uint8_t *addr)
 
 uint8_t ieee802154_frame_get_security_payload_offset(uint8_t *frame)
 {
-    uint8_t offset = ieee802154_frame_payload_offset(frame);
-    ESP_RETURN_ON_FALSE_ISR(offset != IEEE802154_FRAME_INVALID_VALUE, IEEE802154_FRAME_INVALID_VALUE, IEEE802154_TAG, "invalid offset");
-    return offset;
+    return ieee802154_frame_payload_offset(frame);
 }
 
 esp_err_t ieee802154_frame_get_dest_panid(const uint8_t *frame, uint8_t *panid)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), ESP_FAIL);
     uint8_t offset = ieee802154_frame_address_offset(frame);
 
     if (is_dst_panid_present(frame)) {
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, IEEE802154_FRAME_PANID_SIZE), ESP_FAIL);
         memcpy(panid, frame + offset, IEEE802154_FRAME_PANID_SIZE);
         return ESP_OK;
     }
@@ -471,7 +383,6 @@ esp_err_t ieee802154_frame_get_dest_panid(const uint8_t *frame, uint8_t *panid)
 
 esp_err_t ieee802154_frame_get_src_panid(const uint8_t *frame, uint8_t *panid)
 {
-    IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, IEEE802154_FRAME_PHR_SIZE, IEEE802154_FRAME_FCF_SIZE), ESP_FAIL);
     uint8_t offset = ieee802154_frame_address_offset(frame);
     uint8_t dst_mode = dst_addr_mode(frame);
 
@@ -492,7 +403,6 @@ esp_err_t ieee802154_frame_get_src_panid(const uint8_t *frame, uint8_t *panid)
         default:
             break;
         }
-        IEEE802154_RETURN_ON_FALSE_SILENTLY(frame_has_mac_bytes(frame, offset, IEEE802154_FRAME_PANID_SIZE), ESP_FAIL);
         memcpy(panid, frame + offset, IEEE802154_FRAME_PANID_SIZE);
         return ESP_OK;
     }

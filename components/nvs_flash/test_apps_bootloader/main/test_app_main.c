@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +7,6 @@
 #include "unity.h"
 #include "unity_test_runner.h"
 #include "esp_heap_caps.h"
-#include "esp_crypto_lock.h"
 
 // There should be no memory allocated during the test.
 #define TEST_MEMORY_INITIAL_LEAK_THRESHOLD (-700)
@@ -15,7 +14,7 @@
 
 static size_t before_free_8bit;
 static size_t before_free_32bit;
-static ssize_t actual_leak_threshold = TEST_MEMORY_INITIAL_LEAK_THRESHOLD;
+static size_t actual_leak_threshold = TEST_MEMORY_INITIAL_LEAK_THRESHOLD;
 
 
 static void check_leak(size_t before_free, size_t after_free, const char *type)
@@ -27,14 +26,7 @@ static void check_leak(size_t before_free, size_t after_free, const char *type)
 
 void setUp(void)
 {
-    /* Lazy-init crypto locks (FreeRTOS mutexes) before measuring free heap.
-     * First HMAC use otherwise allocates ~248 bytes and trips the leak check.
-     */
-#if SOC_HMAC_SUPPORTED
-    esp_crypto_hmac_lock_acquire();
-    esp_crypto_hmac_lock_release();
-#endif
-
+    // load the partition table before measuring the initial free heap size.
     before_free_8bit = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     before_free_32bit = heap_caps_get_free_size(MALLOC_CAP_32BIT);
 }

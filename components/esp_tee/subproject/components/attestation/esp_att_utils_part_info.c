@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,9 +15,6 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "hal/efuse_hal.h"
-#include "esp_efuse.h"
-#include "esp_efuse_table.h"
-#include "soc/soc_caps.h"
 
 #include "esp_app_format.h"
 #include "esp_bootloader_desc.h"
@@ -26,9 +23,8 @@
 
 #if ESP_TEE_BUILD
 #include "esp_flash_partitions.h"
+#include "bootloader_utility_tee.h"
 #include "esp_tee_flash.h"
-#include "esp_tee_code_hash.h"
-
 #else
 #include "esp_partition.h"
 #include "esp_ota_ops.h"
@@ -41,19 +37,20 @@
 #include "esp32c6/rom/secure_boot.h"
 #endif
 #endif
-#define DECLARE_PRIVATE_IDENTIFIERS
-#include "psa/crypto.h"
-#include "esp_private/bootloader_flash_internal.h"
+
+#include "mbedtls/sha256.h"
+
+#include "bootloader_flash_priv.h"
 #include "esp_attestation_utils.h"
-#include "esp_macros.h"
 
 #define SECURE_BOOT_V2       (0x02)
+#define ALIGN_UP(num, align) (((num) + ((align)-1)) & ~((align)-1))
 
 static const char *TAG = "esp_att_utils";
 
 /* Forward declaration */
 static esp_err_t read_partition(uint32_t offset, void *buf, size_t size);
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len);
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest);
 static esp_err_t get_active_app_part_pos(esp_partition_pos_t *pos);
 static esp_err_t get_active_tee_part_pos(esp_partition_pos_t *pos);
 
@@ -75,128 +72,46 @@ static size_t digest_type_to_len(esp_att_part_digest_type_t digest)
 }
 
 #if ESP_TEE_BUILD
-#define DIGEST_CHUNK_LEN (1024)
-
-static psa_status_t hash_update_chunked(psa_hash_operation_t *hash_op, const void *data, uint32_t len)
-{
-    psa_status_t status = PSA_SUCCESS;
-
-    for (uint32_t offset = 0; offset < len; offset += DIGEST_CHUNK_LEN) {
-        status = psa_hash_update(hash_op, (const uint8_t *)data + offset, MIN(DIGEST_CHUNK_LEN, len - offset));
-        if (status != PSA_SUCCESS) {
-            break;
-        }
-    }
-
-    return status;
-}
 
 static esp_err_t read_partition(uint32_t offset, void *buf, size_t size)
 {
     return (esp_err_t)esp_tee_flash_read(offset, buf, size, true);
 }
 
-/* Byte ranges [start, end) hashed for the code hash: the image segments without the app descriptor */
-typedef struct {
-    uint32_t start[2];
-    uint32_t end[2];
-} code_hash_ranges_t;
-
-/* Hash image bytes [offset, offset + len) within the code hash ranges */
-static psa_status_t hash_update_code(psa_hash_operation_t *hash_op, const uint8_t *data, uint32_t offset,
-                                     uint32_t len, const code_hash_ranges_t *ranges)
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest)
 {
-    psa_status_t status = PSA_SUCCESS;
-
-    for (size_t i = 0; i < 2 && status == PSA_SUCCESS; i++) {
-        uint32_t lo = MAX(ranges->start[i], offset);
-        uint32_t hi = MIN(ranges->end[i], offset + len);
-        if (lo < hi) {
-            status = hash_update_chunked(hash_op, data + (lo - offset), hi - lo);
-        }
-    }
-
-    return status;
-}
-
-/* SHA256 of the flash range; with `code_hash`, the same pass also hashes its code view (see hash_update_code) */
-static esp_err_t get_flash_contents_digests(uint32_t flash_offset, uint32_t len, uint8_t *digest,
-                                            uint8_t *code_hash, const code_hash_ranges_t *ranges, size_t digest_len)
-{
-    if (digest == NULL || len == 0) {
+    if (digest == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
     uint32_t mmu_free_pages_count = esp_tee_flash_mmap_get_free_pages();
     uint32_t partial_image_len = mmu_free_pages_count * CONFIG_MMU_PAGE_SIZE;
 
-    psa_hash_operation_t hash_op = PSA_HASH_OPERATION_INIT;
-    psa_hash_operation_t code_hash_op = PSA_HASH_OPERATION_INIT;
-    psa_status_t status = psa_hash_setup(&hash_op, PSA_ALG_SHA_256);
-    if (status == PSA_SUCCESS && code_hash != NULL) {
-        status = psa_hash_setup(&code_hash_op, PSA_ALG_SHA_256);
-    }
-    if (status != PSA_SUCCESS) {
-        goto fail;
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+
+    int ret = mbedtls_sha256_starts(&ctx, false);
+    if (ret != 0) {
+        mbedtls_sha256_free(&ctx);
+        return ESP_FAIL;
     }
 
-    for (uint32_t offset = 0; offset < len;) {
-        uint32_t mmap_len = MIN(len - offset, partial_image_len);
-        const uint8_t *image = esp_tee_flash_mmap(flash_offset + offset, mmap_len);
+    while (len > 0) {
+        uint32_t mmap_len = MIN(len, partial_image_len);
+        const void *image = esp_tee_flash_mmap(flash_offset, mmap_len);
         if (image == NULL) {
-            goto fail;
+            mbedtls_sha256_free(&ctx);
+            return ESP_FAIL;
         }
-        status = hash_update_chunked(&hash_op, image, mmap_len);
-        if (status == PSA_SUCCESS && code_hash != NULL) {
-            status = hash_update_code(&code_hash_op, image, offset, mmap_len, ranges);
-        }
+        mbedtls_sha256_update(&ctx, image, mmap_len);
         esp_tee_flash_munmap(image);
-        if (status != PSA_SUCCESS) {
-            goto fail;
-        }
-        offset += mmap_len;
+
+        flash_offset += mmap_len;
+        len -= mmap_len;
     }
 
-    size_t digest_size = 0;
-    status = psa_hash_finish(&hash_op, digest, digest_len, &digest_size);
-    if (status == PSA_SUCCESS && code_hash != NULL) {
-        status = psa_hash_finish(&code_hash_op, code_hash, digest_len, &digest_size);
-    }
-    if (status != PSA_SUCCESS) {
-        goto fail;
-    }
-
-    return ESP_OK;
-
-fail:
-    psa_hash_abort(&hash_op);
-    psa_hash_abort(&code_hash_op);
-    return ESP_FAIL;
-}
-
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len)
-{
-    return get_flash_contents_digests(flash_offset, len, digest, NULL, NULL, digest_len);
-}
-
-/* Code hash ranges from the image metadata (see esp_image_get_metadata) */
-static esp_err_t get_code_hash_ranges(const esp_partition_pos_t *pos, const esp_image_metadata_t *metadata,
-                                      code_hash_ranges_t *ranges)
-{
-    const uint8_t n = metadata->image.segment_count;
-    uint32_t magic = 0;
-
-    if (n == 0 || metadata->segments[0].data_len < sizeof(esp_app_desc_t)
-            || read_partition(metadata->segment_data[0], &magic, sizeof(magic)) != ESP_OK
-            || magic != ESP_APP_DESC_MAGIC_WORD) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    const uint32_t desc_start = metadata->segment_data[0] - pos->offset;
-    ranges->start[0] = sizeof(esp_image_header_t);
-    ranges->end[0] = desc_start;
-    ranges->start[1] = desc_start + sizeof(esp_app_desc_t);
-    ranges->end[1] = metadata->segment_data[n - 1] - pos->offset + metadata->segments[n - 1].data_len;
+    mbedtls_sha256_finish(&ctx, digest);
+    mbedtls_sha256_free(&ctx);
     return ESP_OK;
 }
 
@@ -217,16 +132,18 @@ static esp_err_t get_active_app_part_pos(esp_partition_pos_t *pos)
 
 static esp_err_t get_active_tee_part_pos(esp_partition_pos_t *pos)
 {
-    if (pos == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_partition_info_t *running_tee = esp_tee_flash_get_running_tee_partition();
-    if (running_tee->magic != ESP_PARTITION_MAGIC) {
+    uint8_t tee_active_part = bootloader_utility_tee_get_boot_partition(NULL);
+    if (tee_active_part > PART_SUBTYPE_TEE_1) {
         return ESP_ERR_NOT_FOUND;
     }
 
-    memcpy(pos, &running_tee->pos, sizeof(esp_partition_pos_t));
+    esp_partition_info_t part_info = {};
+    esp_err_t err = esp_tee_flash_find_partition(PART_TYPE_APP, tee_active_part, NULL, &part_info);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    memcpy(pos, &part_info.pos, sizeof(esp_partition_pos_t));
     return ESP_OK;
 }
 
@@ -237,7 +154,7 @@ static esp_err_t read_partition(uint32_t offset, void *buf, size_t size)
     return esp_flash_read(NULL, buf, offset, size);
 }
 
-esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest, size_t digest_len)
+esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t *digest)
 {
     if (digest == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -248,10 +165,11 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
     uint32_t mmu_free_pages_count = bootloader_mmap_get_free_pages();
     uint32_t partial_image_len = mmu_free_pages_count * CONFIG_MMU_PAGE_SIZE;
 
-    psa_hash_operation_t hash_op = PSA_HASH_OPERATION_INIT;
-    psa_status_t status = psa_hash_setup(&hash_op, PSA_ALG_SHA_256);
-    if (status != PSA_SUCCESS) {
-        return ESP_FAIL;
+    mbedtls_sha256_context sha256_ctx;
+    mbedtls_sha256_init(&sha256_ctx);
+
+    if (mbedtls_sha256_starts(&sha256_ctx, false) != 0) {
+        goto exit;
     }
 
     while (len > 0) {
@@ -260,9 +178,7 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
         if (image == NULL) {
             goto exit;
         }
-        status = psa_hash_update(&hash_op, image, mmap_len);
-        if (status != PSA_SUCCESS) {
-            psa_hash_abort(&hash_op);
+        if (mbedtls_sha256_update(&sha256_ctx, image, mmap_len) != 0) {
             goto exit;
         }
         bootloader_munmap(image);
@@ -271,16 +187,13 @@ esp_err_t get_flash_contents_sha256(uint32_t flash_offset, uint32_t len, uint8_t
         len -= mmap_len;
     }
 
-    size_t digest_size = 0;
-    status = psa_hash_finish(&hash_op, digest, digest_len, &digest_size);
-    if (status != PSA_SUCCESS) {
-        psa_hash_abort(&hash_op);
+    if (mbedtls_sha256_finish(&sha256_ctx, digest) != 0) {
         goto exit;
     }
 
     err = ESP_OK;
 exit:
-    psa_hash_abort(&hash_op);
+    mbedtls_sha256_free(&sha256_ctx);
     return err;
 }
 
@@ -343,8 +256,7 @@ static esp_err_t get_active_part_pos(esp_att_part_type_t part_type, esp_partitio
     return ESP_OK;
 }
 
-static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_digest_info_t *part_digest,
-                                 bool with_code_hash)
+static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_digest_info_t *part_digest)
 {
     if (pos == NULL || part_digest == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -371,24 +283,7 @@ static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_di
         return ESP_ERR_NO_MEM;
     }
 
-#if ESP_TEE_BUILD
-    /* NOTE: The code hash assumes the app descriptor leads the first segment */
-    code_hash_ranges_t ranges = {};
-    if (with_code_hash && get_code_hash_ranges(pos, &metadata, &ranges) != ESP_OK) {
-        ESP_LOGW(TAG, "App descriptor not found, skipping the code hash");
-        with_code_hash = false;
-    }
-    /* Image digest and (optionally) the code hash in a single pass over the image */
-    err = get_flash_contents_digests(pos->offset, image_len, digest,
-                                     with_code_hash ? part_digest->calc_code_hash : NULL,
-                                     with_code_hash ? &ranges : NULL, digest_len);
-    if (err == ESP_OK && with_code_hash) {
-        part_digest->code_hash_ver = ESP_TEE_IMG_CODE_HASH_VER;
-    }
-#else
-    (void)with_code_hash;
-    err = get_flash_contents_sha256(pos->offset, image_len, digest, digest_len);
-#endif
+    err = get_flash_contents_sha256(pos->offset, image_len, digest);
     if (err != ESP_OK) {
         goto exit;
     }
@@ -401,7 +296,7 @@ static esp_err_t get_part_digest(const esp_partition_pos_t *pos, esp_att_part_di
     memcpy(part_digest->calc_digest, digest, digest_len);
 
 #if CONFIG_SECURE_BOOT_V2_ENABLED
-    uint32_t signed_image_len = ESP_ALIGN_UP(metadata.image_len, FLASH_SECTOR_SIZE);
+    uint32_t signed_image_len = ALIGN_UP(metadata.image_len, FLASH_SECTOR_SIZE);
 
     if (signed_image_len % CONFIG_MMU_PAGE_SIZE == 0) {
         part_digest->secure_padding = true;
@@ -458,27 +353,6 @@ static esp_err_t get_part_app_desc(const esp_partition_pos_t *pos, esp_app_desc_
     }
 
     return ESP_OK;
-}
-
-/* 2nd stage bootloader anti-rollback counter (bits set), UINT32_MAX if unsupported or not enabled */
-static uint32_t read_btl_secure_version(void)
-{
-    size_t cnt = UINT32_MAX;
-#if SOC_BOOTLOADER_ANTI_ROLLBACK_SUPPORTED
-#if CONFIG_IDF_TARGET_ESP32C5
-    const esp_efuse_desc_t *field[] = {
-        ESP_EFUSE_BOOTLOADER_ANTI_ROLLBACK_SECURE_VERSION_HI[0],
-        ESP_EFUSE_BOOTLOADER_ANTI_ROLLBACK_SECURE_VERSION_LO[0],
-        NULL
-    };
-#else
-    const esp_efuse_desc_t **field = ESP_EFUSE_BOOTLOADER_ANTI_ROLLBACK_SECURE_VERSION;
-#endif
-    if (esp_efuse_read_field_bit(ESP_EFUSE_BOOTLOADER_ANTI_ROLLBACK_EN)) {
-        esp_efuse_read_field_cnt(field, &cnt);
-    }
-#endif
-    return cnt;
 }
 
 static esp_err_t get_part_chip_rev(const esp_partition_pos_t *pos, esp_att_part_chip_rev_t *chip_rev)
@@ -540,7 +414,7 @@ esp_err_t esp_att_utils_get_btl_claim_data(esp_att_part_metadata_t *btl_metadata
     }
 
     esp_att_part_digest_info_t btl_digest = {};
-    err = get_part_digest(&btl_pos, &btl_digest, false);
+    err = get_part_digest(&btl_pos, &btl_digest);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get bootloader image digest!");
         return err;
@@ -565,7 +439,6 @@ esp_err_t esp_att_utils_get_btl_claim_data(esp_att_part_metadata_t *btl_metadata
 
     btl_metadata->type = ESP_ATT_PART_TYPE_BOOTLOADER;
     btl_metadata->secure_ver = btl_desc.secure_version;
-    btl_metadata->secure_ver_efuse = read_btl_secure_version();
 
     err = esp_att_utils_hexbuf_to_hexstr(&btl_desc.version, sizeof(btl_desc.version), btl_metadata->ver, sizeof(btl_metadata->ver));
     if (err != ESP_OK) {
@@ -590,7 +463,7 @@ esp_err_t esp_att_utils_get_app_claim_data(esp_att_part_metadata_t *app_metadata
     }
 
     esp_att_part_digest_info_t app_digest = {};
-    err = get_part_digest(&app_pos, &app_digest, false);
+    err = get_part_digest(&app_pos, &app_digest);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get app image digest!");
         return err;
@@ -615,11 +488,6 @@ esp_err_t esp_att_utils_get_app_claim_data(esp_att_part_metadata_t *app_metadata
 
     app_metadata->type = ESP_ATT_PART_TYPE_APP;
     app_metadata->secure_ver = ns_app_desc.secure_version;
-#if CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
-    app_metadata->secure_ver_efuse = esp_efuse_read_secure_version();
-#else
-    app_metadata->secure_ver_efuse = UINT32_MAX;
-#endif
 
     memcpy(app_metadata->ver, &ns_app_desc.version, sizeof(app_metadata->ver));
     memcpy(app_metadata->idf_ver, &ns_app_desc.idf_ver, sizeof(app_metadata->idf_ver));
@@ -641,7 +509,7 @@ esp_err_t esp_att_utils_get_tee_claim_data(esp_att_part_metadata_t *tee_metadata
     }
 
     esp_att_part_digest_info_t tee_digest = {};
-    err = get_part_digest(&tee_pos, &tee_digest, true);
+    err = get_part_digest(&tee_pos, &tee_digest);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get TEE image digest!");
         return err;
@@ -666,11 +534,6 @@ esp_err_t esp_att_utils_get_tee_claim_data(esp_att_part_metadata_t *tee_metadata
 
     tee_metadata->type = ESP_ATT_PART_TYPE_TEE;
     tee_metadata->secure_ver = tee_app_desc.secure_version;
-#if CONFIG_SECURE_TEE_ANTI_ROLLBACK
-    tee_metadata->secure_ver_efuse = esp_efuse_read_tee_secure_version();
-#else
-    tee_metadata->secure_ver_efuse = UINT32_MAX;
-#endif
 
     memcpy(tee_metadata->ver, &tee_app_desc.version, sizeof(tee_metadata->ver));
     memcpy(tee_metadata->idf_ver, &tee_app_desc.idf_ver, sizeof(tee_metadata->idf_ver));

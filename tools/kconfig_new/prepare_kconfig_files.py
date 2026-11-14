@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 
 import argparse
 import json
-
-from esp_pylib.excepthook import install_exception_reporting
-from esp_pylib.logger import log
-from rich.markup import escape
+import sys
 
 
 def _prepare_source_files(env_dict: dict[str, str], list_separator: str) -> None:
@@ -79,7 +76,8 @@ def _prepare_source_files(env_dict: dict[str, str], list_separator: str) -> None
                 env_dict['COMPONENT_KCONFIGS_PROJBUILD_EXCLUDED_SOURCE_FILE'],
             )
     except KeyError as e:
-        log.die(f'{str(e)} is not defined!')
+        print('Error:', e, 'is not defined!')
+        sys.exit(1)
 
 
 def main() -> None:
@@ -89,6 +87,7 @@ def main() -> None:
 
     parser.add_argument(
         '--env-file',
+        type=argparse.FileType('r'),
         help='Optional file to load environment variables from. Contents '
         'should be a JSON object where each key/value pair is a variable.',
     )
@@ -107,14 +106,11 @@ def main() -> None:
     try:
         env = dict([(name, value) for (name, value) in (e.split('=', 1) for e in args.env)])
     except ValueError:
-        log.die('--env arguments must each contain =.')
+        print('--env arguments must each contain =.')
+        sys.exit(1)
 
     if args.env_file is not None:
-        try:
-            with open(args.env_file, encoding='utf-8') as f:
-                env.update(json.load(f))
-        except (OSError, json.JSONDecodeError) as e:
-            log.die(f'Cannot read --env-file {escape(args.env_file)}: {escape(str(e))}')
+        env.update(json.load(args.env_file))
 
     list_separator = ';' if args.list_separator == 'semicolon' else ' '
 
@@ -122,5 +118,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    install_exception_reporting()
     main()

@@ -8,14 +8,13 @@
 #include <assert.h>
 #include "esp32p4/rom/ets_sys.h"
 #include "soc/rtc.h"
-#include "hal/rtc_timer_hal.h"
+#include "hal/lp_timer_hal.h"
 #include "hal/clk_tree_ll.h"
 #include "hal/timg_ll.h"
 #include "soc/hp_sys_clkrst_reg.h"
 #include "soc/timer_group_reg.h"
 #include "esp_rom_sys.h"
 #include "esp_private/periph_ctrl.h"
-#include "esp_attr.h"
 
 ESP_LOG_ATTR_TAG(TAG, "rtc_time");
 
@@ -212,9 +211,9 @@ uint64_t rtc_time_slowclk_to_us(uint64_t rtc_cycles, uint32_t period)
     return (rtc_cycles * period) >> RTC_CLK_CAL_FRACT;
 }
 
-SPM_IRAM_ATTR uint64_t rtc_time_get(void)
+uint64_t rtc_time_get(void)
 {
-    return rtc_timer_hal_get_cycle_count(0);
+    return lp_timer_hal_get_cycle_count();
 }
 
 uint32_t rtc_clk_freq_cal(uint32_t cal_val)

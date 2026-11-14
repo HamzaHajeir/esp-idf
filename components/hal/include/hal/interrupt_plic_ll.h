@@ -13,9 +13,11 @@
 #include "soc/interrupt_reg.h"
 #include "soc/plic_reg.h"
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 
 /**
  * @brief Route any interrupt source to any CPU interrupt, including internal ones
@@ -28,6 +30,7 @@ FORCE_INLINE_ATTR void interrupt_plic_ll_route(int intr_src, int intr_num)
     REG_WRITE(DR_REG_INTMTX_BASE + 4 * intr_src, intr_num);
 }
 
+
 /**
  * @brief Get interrupt enable mask
  *
@@ -37,6 +40,7 @@ FORCE_INLINE_ATTR uint32_t interrupt_plic_ll_get_unmask(void)
 {
     return REG_READ(PLIC_MXINT_ENABLE_REG);
 }
+
 
 /**
  * @brief Get the type for the given interrupt
@@ -51,6 +55,7 @@ FORCE_INLINE_ATTR int interrupt_plic_ll_get_type(int rv_int_num)
     return (intr_type_reg & (1 << rv_int_num));
 }
 
+
 /**
  * @brief Get the priority for the given interrupt
  *
@@ -62,6 +67,7 @@ FORCE_INLINE_ATTR int interrupt_plic_ll_get_priority(int rv_int_num)
 {
     return REG_READ(INTERRUPT_PRIO_REG(rv_int_num));
 }
+
 
 #ifdef __cplusplus
 }

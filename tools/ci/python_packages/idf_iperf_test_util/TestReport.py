@@ -8,11 +8,10 @@ The test report contains 2 parts:
 1. throughput with different configs
 2. throughput with RSSI
 """
-
 import os
 
 
-class ThroughputForConfigsReport:
+class ThroughputForConfigsReport(object):
     THROUGHPUT_TYPES = ['tcp_tx', 'tcp_rx', 'udp_tx', 'udp_rx']
 
     REPORT_FILE_NAME = 'ThroughputForConfigs.md'
@@ -22,13 +21,13 @@ class ThroughputForConfigsReport:
         :param ap_ssid: the ap we expected to use
         :param throughput_results: config with the following type::
             {
-                'config_name': {
-                    'tcp_tx': result,
-                    'tcp_rx': result,
-                    'udp_tx': result,
-                    'udp_rx': result,
+                "config_name": {
+                    "tcp_tx": result,
+                    "tcp_rx": result,
+                    "udp_tx": result,
+                    "udp_rx": result,
                 },
-                'config_name2': {},
+                "config_name2": {},
             }
         """
         self.output_path = output_path
@@ -45,7 +44,7 @@ class ThroughputForConfigsReport:
     @staticmethod
     def _parse_config_file(config_file_path):
         sdkconfig = {}
-        with open(config_file_path) as f:
+        with open(config_file_path, 'r') as f:
             for line in f:
                 if not line.isspace():
                     if line[0] == '#':
@@ -84,7 +83,7 @@ class ThroughputForConfigsReport:
                 except KeyError:
                     _new_value = 'null'
                 if _base_value != _new_value:
-                    _difference[_config] = f'{_base_value} -> {_new_value}'
+                    _difference[_config] = '{} -> {}'.format(_base_value, _new_value)
             return _difference
 
         for i, _config_name in enumerate(self.sort_order):
@@ -99,9 +98,9 @@ class ThroughputForConfigsReport:
             if previous_config:
                 # log the difference
                 difference = find_difference(previous_config, current_config)
-                data += f'* {_config_name} (compared to {previous_config_name}):\r\n'
+                data += '* {} (compared to {}):\r\n'.format(_config_name, previous_config_name)
                 for diff_name in difference:
-                    data += f'    * `{diff_name}`: {difference[diff_name]}\r\n'
+                    data += '    * `{}`: {}\r\n'.format(diff_name, difference[diff_name])
         return data
 
     def _generate_report_for_one_type(self, throughput_type):
@@ -124,11 +123,11 @@ class ThroughputForConfigsReport:
         for config in self.sort_order:
             try:
                 result = self.results[config][throughput_type]
-                throughput = f'{max(result.throughput_by_att[self.ap_ssid].values()):.02f}'
+                throughput = '{:.02f}'.format(max(result.throughput_by_att[self.ap_ssid].values()))
                 heap_size = str(result.heap_size)
                 # although markdown table will do alignment
                 # do align here for better text editor presentation
-                ret += f'| {config:<12}| {throughput:<18}| {heap_size:<23}|\r\n'
+                ret += '| {:<12}| {:<18}| {:<23}|\r\n'.format(config, throughput, heap_size)
                 empty = False
             except KeyError:
                 pass
@@ -136,7 +135,7 @@ class ThroughputForConfigsReport:
 
     def generate_report(self):
         data = '# Throughput for different configs\r\n'
-        data += f'\r\nAP: {self.ap_ssid}\r\n'
+        data += '\r\nAP: {}\r\n'.format(self.ap_ssid)
 
         for throughput_type in self.THROUGHPUT_TYPES:
             data += self._generate_report_for_one_type(throughput_type)
@@ -148,17 +147,18 @@ class ThroughputForConfigsReport:
             f.write(data)
 
 
-class ThroughputVsRssiReport:
+class ThroughputVsRssiReport(object):
+
     REPORT_FILE_NAME = 'ThroughputVsRssi.md'
 
     def __init__(self, output_path, throughput_results):
         """
         :param throughput_results: config with the following type::
             {
-                'tcp_tx': result,
-                'tcp_rx': result,
-                'udp_tx': result,
-                'udp_rx': result,
+                "tcp_tx": result,
+                "tcp_rx": result,
+                "udp_tx": result,
+                "udp_rx": result,
             }
         """
         self.output_path = output_path
@@ -193,10 +193,9 @@ class ThroughputVsRssiReport:
                 _max_for_ap = max(result.throughput_by_rssi[ap_ssid].values())
                 if _max_for_ap > max_throughput:
                     max_throughput = _max_for_ap
-            max_throughput = f'{max_throughput:.02f}'
-            ret += '| {:<8}| {:<15}| {:<22}|\r\n'.format(
-                f'{result.proto}_{result.direction}', curve_analysis, max_throughput
-            )
+            max_throughput = '{:.02f}'.format(max_throughput)
+            ret += '| {:<8}| {:<15}| {:<22}|\r\n'.format('{}_{}'.format(result.proto, result.direction),
+                                                         curve_analysis, max_throughput)
         return ret
 
     def _generate_report_for_one_type(self, result):
@@ -220,13 +219,13 @@ class ThroughputVsRssiReport:
 
         """
         result.post_analysis()
-        ret = f'\r\n### {result.proto} {result.direction}\r\n'
+        ret = '\r\n### {} {}\r\n'.format(result.proto, result.direction)
         if result.error_list:
             ret += '\r\nErrors:\r\n\r\n'
             for error in result.error_list:
                 ret += '* ' + error + '\r\n'
         for ap_ssid in result.throughput_by_rssi:
-            ret += f'\r\nAP: {ap_ssid}\r\n'
+            ret += '\r\nAP: {}\r\n'.format(ap_ssid)
             # draw figure
             file_name = result.draw_throughput_figure(self.raw_data_path, ap_ssid, 'rssi')
             result.draw_throughput_figure(self.raw_data_path, ap_ssid, 'att')

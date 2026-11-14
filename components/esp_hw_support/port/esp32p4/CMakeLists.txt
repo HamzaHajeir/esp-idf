@@ -3,13 +3,14 @@ target_include_directories(${COMPONENT_LIB} PUBLIC .)
 set(srcs "rtc_clk_init.c"
          "rtc_clk.c"
          "pmu_param.c"
+         "pmu_init.c"
+         "pmu_sleep.c"
          "rtc_time.c"
          "chip_info.c"
          )
 
 if(NOT BOOTLOADER_BUILD)
-    list(APPEND srcs "pmu_init.c"
-                     "sar_periph_ctrl.c")
+    list(APPEND srcs "sar_periph_ctrl.c")
 endif()
 
 if(NOT BOOTLOADER_BUILD AND CONFIG_ESP_ENABLE_PVT)

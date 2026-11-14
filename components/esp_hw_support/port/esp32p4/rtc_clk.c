@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,7 +22,7 @@
 #include "hal/gpio_ll.h"
 #include "soc/io_mux_reg.h"
 #include "esp_private/sleep_event.h"
-#include "esp_attr.h"
+#include "esp_private/regi2c_ctrl.h"
 
 ESP_HW_LOG_ATTR_TAG(TAG, "rtc_clk");
 
@@ -30,9 +30,7 @@ ESP_HW_LOG_ATTR_TAG(TAG, "rtc_clk");
 static int s_cur_cpll_freq = 0;
 
 // MPLL frequency option, 400MHz. Zero if MPLL is not enabled.
-#ifndef BOOTLOADER_BUILD
-static SPM_DRAM_ATTR uint32_t s_cur_mpll_freq = 0;
-#endif
+static TCM_DRAM_ATTR uint32_t s_cur_mpll_freq = 0;
 
 void rtc_clk_32k_enable(bool enable)
 {
@@ -45,25 +43,11 @@ void rtc_clk_32k_enable(bool enable)
 
 void rtc_clk_32k_bootstrap(uint32_t cycle)
 {
-    clk_ll_xtal32k_enable(CLK_LL_XTAL32K_ENABLE_MODE_BOOTSTRAP);
-
-    if (cycle) {
-        /*
-         * 32K-N is the drive pin for the crystal oscillator circuit. Empirical testing shows that better results are achieved when the auxiliary signal is output from the 32K-P pin.
-         * By controlling the pull-up and pull-down resistors on the corresponding IO pins, a low-intensity 32.768kHz drive signal is output to assist the crystal oscillator in starting up.
-         * With the pull-down resistor always enabled, the drive amplitude is approximately 1/2*VCC, which is closer to the actual signal.
-        */
-        const uint32_t delay_us = (1000000 / SOC_CLK_XTAL32K_FREQ_APPROX / 2);
-        gpio_ll_pulldown_en(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-        while (cycle) {
-            esp_rom_delay_us(delay_us);
-            gpio_ll_pullup_en(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-            esp_rom_delay_us(delay_us);
-            gpio_ll_pullup_dis(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-            cycle--;
-        }
-        gpio_ll_pulldown_dis(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-    }
+    /* No special bootstrapping needed for ESP32-P4, 'cycle' argument is to keep the signature
+     * same as for the ESP32. Just enable the XTAL here.
+     */
+    (void)cycle;
+    rtc_clk_32k_enable(true);
 }
 
 bool rtc_clk_32k_enabled(void)
@@ -175,13 +159,13 @@ static void rtc_clk_cpll_configure(soc_xtal_freq_t xtal_freq, int cpll_freq)
     /* Analog part */
     ANALOG_CLOCK_ENABLE();
     /* CPLL CALIBRATION START */
-    clk_ll_cpll_calibration_start();
+    regi2c_ctrl_ll_cpll_calibration_start();
     clk_ll_cpll_set_config(cpll_freq, xtal_freq);
     /* WAIT CALIBRATION DONE */
-    while(!clk_ll_cpll_calibration_is_done());
+    while(!regi2c_ctrl_ll_cpll_calibration_is_done());
     esp_rom_delay_us(10); // wait for true stop
     /* CPLL CALIBRATION STOP */
-    clk_ll_cpll_calibration_stop();
+    regi2c_ctrl_ll_cpll_calibration_stop();
     ANALOG_CLOCK_DISABLE();
 
     s_cur_cpll_freq = cpll_freq;
@@ -195,7 +179,7 @@ static void rtc_clk_cpll_configure(soc_xtal_freq_t xtal_freq, int cpll_freq)
  * If to_default is set, then will configure CPU - MEM - SYS - APB frequencies back to power-on reset configuration (40 - 20 - 20 - 10)
  * If to_default is not set, then will configure to 40 - 40 - 40 - 40
  */
-static FORCE_IRAM_ATTR void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div, bool to_default)
+static void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div, bool to_default)
 {
     // let f_cpu = f_mem = f_sys = f_apb
     uint32_t mem_divider = 1;
@@ -510,7 +494,7 @@ void rtc_clk_cpu_freq_set_xtal(void)
     rtc_clk_cpll_disable();
 }
 
-FORCE_IRAM_ATTR void rtc_clk_cpu_set_to_default_config(void)
+void rtc_clk_cpu_set_to_default_config(void)
 {
     int freq_mhz = (int)rtc_clk_xtal_freq_get();
 
@@ -525,7 +509,7 @@ void rtc_clk_cpu_freq_set_xtal_for_sleep(void)
     s_cur_cpll_freq = 0; // no disable PLL, but set freq to 0 to trigger a PLL calibration after wake-up from sleep
 }
 
-FORCE_IRAM_ATTR soc_xtal_freq_t rtc_clk_xtal_freq_get(void)
+soc_xtal_freq_t rtc_clk_xtal_freq_get(void)
 {
     uint32_t xtal_freq_mhz = clk_ll_xtal_load_freq_mhz();
     if (xtal_freq_mhz == 0) {
@@ -657,15 +641,14 @@ bool rtc_dig_8m_enabled(void)
     return clk_ll_rc_fast_digi_is_enabled();
 }
 
-#ifndef BOOTLOADER_BUILD
 //------------------------------------MPLL-------------------------------------//
-SPM_IRAM_ATTR void rtc_clk_mpll_disable(void)
+TCM_IRAM_ATTR void rtc_clk_mpll_disable(void)
 {
     clk_ll_mpll_disable();
     s_cur_mpll_freq = 0;
 }
 
-SPM_IRAM_ATTR void rtc_clk_mpll_enable(void)
+TCM_IRAM_ATTR void rtc_clk_mpll_enable(void)
 {
     clk_ll_mpll_enable();
 }
@@ -678,12 +661,13 @@ void rtc_clk_mpll_configure(uint32_t xtal_freq, uint32_t mpll_freq, bool thread_
     } else {
         ANALOG_CLOCK_ENABLE();
     }
-
-#if CONFIG_ESP32P4_SELECTS_REV_LESS_V3
-    clk_ll_mpll_set_config_v1(mpll_freq, xtal_freq);
-#else
-    clk_ll_mpll_set_config_v3(mpll_freq, xtal_freq);
-#endif
+    /* MPLL calibration start */
+    regi2c_ctrl_ll_mpll_calibration_start();
+    clk_ll_mpll_set_config(mpll_freq, xtal_freq);
+    /* wait calibration done */
+    while(!regi2c_ctrl_ll_mpll_calibration_is_done());
+    /* MPLL calibration stop */
+    regi2c_ctrl_ll_mpll_calibration_stop();
 
     if (thread_safe) {
         _regi2c_ctrl_ll_master_enable_clock(false);
@@ -693,8 +677,7 @@ void rtc_clk_mpll_configure(uint32_t xtal_freq, uint32_t mpll_freq, bool thread_
     s_cur_mpll_freq = mpll_freq;
 }
 
-SPM_IRAM_ATTR uint32_t rtc_clk_mpll_get_freq(void)
+TCM_IRAM_ATTR uint32_t rtc_clk_mpll_get_freq(void)
 {
     return s_cur_mpll_freq;
 }
-#endif

@@ -12,9 +12,7 @@ static pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
 
 void esp_log_impl_lock(void)
 {
-    int result = pthread_mutex_lock(&mutex1);
-    assert(result == 0);
-    (void) result;
+    assert(pthread_mutex_lock(&mutex1) == 0);
 }
 
 bool esp_log_impl_lock_timeout(void)
@@ -25,7 +23,5 @@ bool esp_log_impl_lock_timeout(void)
 
 void esp_log_impl_unlock(void)
 {
-    int result = pthread_mutex_unlock(&mutex1);
-    assert(result == 0);
-    (void) result;
+    assert(pthread_mutex_unlock(&mutex1) == 0);
 }

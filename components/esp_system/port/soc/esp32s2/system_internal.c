@@ -1,12 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <string.h>
 #include "sdkconfig.h"
-#include "soc/soc_caps.h"
 #include "esp_macros.h"
 #include "esp_system.h"
 #include "esp_private/system_internal.h"
@@ -21,13 +20,13 @@
 #include "soc/rtc.h"
 #include "esp_private/rtc_clk.h"
 #include "soc/syscon_reg.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/uart_ll.h"
 #include "soc/soc_memory_layout.h"
 
 #include "esp32s2/rom/rtc.h"
+
+#define ALIGN_DOWN(val, align)  ((val) & ~((align) - 1))
 
 extern int _bss_end;
 
@@ -47,19 +46,6 @@ void esp_system_reset_modules_on_exit(void)
                             DPORT_RW_BTMAC_RST | DPORT_RW_BTLP_RST);
     DPORT_REG_WRITE(DPORT_CORE_RST_EN_REG, 0);
 
-    // Stop the USB OTG core
-    DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN0_REG, DPORT_USB_RST);
-    DPORT_REG_WRITE(DPORT_PERIP_RST_EN0_REG, 0);
-
-    // Stop the I2S0 DMA before the SPI0/1 (flash and PSRAM) controller is reset below: it can
-    // still be moving data from/to PSRAM.
-    DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN0_REG, DPORT_I2S0_RST);
-    DPORT_REG_WRITE(DPORT_PERIP_RST_EN0_REG, 0);
-
-    // Stop the crypto DMA before the same reset.
-    DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN1_REG, DPORT_CRYPTO_DMA_RST);
-    DPORT_REG_WRITE(DPORT_PERIP_RST_EN1_REG, 0);
-
     // Reset timer/spi/uart
     DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN0_REG,
                             DPORT_TIMERS_RST | DPORT_SPI01_RST | DPORT_SPI2_RST | DPORT_SPI3_RST |
@@ -69,7 +55,7 @@ void esp_system_reset_modules_on_exit(void)
     // Reset crypto peripherals. This ensures a clean state for the crypto peripherals after a CPU restart
     // and hence avoiding any possibility with crypto failure in ROM security workflows.
     DPORT_SET_PERI_REG_MASK(DPORT_PERIP_RST_EN1_REG,
-                            DPORT_CRYPTO_AES_RST | DPORT_CRYPTO_DS_RST |
+                            DPORT_CRYPTO_DMA_RST | DPORT_CRYPTO_AES_RST | DPORT_CRYPTO_DS_RST |
                             DPORT_CRYPTO_HMAC_RST | DPORT_CRYPTO_RSA_RST | DPORT_CRYPTO_SHA_RST);
     DPORT_REG_WRITE(DPORT_PERIP_RST_EN1_REG, 0);
 }
@@ -83,7 +69,6 @@ void esp_restart_noos(void)
     // Disable interrupts
     esp_cpu_intr_disable(0xFFFFFFFF);
 
-#if SOC_RTC_WDT_SUPPORTED
     // Enable RTC watchdog for 1 second
     wdt_hal_context_t rtc_wdt_ctx;
     wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, false);
@@ -94,9 +79,7 @@ void esp_restart_noos(void)
     //Enable flash boot mode so that flash booting after restart is protected by the RTC WDT.
     wdt_hal_set_flashboot_en(&rtc_wdt_ctx, true);
     wdt_hal_write_protect_enable(&rtc_wdt_ctx);
-#endif /* SOC_RTC_WDT_SUPPORTED */
 
-#if SOC_WDT_SUPPORTED
     //Todo: Refactor to use Interrupt or Task Watchdog API, and a system level WDT context
     // Disable TG0/TG1 watchdogs
     wdt_hal_context_t wdt0_context = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
@@ -108,14 +91,13 @@ void esp_restart_noos(void)
     wdt_hal_write_protect_disable(&wdt1_context);
     wdt_hal_disable(&wdt1_context);
     wdt_hal_write_protect_enable(&wdt1_context);
-#endif /* SOC_WDT_SUPPORTED */
 
 #ifdef CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
     if (esp_ptr_external_ram(esp_cpu_get_sp())) {
         // If stack_addr is from External Memory (CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM is used)
         // then need to switch SP to Internal Memory otherwise
         // we will get the "Cache disabled but cached memory region accessed" error after Cache_Read_Disable.
-        uint32_t new_sp = ESP_ALIGN_DOWN((uint32_t)&_bss_end, 16);
+        uint32_t new_sp = ALIGN_DOWN(_bss_end, 16);
         SET_STACK(new_sp);
     }
 #endif

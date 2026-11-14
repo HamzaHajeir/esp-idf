@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,22 +15,8 @@
 #include <unistd.h>                         // for close(), read(), write(), lseek()
 #include "nvs_constants.h"                  // for NVS_CONST_PAGE_SIZE
 #include "esp_log.h"                        // for ESP_LOGE
-#include "nvs.h"                            // for ESP_ERR_NVS_NOT_FOUND
-#include "nvs_flash.h"                      // for nvs_flash_deinit_partition
 
 #define TAG "NVSPartitionTestHelper"
-
-// Drop Storage that still maps this partition. The helper then rewrites the
-// flash directly, and a later nvs_flash_init_partition() must read that image.
-// Leaving the old Storage in place makes init a no-op, so the next read-write
-// open programs the new image through the previous page map.
-static void release_nvs_storage(const char *part_name)
-{
-    esp_err_t err = nvs_flash_deinit_partition(part_name);
-    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_INITIALIZED) {
-        CHECK(err == ESP_OK);
-    }
-}
 
 // Initialize the static variable(s) of NVSPartitionTestHelper
 int NVSPartitionTestHelper::s_instance_count = 0;
@@ -53,7 +39,6 @@ NVSPartitionTestHelper::NVSPartitionTestHelper(const char *part_name, const bool
 
     if(erase_partition)
     {
-        release_nvs_storage(part_name);
         // erase the partition before testing
         CHECK(erase_range(0, get_size()) == ESP_OK);
     }
@@ -156,8 +141,6 @@ esp_err_t NVSPartitionTestHelper::randomize_partition(const char *part_name, con
 // Erase the whole partition
 esp_err_t NVSPartitionTestHelper::erase_partition(const char *part_name)
 {
-    release_nvs_storage(part_name);
-
     // Find the partition by name
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA,
@@ -233,7 +216,6 @@ esp_err_t NVSPartitionTestHelper::load_from_file(const char *part_name, const ch
         return ESP_ERR_INVALID_SIZE;
     }
 
-    release_nvs_storage(part_name);
     esp_err_t ret = esp_partition_erase_range(part, 0, part->size);
     if (ret != ESP_OK) {
         free(p_buff);
@@ -243,48 +225,6 @@ esp_err_t NVSPartitionTestHelper::load_from_file(const char *part_name, const ch
     ret = esp_partition_write(part, 0, p_buff, size);
     free(p_buff);
     return ret;
-}
-
-esp_err_t NVSPartitionTestHelper::check_marker(const char *part_name, const uint8_t *marker, size_t marker_len)
-{
-    if (marker == nullptr || marker_len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Find the partition by name
-    const esp_partition_t *part = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA,
-        ESP_PARTITION_SUBTYPE_DATA_NVS,
-        part_name);
-
-    if (part == nullptr) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    // Allocate buffer for reading partition data
-    uint8_t *read_buf = (uint8_t*)malloc(part->size);
-    if (read_buf == nullptr) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    // Read the entire partition
-    esp_err_t ret = esp_partition_read(part, 0, read_buf, part->size);
-    if (ret != ESP_OK) {
-        free(read_buf);
-        return ret;
-    }
-
-    // Search for the marker in the partition data
-    esp_err_t result = ESP_ERR_NVS_NOT_FOUND;
-    for (size_t i = 0; i <= part->size - marker_len; i++) {
-        if (memcmp(read_buf + i, marker, marker_len) == 0) {
-            result = ESP_OK;
-            break;
-        }
-    }
-
-    free(read_buf);
-    return result;
 }
 
 void NVSPartitionTestHelper::clear_stats(void)
@@ -355,7 +295,6 @@ NVSPartitionTestHelper::NVSPartitionTestHelper(const char *part_name, const bool
 
     if(erase_partition)
     {
-        release_nvs_storage(part_name);
         // erase the partition before testing
         CHECK(erase_range(0, get_size()) == ESP_OK);
     }
@@ -492,8 +431,6 @@ esp_err_t NVSPartitionTestHelper::randomize_partition(const char *part_name, con
 // Erase the whole partition
 esp_err_t NVSPartitionTestHelper::erase_partition(const char *part_name)
 {
-    release_nvs_storage(part_name);
-
     // get the BDL handle for the partition
     esp_blockdev_handle_t bdl_handle;
 
@@ -587,54 +524,6 @@ esp_err_t NVSPartitionTestHelper::load_from_file(const char *part_name, const ch
 
     ret = bdl_handle->ops->write(bdl_handle, (const uint8_t*) p_buff, 0, size);
     free(p_buff);
-    return ret;
-}
-
-esp_err_t NVSPartitionTestHelper::check_marker(const char *part_name, const uint8_t *marker, size_t marker_len)
-{
-    if (marker == nullptr || marker_len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Get the BDL handle for the partition
-    esp_blockdev_handle_t bdl_handle;
-
-    esp_err_t ret = esp_partition_get_blockdev(
-        ESP_PARTITION_TYPE_DATA,
-        ESP_PARTITION_SUBTYPE_DATA_NVS,
-        part_name,
-        &bdl_handle);
-
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    // Allocate buffer for reading partition data
-    size_t read_size = bdl_handle->geometry.disk_size;
-    uint8_t *read_buf = (uint8_t*)malloc(read_size);
-    if (read_buf == nullptr) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    do {
-        // Read the entire partition
-        ret = bdl_handle->ops->read(bdl_handle, read_buf, read_size, 0, read_size);
-        if (ret != ESP_OK) {
-            break;
-        }
-
-        // Search for the marker in the partition data
-        ret = ESP_ERR_NVS_NOT_FOUND;
-        for (size_t i = 0; i <= bdl_handle->geometry.disk_size - marker_len; i++) {
-            if (memcmp(read_buf + i, marker, marker_len) == 0) {
-                ret = ESP_OK;
-                break;
-            }
-        }
-
-    } while (false);
-
-    free(read_buf);
     return ret;
 }
 

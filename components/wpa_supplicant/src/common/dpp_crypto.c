@@ -35,6 +35,8 @@ const struct dpp_curve_params dpp_curves[] = {
 #endif
 	{ NULL, 0, 0, 0, 0, NULL, 0, NULL }
 };
+
+
 const struct dpp_curve_params * dpp_get_curve_name(const char *name)
 {
 	int i;
@@ -987,7 +989,7 @@ int dpp_auth_derive_l_responder(struct dpp_authentication *auth)
 		goto fail;
 
 	if ((crypto_get_order(group, q) != 0) ||
-	    (crypto_bignum_addmod(bR, pR, q, sum) != 0))
+	    (crypto_bignum_addmod(sum, bR, pR, q) != 0))
 		goto fail;
 
 	L = crypto_ec_point_init((struct crypto_ec *)group);

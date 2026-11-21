@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,8 +49,6 @@ enum {
     BTC_MEDIA_FLUSH_AA_RX,
     BTC_MEDIA_AUDIO_SINK_CFG_UPDATE,
     BTC_MEDIA_AUDIO_SINK_CLEAR_TRACK,
-    BTC_MEDIA_AUDIO_STATS_RESET,
-    BTC_MEDIA_AUDIO_STATS_STOP,
 };
 
 enum {
@@ -162,22 +160,6 @@ static inline void btc_a2d_cb_to_app(esp_a2d_cb_event_t event, esp_a2d_cb_param_
  **  BTC ADAPTATION
  *****************************************************************************/
 
-static void btc_a2dp_sink_handle_audio_stats_reset(void *param)
-{
-    if (param == NULL) {
-        return;
-    }
-    btc_a2dp_audio_stats_reset(*(esp_a2d_conn_hdl_t *)param);
-}
-
-static void btc_a2dp_sink_handle_audio_stats_stop(void *param)
-{
-    if (param == NULL) {
-        return;
-    }
-    btc_a2dp_audio_stats_stop(*(esp_a2d_conn_hdl_t *)param);
-}
-
 static bool btc_a2dp_sink_ctrl(uint32_t sig, void *param)
 {
     switch (sig) {
@@ -196,12 +178,6 @@ static bool btc_a2dp_sink_ctrl(uint32_t sig, void *param)
     case BTC_MEDIA_FLUSH_AA_RX:
         btc_a2dp_sink_rx_flush();
         break;
-    case BTC_MEDIA_AUDIO_STATS_RESET:
-        btc_a2dp_sink_handle_audio_stats_reset(param);
-        break;
-    case BTC_MEDIA_AUDIO_STATS_STOP:
-        btc_a2dp_sink_handle_audio_stats_stop(param);
-        break;
     default:
         APPL_TRACE_WARNING("media task unhandled evt: 0x%x\n", sig);
     }
@@ -211,27 +187,6 @@ static bool btc_a2dp_sink_ctrl(uint32_t sig, void *param)
     }
 
     return true;
-}
-
-static void btc_a2dp_sink_audio_stats_post(uint32_t sig, esp_a2d_conn_hdl_t conn_hdl)
-{
-    esp_a2d_conn_hdl_t *param = (esp_a2d_conn_hdl_t *)osi_malloc(sizeof(esp_a2d_conn_hdl_t));
-    if (param == NULL) {
-        return;
-    }
-
-    *param = conn_hdl;
-    btc_a2dp_sink_ctrl(sig, param);
-}
-
-void btc_a2dp_sink_audio_stats_reset(esp_a2d_conn_hdl_t conn_hdl)
-{
-    btc_a2dp_sink_audio_stats_post(BTC_MEDIA_AUDIO_STATS_RESET, conn_hdl);
-}
-
-void btc_a2dp_sink_audio_stats_stop(esp_a2d_conn_hdl_t conn_hdl)
-{
-    btc_a2dp_sink_audio_stats_post(BTC_MEDIA_AUDIO_STATS_STOP, conn_hdl);
 }
 
 bool btc_a2dp_sink_startup(void)
@@ -275,11 +230,6 @@ error_exit:;
 
 void btc_a2dp_sink_shutdown(void)
 {
-    if (btc_a2dp_sink_state != BTC_A2DP_SINK_STATE_ON) {
-        APPL_TRACE_ERROR("a2dp sink already shutdown");
-        return;
-    }
-
     APPL_TRACE_EVENT("## A2DP SINK STOP MEDIA THREAD ##\n");
 
     // Exit thread
@@ -461,7 +411,6 @@ static void btc_a2dp_sink_handle_decoder_reset(tBTC_MEDIA_SINK_CFG_UPDATE *p_msg
                                         a2dp_sink_local_param.btc_aa_snk_cb.channel_count, FALSE, FALSE);
     if (!OI_SUCCESS(status)) {
         APPL_TRACE_ERROR("OI_CODEC_SBC_DecoderReset failed with error code %d\n", status);
-        return;
     }
 
     btc_a2dp_control_set_datachnl_stat(TRUE);
@@ -572,28 +521,13 @@ static void btc_a2dp_sink_handle_decoder_reset(tBTC_MEDIA_SINK_CFG_UPDATE *p_msg
  *******************************************************************************/
 static void btc_a2dp_sink_handle_inc_media(BT_HDR *p_msg)
 {
-    UINT8 *sbc_start_frame;
+    UINT8 *sbc_start_frame = ((UINT8 *)(p_msg + 1) + p_msg->offset + 1);
     int count;
     UINT32 pcmBytes, availPcmBytes;
     OI_INT16 *pcmDataPointer = a2dp_sink_local_param.pcmData; /*Will be overwritten on next packet receipt*/
     OI_STATUS status;
-    int num_sbc_frames;
-    UINT32 sbc_frame_len;
-    /* event was overwritten with the stream handle at enqueue time */
-    UINT16 conn_hdl = p_msg->event;
-
-    if (conn_hdl == ESP_A2D_INVALID_CONN_HDL) {
-        conn_hdl = btc_a2d_conn_handle_get();
-    }
-
-    if (p_msg->len < 1) {
-        osi_free(p_msg);
-        return;
-    }
-
-    sbc_start_frame = ((UINT8 *)(p_msg + 1) + p_msg->offset + 1);
-    num_sbc_frames = (*((UINT8 *)(p_msg + 1) + p_msg->offset)) & 0x0f;
-    sbc_frame_len = (UINT32)p_msg->len - 1U;
+    int num_sbc_frames = (*((UINT8 *)(p_msg + 1) + p_msg->offset)) & 0x0f;
+    UINT32 sbc_frame_len = p_msg->len - 1;
     availPcmBytes = sizeof(a2dp_sink_local_param.pcmData);
 
     /* XXX: Check if the below check is correct, we are checking for peer to be sink when we are sink */
@@ -616,16 +550,10 @@ static void btc_a2dp_sink_handle_inc_media(BT_HDR *p_msg)
             APPL_TRACE_WARNING("Sequence numbers error, recv:0x%x, expect:0x%x, recount:0x%x",
                                 p_msg->layer_specific, a2dp_sink_local_param.media_pkt_seq_num.expected_seq_num,
                                 a2dp_sink_local_param.media_pkt_seq_num.seq_num_recount);
-            /* Only a forward gap counts as loss; a backward jump or repeat does not. */
-            int16_t gap = (int16_t)(p_msg->layer_specific - a2dp_sink_local_param.media_pkt_seq_num.expected_seq_num);
-            if (gap > 0) {
-                btc_a2dp_audio_stats_on_lost(conn_hdl, (uint16_t)gap);
-            }
         }
     }
     a2dp_sink_local_param.media_pkt_seq_num.expected_seq_num  = p_msg->layer_specific + 1;
     a2dp_sink_local_param.media_pkt_seq_num.seq_num_recount = false;
-    btc_a2dp_audio_stats_on_handled(conn_hdl);
 
     APPL_TRACE_DEBUG("Number of sbc frames %d, frame_len %d\n", num_sbc_frames, sbc_frame_len);
 
@@ -641,10 +569,8 @@ static void btc_a2dp_sink_handle_inc_media(BT_HDR *p_msg)
         }
         availPcmBytes -= pcmBytes;
         pcmDataPointer += pcmBytes / 2;
-    }
-    if (count != num_sbc_frames || sbc_frame_len) {
-        APPL_TRACE_WARNING("Potential decoding error, cnt:%d, num:%d, len:%d. Please ignore if playback is normal.",
-                             count, num_sbc_frames, sbc_frame_len);
+        p_msg->offset += (p_msg->len - 1) - sbc_frame_len;
+        p_msg->len = sbc_frame_len + 1;
     }
     osi_free(p_msg);
 

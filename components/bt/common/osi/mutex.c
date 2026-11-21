@@ -16,8 +16,6 @@
  *
  ******************************************************************************/
 
-#include <assert.h>
-
 #include "osi/mutex.h"
 
 
@@ -67,15 +65,10 @@ void osi_mutex_unlock(osi_mutex_t *mutex)
     xSemaphoreGive(*mutex);
 }
 
-/** Delete a mutex
- * @param mutex the mutex to delete
- * Note: Safe to call with NULL or uninitialized mutex (IDFGH-16853)
- */
+/** Delete a semaphore
+ * @param mutex the mutex to delete */
 void osi_mutex_free(osi_mutex_t *mutex)
 {
-    if (mutex == NULL || *mutex == NULL) {
-        return;
-    }
     vSemaphoreDelete(*mutex);
     *mutex = NULL;
 }
@@ -92,21 +85,15 @@ int osi_mutex_global_init(void)
 
 void osi_mutex_global_deinit(void)
 {
-    if (gl_mutex == NULL) {
-        return;
-    }
     vSemaphoreDelete(gl_mutex);
-    gl_mutex = NULL;
 }
 
 void osi_mutex_global_lock(void)
 {
-    assert(gl_mutex != NULL);
     xSemaphoreTakeRecursive(gl_mutex, portMAX_DELAY);
 }
 
 void osi_mutex_global_unlock(void)
 {
-    assert(gl_mutex != NULL);
     xSemaphoreGiveRecursive(gl_mutex);
 }

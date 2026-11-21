@@ -10,6 +10,8 @@
 extern "C" {
 #endif
 
+// TODO: [ESP32H21] IDF-11556, file inherit from verify code, please check
+
 /**
  * @brief Type of eFuse blocks ESP32H21
  */

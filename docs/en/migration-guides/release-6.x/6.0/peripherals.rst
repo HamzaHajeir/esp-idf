@@ -124,48 +124,6 @@ GPIO
 
 - Added the :cpp:type:`esp_err_t` return type to :func:`gpio_uninstall_isr_service`.
 
-GPIO Deep Sleep Wakeup APIs Removed
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The following GPIO driver APIs have been removed:
-
-- :func:`gpio_deep_sleep_wakeup_enable` - Use :func:`gpio_wakeup_enable_on_hp_periph_powerdown_sleep` instead
-- :func:`gpio_deep_sleep_wakeup_disable` - Use :func:`gpio_wakeup_disable_on_hp_periph_powerdown_sleep` instead
-
-The deprecated macro ``GPIO_IS_DEEP_SLEEP_WAKEUP_VALID_GPIO()`` has been removed. Use ``GPIO_IS_HP_PERIPH_PD_WAKEUP_VALID_IO()`` instead.
-
-**Migration Example:**
-
-Old code:
-
-.. code-block:: c
-
-    #include "driver/gpio.h"
-
-    // Enable GPIO wakeup
-    gpio_deep_sleep_wakeup_enable(GPIO_NUM_0, GPIO_INTR_LOW_LEVEL);
-
-    // Check validity
-    if (GPIO_IS_DEEP_SLEEP_WAKEUP_VALID_GPIO(GPIO_NUM_0)) {
-        // ...
-    }
-
-New code:
-
-.. code-block:: c
-
-    #include "driver/gpio.h"
-
-    // Enable GPIO wakeup (works for both deep sleep and light sleep with peripheral powerdown)
-    gpio_wakeup_enable_on_hp_periph_powerdown_sleep(GPIO_NUM_0, GPIO_INTR_LOW_LEVEL);
-
-    // Check validity
-    if (GPIO_IS_HP_PERIPH_PD_WAKEUP_VALID_IO(GPIO_NUM_0)) {
-        // ...
-    }
-
-For more details, see the :ref:`GPIO Wakeup API Changes <gpio_wakeup_api_changes>` section in the System migration guide.
-
 LEDC
 ----
 
@@ -190,56 +148,54 @@ UART
 
 - ``soc/uart_channel.h`` header file has been removed. All UART GPIO lookup macros can be found in ``soc/uart_pins.h``. For example, ``UART_NUM_0_TXD_DIRECT_GPIO_NUM`` is equivalent to ``U0TXD_GPIO_NUM``.
 
-.. only:: SOC_I2C_SUPPORTED
+I2C
+---
 
-    I2C
-    ---
+Legacy I2C Driver End-of-Life
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Legacy I2C Driver End-of-Life
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. warning::
 
-    .. warning::
+    The legacy I2C driver (``driver/i2c.h``) has been marked as **End-of-Life (EOL)** in ESP-IDF v6.0 and is scheduled for **removal in v7.0**.
 
-        The legacy I2C driver (``driver/i2c.h``) has been marked as **End-of-Life (EOL)** in ESP-IDF v6.0 and is scheduled for **removal in v7.0**.
+    - ESP-IDF will not provide updates, bug fixes, or security patches for the legacy driver timely.
+    - Users are strongly recommended to migrate to the new I2C drivers: ``driver/i2c_master.h`` and ``driver/i2c_slave.h``.
+    - To temporarily suppress the compile-time warning, enable ``Component config`` > ``Legacy Driver Configurations`` > ``Legacy I2C Driver Configurations`` > ``Suppress legacy driver deprecated warning`` in menuconfig.
 
-        - ESP-IDF will not provide updates, bug fixes, or security patches for the legacy driver timely.
-        - Users are strongly recommended to migrate to the new I2C drivers: ``driver/i2c_master.h`` and ``driver/i2c_slave.h``.
-        - To temporarily suppress the compile-time warning, enable :menuitem:`CONFIG_I2C_SUPPRESS_DEPRECATE_WARN`.
+The new I2C drivers provide improved slave and master functionality. For details, please refer to the :ref:`I2C Migration Guide <migration_guide_i2c_driver_5_2>` and the :doc:`I2C Driver Programming Guide <../../../api-reference/peripherals/i2c>`.
 
-    The new I2C drivers provide improved slave and master functionality. For details, please refer to the :ref:`I2C Migration Guide <migration_guide_i2c_driver_5_2>` and the :doc:`I2C Driver Programming Guide <../../../api-reference/peripherals/i2c>`.
+I2C Slave Driver Updates
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    I2C Slave Driver Updates
-    ~~~~~~~~~~~~~~~~~~~~~~~~~
+The I2C slave driver has been redesigned in v5.4. In the current version, the old I2C slave driver has been removed.
 
-    The I2C slave driver has been redesigned in v5.4. In the current version, the old I2C slave driver has been removed.
+Major Changes in Concepts
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    Major Changes in Concepts
-    ^^^^^^^^^^^^^^^^^^^^^^^^^
+- Previously, the I2C slave driver performed active read and write operations. In the new version, these operations are handled passively via callbacks triggered by master events, aligning with standard I2C slave behavior.
 
-    - Previously, the I2C slave driver performed active read and write operations. In the new version, these operations are handled passively via callbacks triggered by master events, aligning with standard I2C slave behavior.
+Major Changes in Usage
+^^^^^^^^^^^^^^^^^^^^^^
 
-    Major Changes in Usage
-    ^^^^^^^^^^^^^^^^^^^^^^
+- ``i2c_slave_receive`` has been removed. In the new driver, data reception is handled via callbacks.
+- ``i2c_slave_transmit`` has been replaced by ``i2c_slave_write``.
+- ``i2c_slave_write_ram`` has been removed.
+- ``i2c_slave_read_ram`` has been removed.
 
-    - ``i2c_slave_receive`` has been removed. In the new driver, data reception is handled via callbacks.
-    - ``i2c_slave_transmit`` has been replaced by ``i2c_slave_write``.
-    - ``i2c_slave_write_ram`` has been removed.
-    - ``i2c_slave_read_ram`` has been removed.
+I2C Master Driver Updates
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    I2C Master Driver Updates
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+The I2C master driver also has some changes in its API definitions.
 
-    The I2C master driver also has some changes in its API definitions.
+Major Changes in Usage
+^^^^^^^^^^^^^^^^^^^^^^
 
-    Major Changes in Usage
-    ^^^^^^^^^^^^^^^^^^^^^^
+Following functions now will return ``ESP_ERR_INVALID_RESPONSE`` instead of ``ESP_ERR_INVALID_STATE`` when NACK from the bus is detected:
 
-    Following functions now will return ``ESP_ERR_INVALID_RESPONSE`` instead of ``ESP_ERR_INVALID_STATE`` when NACK from the bus is detected:
-
-    - ``i2c_master_transmit``
-    - ``i2c_master_multi_buffer_transmit``
-    - ``i2c_master_transmit_receive``
-    - ``i2c_master_execute_defined_operations``
+- ``i2c_master_transmit``
+- ``i2c_master_multi_buffer_transmit``
+- ``i2c_master_transmit_receive``
+- ``i2c_master_execute_defined_operations``
 
 Legacy Timer Group Driver is Removed
 ------------------------------------
@@ -261,11 +217,6 @@ The legacy timer group driver ``driver/timer.h`` is deprecated since version 5.0
 
     The legacy PCNT driver ``driver/pcnt.h`` is deprecated since version 5.0 (see :ref:`deprecate_pcnt_legacy_driver`). Starting from version 6.0, the legacy driver is completely removed. The new driver is placed in the :component:`esp_driver_pcnt`, and the header file path is ``driver/pulse_cnt.h``.
 
-    PCNT GPIO Pull-up/Pull-down Configuration
-    -----------------------------------------
-
-    The new PCNT driver no longer enables or disables internal pull-up/pull-down resistors on the GPIOs used for edge, level, or clear signals. If the input signal requires a defined idle level, configure the GPIO pull mode explicitly by calling the corresponding GPIO APIs.
-
 .. only:: SOC_RMT_SUPPORTED
 
     Legacy RMT Driver is Removed
@@ -273,10 +224,9 @@ The legacy timer group driver ``driver/timer.h`` is deprecated since version 5.0
 
     The legacy RMT driver ``driver/rmt.h`` is deprecated since version 5.0 (see :ref:`deprecate_rmt_legacy_driver`). Starting from version 6.0, the legacy driver is completely removed. The new driver is placed in the :component:`esp_driver_rmt`, and the header file path is ``driver/rmt_tx.h``, ``driver/rmt_rx.h`` and ``driver/rmt_encoder.h``.
 
-DMA Driver
-----------
+GDMA
+----
 
-- The DMA core driver has been moved out of the original ``esp_hw_support`` component and is now provided as a separate ``esp_driver_dma`` component. If you are using the ``esp_async_memcpy.h`` and ``esp_dma_utils.h`` drivers, please ensure that you add a dependency on the ``esp_driver_dma`` component in your project.
 - The ``GDMA_ISR_IRAM_SAFE`` Kconfig option has been removed due to potential risks. Now, the interrupt behavior of different DMA channels during Cache disabled periods are independent of each other.
 - ``gdma_new_channel`` is removed. When requesting a GDMA channel, use either ``gdma_new_ahb_channel`` or ``gdma_new_axi_channel`` according to the bus type.
 - The ``sram_trans_align`` and ``psram_trans_align`` members have been removed from :cpp:type:`async_memcpy_config_t`. Use :cpp:member:`async_memcpy_config_t::dma_burst_size` to set the DMA burst transfer size.
@@ -308,8 +258,6 @@ SDMMC
 
     The legacy Sigma-Delta Modulator driver ``driver/sigmadelta.h`` is deprecated since version 5.0 (see :ref:`deprecate_sdm_legacy_driver`). Starting from version 6.0, the legacy driver is completely removed. The new driver is placed in the :component:`esp_driver_sdm`, and the header file path is ``driver/sdm.h``.
 
-    - :func:`sdm_channel_set_duty` has been removed. Use :func:`sdm_channel_set_pulse_density` instead.
-
 LCD
 ---
 
@@ -318,7 +266,7 @@ LCD
 - The ``psram_trans_align`` and ``sram_trans_align`` members in the :cpp:type:`esp_lcd_rgb_panel_config_t` structure have also been replaced by the :cpp:member:`esp_lcd_rgb_panel_config_t::dma_burst_size` member for configuring the DMA burst transfer size.
 - The ``color_space`` and ``rgb_endian`` configuration options in the :cpp:type:`esp_lcd_panel_dev_config_t` structure have been replaced by the :cpp:member:`esp_lcd_panel_dev_config_t::rgb_ele_order` member, which sets the RGB element order. The corresponding types ``lcd_color_rgb_endian_t`` and ``esp_lcd_color_space_t`` have also been removed; use :cpp:type:`lcd_rgb_element_order_t` instead.
 - The ``esp_lcd_panel_disp_off`` function has been removed. Please use the :func:`esp_lcd_panel_disp_on_off` function to control display on/off.
-- The ``on_bounce_frame_finish`` member in :cpp:type:`esp_lcd_rgb_panel_event_callbacks_t` has been replaced by :cpp:member:`esp_lcd_rgb_panel_event_callbacks_t::on_frame_buf_complete`, which indicates that a complete frame buffer can be safely reused.
+- The ``on_bounce_frame_finish`` member in :cpp:type:`esp_lcd_rgb_panel_event_callbacks_t` has been replaced by :cpp:member:`esp_lcd_rgb_panel_event_callbacks_t::on_frame_buf_complete`, which indicates that a complete frame buffer has been sent to the LCD controller.
 - The LCD IO layer driver for the I2C interface previously had two implementations, based on the new and legacy I2C master bus drivers. As the legacy I2C driver is being deprecated, support for it in the LCD IO layer has been removed. Only the APIs provided in ``driver/i2c_master.h`` are now used.
 - ``pixel_format`` member in the :cpp:type:`esp_lcd_dpi_panel_config_t` structure has been removed. It is recommended to only use :cpp:member:`esp_lcd_dpi_panel_config_t::in_color_format` to set the MIPI DSI driver's input pixel data format.
 - ``bits_per_pixel`` member in the :cpp:type:`esp_lcd_rgb_panel_config_t` structure has been removed. The color depth of the internal framebuffer is now determined by the :cpp:member:`esp_lcd_rgb_panel_config_t::in_color_format` member.
@@ -327,41 +275,20 @@ LCD
 - The NT35510 LCD device driver has been moved out of ESP-IDF and is now hosted in the `ESP Component Registry <https://components.espressif.com/components/espressif/esp_lcd_nt35510/versions/1.0.0/readme>`__. If your project uses the NT35510 driver, you can add it to your project by running ``idf.py add-dependency "espressif/esp_lcd_nt35510"``.
 - The ``use_dma2d`` member in the :cpp:type:`esp_lcd_dpi_panel_config_t` has been removed. Please use the :func:`esp_lcd_dpi_panel_enable_dma2d` function to enable DMA2D for the DPI panel. When not using DMA2D, the binary file size can be reduced by around 10KB.
 
-Color Types
------------
-
-The following types in the ``components/hal/include/hal/color_types.h`` header file have been removed. Please use FourCC format (:cpp:type:`esp_color_fourcc_t`) instead:
-
-- :cpp:type:`color_space_t` - The color space enumeration type has been removed. Please use FourCC format to specify color space and pixel format.
-- :cpp:type:`color_space_pixel_format_t` - The color space pixel format union has been removed. Please use :cpp:type:`esp_color_fourcc_t` type and corresponding FourCC macro definitions to specify pixel format.
-
-Migration example:
-
-.. code-block:: c
-
-    /* Old */
-    color_space_pixel_format_t format = {
-        .color_space = COLOR_SPACE_RGB,
-        .pixel_format = COLOR_PIXEL_RGB565
-    };
-
-    /* New */
-    esp_color_fourcc_t format = ESP_COLOR_FOURCC_RGB565;
-
 SPI
 ---
 
-- The :menuitem:`CONFIG_SPI_MASTER_IN_IRAM` option is now invisible by default in menuconfig and depends on :menuitem:`CONFIG_FREERTOS_IN_IRAM`. This change was made to prevent potential crashes when SPI functions in IRAM call FreeRTOS functions that are placed in flash.
+- The :ref:`CONFIG_SPI_MASTER_IN_IRAM` option is now invisible by default in menuconfig and depends on :ref:`CONFIG_FREERTOS_IN_IRAM`. This change was made to prevent potential crashes when SPI functions in IRAM call FreeRTOS functions that are placed in flash.
 - To enable SPI master IRAM optimization:
 
     1. Navigate to ``Component config`` → ``FreeRTOS`` → ``Port`` in menuconfig.
-    2. Enable ``Place FreeRTOS functions in IRAM`` (:menuitem:`CONFIG_FREERTOS_IN_IRAM`).
+    2. Enable ``Place FreeRTOS functions in IRAM`` (:ref:`CONFIG_FREERTOS_IN_IRAM`).
     3. Navigate to ``Component config`` → ``ESP-Driver:SPI Configurations`` in menuconfig.
-    4. Enable ``Place transmitting functions of SPI master into IRAM`` (:menuitem:`CONFIG_SPI_MASTER_IN_IRAM`).
+    4. Enable ``Place transmitting functions of SPI master into IRAM`` (:ref:`CONFIG_SPI_MASTER_IN_IRAM`).
 
     .. note::
 
-        Note that enabling :menuitem:`CONFIG_FREERTOS_IN_IRAM` will increase IRAM usage. Consider this trade-off when optimizing for SPI performance.
+        Note that enabling :ref:`CONFIG_FREERTOS_IN_IRAM` will increase IRAM usage. Consider this trade-off when optimizing for SPI performance.
 
 - Deprecated HSPI and VSPI related IOMUX pin macros on ESP32 and ESP32S2 have been removed.
 
@@ -373,7 +300,7 @@ Deprecated header file ``esp_spiram.h`` has been removed. Please use ``esp_psram
 SPI Flash Driver
 ----------------
 
-- Deprecated ``enum`` type ``esp_flash_speed_t`` has been removed. The main flash speed is controlled by :menuitem:`CONFIG_ESPTOOLPY_FLASHFREQ` option.
+- Deprecated ``enum`` type ``esp_flash_speed_t`` has been removed. The main flash speed is controlled by :ref:`CONFIG_ESPTOOLPY_FLASHFREQ` option.
 - Deprecated header file ``esp_spi_flash.h`` has been removed. Please use ``spi_flash_mmap.h`` instead.
 - Deprecated API ``spi_flash_dump_counters`` has been removed. Please use :cpp:func:`esp_flash_dump_counters` instead.
 - Deprecated API ``spi_flash_get_counters`` has been removed. Please use :cpp:func:`esp_flash_get_counters` instead.
@@ -381,28 +308,9 @@ SPI Flash Driver
 - New argument ``flags`` is added to ``esp_flash_os_functions_t::start``. Caller and implementer should handle this argument properly.
 - Kconfig option ``CONFIG_SPI_FLASH_ROM_DRIVER_PATCH`` has been removed. Considering that this option is unlikely to be widely used by users and may cause serious issues if misused, it has been decided to remove it.
 
-Header File Reorganization
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
 
-Several internal header files have been reorganized to better reflect their visibility and intended usage:
-
-- **Flash chip driver related headers** have been moved to ``esp_flash_chips/`` directory:
-  - ``spi_flash_chip_driver.h``
-  - ``spi_flash_chip_*.h``
-  - ``spi_flash_defs.h``
-  - ``spi_flash_override.h``
-  - ``esp_flash_types.h``
-  - The ``esp_flash_t`` structure definition has been moved from ``esp_flash.h`` to ``esp_flash_chips/esp_flash_types.h``. Applications should not access structure members directly; use the public APIs instead (e.g., use :cpp:func:`esp_flash_get_size` instead of accessing ``chip->size`` directly).
-  - The ``esp_flash_os_functions_t`` structure definition has been moved from ``esp_flash.h`` to ``esp_flash_chips/esp_flash_types.h``.
-  - The ``spi_flash_chip_t`` type forward declaration has been removed from ``esp_flash.h`` and all ROM headers (``components/esp_rom/esp32xx/include/esp32xx/rom/esp_flash.h``). The type is now only defined in ``esp_flash_chips/esp_flash_types.h``. Applications should not use this type directly; it is only intended for custom chip driver implementations.
-
-  .. note::
-
-      The headers in ``esp_flash_chips/`` are **semi-public** - they are intended for expert users who need to implement custom chip drivers for unsupported flash chips, but they are **not considered stable API** and may change without notice. For most use cases, you should use the public APIs in ``esp_flash.h`` instead. See :doc:`Override Driver for SPI Flash <../../../api-reference/peripherals/spi_flash/spi_flash_override_driver>` for more details.
-
-- **Internal headers** have been moved to ``esp_private/`` directory and not included in the public (stable) header files:
-  - ``esp_flash_internal.h``
-  - ``memspi_host_driver.h``
+    Note that enabling :ref:`CONFIG_FREERTOS_IN_IRAM` will increase IRAM usage. Consider this trade-off when optimizing for SPI performance.
 
 Touch Element
 -------------
@@ -437,4 +345,4 @@ You can add this dependency to your project by running ``idf.py add-dependency "
 
     TWAI has provided a new driver interface in version 5.5, which supports more flexible configurations and richer features. The legacy driver is not recommended to be used anymore. Please refer to the 5.5 migration guide :doc:`TWAI migration guide <../../release-5.x/5.5/peripherals>` and the new driver programming guide :doc:`TWAI driver programming guide <../../../api-reference/peripherals/twai>` for migration.
 
-    If you still need to use the legacy driver, you can enable the configuration option :menuitem:`CONFIG_TWAI_SUPPRESS_DEPRECATE_WARN` to close the deprecation warnings.
+    If you still need to use the legacy driver, you can enable the configuration option :ref:`CONFIG_TWAI_SUPPRESS_DEPRECATE_WARN` to close the deprecation warnings.

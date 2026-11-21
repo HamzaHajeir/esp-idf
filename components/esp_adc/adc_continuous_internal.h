@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,6 @@
 #include "freertos/ringbuf.h"
 #include "hal/adc_types.h"
 #include "hal/adc_hal.h"
-#include "hal/adc_ll.h"
 //For DMA
 #if SOC_GDMA_SUPPORTED
 #include "esp_private/gdma.h"
@@ -98,18 +97,14 @@ struct adc_continuous_ctx_t {
         uint32_t flush_pool: 1;     //Flush the internal pool when the pool is full. With this flag, the `on_pool_ovf` event will not happen.
     } flags;
 #if SOC_ADC_DIG_IIR_FILTER_SUPPORTED
-    adc_iir_filter_t                *iir_filter[ADC_LL_DIGI_IIR_FILTER_NUM];  //ADC IIR filter context
+    adc_iir_filter_t                *iir_filter[SOC_ADC_DIGI_IIR_FILTER_NUM];  //ADC IIR filter context
 #endif
 #if SOC_ADC_MONITOR_SUPPORTED
     adc_monitor_t                   *adc_monitor[SOC_ADC_DIGI_MONITOR_NUM];    // adc monitor context
 #endif
+    size_t                          adc_desc_size;
     adc_dma_t                       adc_dma;
     adc_dma_intr_func_t             adc_intr_func;
-#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
-    uint32_t                        cache_line_size;
-    size_t                          adc_desc_size;              //Cache-line-aligned descriptor synchronization size
-    size_t                          rx_dma_buf_size;            //Cache-line-aligned RX buffer synchronization size
-#endif
 };
 
 #ifdef __cplusplus

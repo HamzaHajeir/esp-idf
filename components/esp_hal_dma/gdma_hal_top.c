@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -38,19 +38,14 @@ void gdma_hal_set_priority(gdma_hal_context_t *hal, int chan_id, gdma_channel_di
     hal->set_priority(hal, chan_id, dir, priority);
 }
 
-void gdma_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int periph_id)
+void gdma_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, gdma_trigger_peripheral_t periph, int periph_sub_id)
 {
-    hal->connect_peri(hal, chan_id, dir, periph_id);
+    hal->connect_peri(hal, chan_id, dir, periph, periph_sub_id);
 }
 
-void gdma_hal_connect_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int dummy_id)
+void gdma_hal_disconnect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
 {
-    hal->connect_mem(hal, chan_id, dir, dummy_id);
-}
-
-void gdma_hal_disconnect_all(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
-{
-    hal->disconnect_all(hal, chan_id, dir);
+    hal->disconnect_peri(hal, chan_id, dir);
 }
 
 void gdma_hal_enable_burst(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_data_burst, bool en_desc_burst)
@@ -63,19 +58,6 @@ void gdma_hal_set_burst_size(gdma_hal_context_t *hal, int chan_id, gdma_channel_
     if (hal->set_burst_size) {
         hal->set_burst_size(hal, chan_id, dir, burst_sz);
     }
-}
-
-bool gdma_hal_check_burst_size(gdma_hal_context_t *hal, uint32_t burst_sz)
-{
-    if (burst_sz & (burst_sz - 1)) {
-        // Not a power of 2
-        return false;
-    }
-    if (!hal->set_burst_size) {
-        // When a specific burst size cannot be set (using fixed burst size)
-        return true;
-    }
-    return (hal->priv_data->supported_burst_size_mask & burst_sz) != 0;
 }
 
 void gdma_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back, bool eof_till_popped)
@@ -108,6 +90,13 @@ uint32_t gdma_hal_get_eof_desc_addr(gdma_hal_context_t *hal, int chan_id, gdma_c
     return hal->get_eof_desc_addr(hal, chan_id, dir, is_success);
 }
 
+void gdma_hal_enable_access_encrypt_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_or_dis)
+{
+    if (hal->enable_access_encrypt_mem) {
+        hal->enable_access_encrypt_mem(hal, chan_id, dir, en_or_dis);
+    }
+}
+
 #if SOC_GDMA_SUPPORT_CRC
 void gdma_hal_clear_crc(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
 {
@@ -138,13 +127,3 @@ void gdma_hal_set_weight(gdma_hal_context_t *hal, int chan_id, gdma_channel_dire
     hal->set_weight(hal, chan_id, dir, weight);
 }
 #endif // SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-
-void gdma_hal_request_link_switch_event(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
-{
-    hal->request_link_switch_event(hal, chan_id, dir);
-}
-
-bool gdma_hal_is_tx_link_switch_event_supported(gdma_hal_context_t *hal)
-{
-    return hal->is_tx_link_switch_event_supported(hal);
-}

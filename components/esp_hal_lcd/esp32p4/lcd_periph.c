@@ -1,12 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "hal/lcd_periph.h"
 #include "soc/gpio_sig_map.h"
-#include "soc/lcd_cam_reg.h"
 
 const soc_lcd_i80_signal_desc_t soc_lcd_i80_signals[1] = {
     [0] = {

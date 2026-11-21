@@ -17,8 +17,6 @@
  * under the License.
  */
 
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
 /* BLE */
@@ -32,17 +30,14 @@
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x18, 0x11,
-    0x11, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x18, 0x11,
+    0x11, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
 };
 #endif
 
 static const char *tag = "NimBLE_BLE_PRPH";
-#if CONFIG_BT_NIMBLE_GAP_SERVICE || (CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
-static char device_name[32] = "nimble-bleprph";
-#endif
 static int bleprph_gap_event(struct ble_gap_event *event, void *arg);
 #if CONFIG_EXAMPLE_RANDOM_ADDR
 static uint8_t own_addr_type = BLE_OWN_ADDR_RANDOM;
@@ -56,20 +51,6 @@ static uint16_t bearers;
 #endif
 
 void ble_store_config_init(void);
-
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-static char *esp_bleprph_get_example_name(void)
-{
-    static char example_name[32];
-
-    memset(example_name, 0, sizeof(example_name));
-    snprintf(example_name, sizeof(example_name), "BE%02X_%05X_%02X",
-             CONFIG_EXAMPLE_CI_ID & 0xFF,
-             CONFIG_EXAMPLE_CI_PIPELINE_ID & 0xFFFFF,
-             CONFIG_IDF_FIRMWARE_CHIP_ID & 0xFF);
-    return example_name;
-}
-#endif
 
 #if NIMBLE_BLE_CONNECT
 /**
@@ -113,11 +94,6 @@ ext_bleprph_advertise(void)
     struct os_mbuf *data;
     uint8_t instance = 0;
     int rc;
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    uint8_t ci_adv_data[32];
-    uint8_t ci_adv_len;
-    uint8_t name_len;
-#endif
 
     /* First check if any instance is already active */
     if(ble_gap_ext_adv_active(instance)) {
@@ -130,8 +106,8 @@ ext_bleprph_advertise(void)
     /* enable connectable advertising */
     params.connectable = 1;
 
-    /* advertise using configured/inferred addr type */
-    params.own_addr_type = own_addr_type;
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
 
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
@@ -148,20 +124,6 @@ ext_bleprph_advertise(void)
 
     /* in this case only scan response is allowed */
 
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    name_len = strlen(device_name);
-    memset(ci_adv_data, 0, sizeof(ci_adv_data));
-    ci_adv_data[0] = name_len + 1;
-    ci_adv_data[1] = BLE_HS_ADV_TYPE_COMP_NAME;
-    memcpy(&ci_adv_data[2], device_name, name_len);
-    ci_adv_len = 2 + name_len;
-
-    data = os_msys_get_pkthdr(ci_adv_len, 0);
-    assert(data);
-
-    rc = os_mbuf_append(data, ci_adv_data, ci_adv_len);
-    assert(rc == 0);
-#else
     /* get mbuf for scan rsp data */
     data = os_msys_get_pkthdr(sizeof(ext_adv_pattern_1), 0);
     assert(data);
@@ -169,7 +131,6 @@ ext_bleprph_advertise(void)
     /* fill mbuf with scan rsp data */
     rc = os_mbuf_append(data, ext_adv_pattern_1, sizeof(ext_adv_pattern_1));
     assert(rc == 0);
-#endif
 
     rc = ble_gap_ext_adv_set_data(instance, data);
     assert (rc == 0);
@@ -189,6 +150,9 @@ bleprph_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
+#if CONFIG_BT_NIMBLE_GAP_SERVICE
+    const char *name;
+#endif
     int rc;
 
     /**
@@ -216,19 +180,17 @@ bleprph_advertise(void)
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
 #if CONFIG_BT_NIMBLE_GAP_SERVICE
-    fields.name = (uint8_t *)device_name;
-    fields.name_len = strlen(device_name);
+    name = ble_svc_gap_device_name();
+    fields.name = (uint8_t *)name;
+    fields.name_len = strlen(name);
     fields.name_is_complete = 1;
 #endif
 
-#if !(CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID)
-    static const ble_uuid16_t adv_uuids16[] = {
+    fields.uuids16 = (ble_uuid16_t[]) {
         BLE_UUID16_INIT(GATT_SVR_SVC_ALERT_UUID)
     };
-    fields.uuids16 = adv_uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
-#endif
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
@@ -254,16 +216,11 @@ static void bleprph_power_control(uint16_t conn_handle)
 {
     int rc;
 
-    rc = ble_gap_read_remote_transmit_power_level(conn_handle, 0x01);
-    if (rc != 0) {
-        MODLOG_DFLT(WARN, "ble_gap_read_remote_transmit_power_level failed; rc=%d\n", rc);
-        return;
-    }
+    rc = ble_gap_read_remote_transmit_power_level(conn_handle, 0x01 );  // Attempting on LE 1M phy
+    assert (rc == 0);
 
     rc = ble_gap_set_transmit_power_reporting_enable(conn_handle, 0x1, 0x1);
-    if (rc != 0) {
-        MODLOG_DFLT(WARN, "ble_gap_set_transmit_power_reporting_enable failed; rc=%d\n", rc);
-    }
+    assert (rc == 0);
 }
 #endif
 
@@ -302,11 +259,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
             bleprph_print_conn_desc(&desc);
-            ESP_LOGI(tag, "Connected, conn_handle %d, remote %02x:%02x:%02x:%02x:%02x:%02x",
-                     event->connect.conn_handle,
-                     desc.peer_ota_addr.val[5], desc.peer_ota_addr.val[4],
-                     desc.peer_ota_addr.val[3], desc.peer_ota_addr.val[2],
-                     desc.peer_ota_addr.val[1], desc.peer_ota_addr.val[0]);
         }
         MODLOG_DFLT(INFO, "\n");
 
@@ -320,9 +272,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         }
 
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
-        if (event->connect.status == 0) {
-            bleprph_power_control(event->connect.conn_handle);
-        }
+	bleprph_power_control(event->connect.conn_handle);
 #endif
         return 0;
 
@@ -330,13 +280,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
         bleprph_print_conn_desc(&event->disconnect.conn);
         MODLOG_DFLT(INFO, "\n");
-
-#if MYNEWT_VAL(BLE_EATT_CHAN_NUM) > 0
-        bearers = 0;
-        for (int i = 0; i < MYNEWT_VAL(BLE_EATT_CHAN_NUM); i++) {
-            cids[i] = 0;
-        }
-#endif
 
         /* Connection terminated; resume advertising. */
 #if CONFIG_EXAMPLE_EXTENDED_ADV
@@ -427,8 +370,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
 
         if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
             pkey.action = event->passkey.params.action;
-            /* WARNING: Hardcoded passkey for demonstration only.
-             * In production, generate a random passkey per pairing. */
             pkey.passkey = 123456; // This is the passkey to be entered on peer
             ESP_LOGI(tag, "Enter passkey %" PRIu32 "on the peer side", pkey.passkey);
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
@@ -548,21 +489,17 @@ bleprph_on_reset(int reason)
 static void
 ble_app_set_addr(void)
 {
-    ble_addr_t addr = {0};
+    ble_addr_t addr;
     int rc;
 
     /* generate new non-resolvable private address */
     rc = ble_hs_id_gen_rnd(0, &addr);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_gen_rnd failed; rc=%d\n", rc);
-        return;
-    }
+    assert(rc == 0);
 
     /* set generated address */
     rc = ble_hs_id_set_rnd(addr.val);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "ble_hs_id_set_rnd failed; rc=%d\n", rc);
-    }
+
+    assert(rc == 0);
 }
 #endif
 
@@ -663,8 +600,6 @@ app_main(void)
 #endif
 
 #if MYNEWT_VAL(STATIC_PASSKEY) && NIMBLE_BLE_CONNECT
-    /* WARNING: Hardcoded passkey for demonstration only.
-     * In production, generate a random passkey per pairing. */
     ble_sm_configure_static_passkey(456789, true);
 #endif
 
@@ -674,27 +609,13 @@ app_main(void)
 #endif
 
 #if CONFIG_BT_NIMBLE_GAP_SERVICE
-#if CONFIG_EXAMPLE_CI_ID && CONFIG_EXAMPLE_CI_PIPELINE_ID
-    strncpy(device_name, esp_bleprph_get_example_name(), sizeof(device_name) - 1);
-    device_name[sizeof(device_name) - 1] = '\0';
-    ESP_LOGI(tag, "DeviceName:%s, CIID:%02X, PipelineID:%05X, ChipID:%02X",
-             device_name, CONFIG_EXAMPLE_CI_ID, CONFIG_EXAMPLE_CI_PIPELINE_ID,
-             CONFIG_IDF_FIRMWARE_CHIP_ID);
-#endif
     /* Set the default device name. */
-    rc = ble_svc_gap_device_name_set(device_name);
+    rc = ble_svc_gap_device_name_set("nimble-bleprph");
     assert(rc == 0);
 #endif
 
     /* XXX Need to have template for store */
     ble_store_config_init();
-
-#if MYNEWT_VAL(BLE_EATT_CHAN_NUM) > 0
-    bearers = 0;
-    for (int i = 0; i < MYNEWT_VAL(BLE_EATT_CHAN_NUM); i++) {
-        cids[i] = 0;
-    }
-#endif
 
     nimble_port_freertos_init(bleprph_host_task);
 
@@ -703,4 +624,11 @@ app_main(void)
     if (rc != ESP_OK) {
         ESP_LOGE(tag, "scli_init() failed");
     }
+
+#if MYNEWT_VAL(BLE_EATT_CHAN_NUM) > 0
+    bearers = 0;
+    for (int i = 0; i < MYNEWT_VAL(BLE_EATT_CHAN_NUM); i++) {
+        cids[i] = 0;
+    }
+#endif
 }

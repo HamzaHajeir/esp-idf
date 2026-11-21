@@ -1,2 +1,0 @@
-# Place the remaining toolchain helpers, including software double, in IRAM.
-CONFIG_LIBC_LIBGCC_IN_IRAM=y

@@ -236,11 +236,6 @@ static esp_err_t usb_uac_device_input_cb(uint8_t *buf, size_t len, size_t *bytes
         return ESP_FAIL;
     }
 
-    /* Report full-length data for UAC */
-    if (bytes_read) {
-        *bytes_read = len;
-    }
-
     return ESP_OK;
 }
 

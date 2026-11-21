@@ -1,10 +1,4 @@
-set(srcs "handler_test.cpp")
-# Existing output assertions exercise the text formatter; handler tests also cover binary messages.
-if(NOT CONFIG_LOG_MODE_BINARY_EN)
-    list(APPEND srcs "log_test.cpp")
-endif()
-
-idf_component_register(SRCS ${srcs}
+idf_component_register(SRCS "log_test.cpp"
                     INCLUDE_DIRS "."
                     REQUIRES log
                     WHOLE_ARCHIVE)

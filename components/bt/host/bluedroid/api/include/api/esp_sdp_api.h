@@ -25,13 +25,9 @@ extern "C" {
 #define ESP_SDP_UUID_SAP      0x112D /*!< SIM Access Profile UUID */
 #define ESP_SDP_UUID_DIP      0x1200 /*!< Device Identification Profile UUID */
 
-/// Build a Bluetooth UUID16
 #define ESP_SDP_BUILD_BT_UUID16(uuid16_val)                                                                                \
     (esp_bt_uuid_t) { .len = ESP_UUID_LEN_16, .uuid = {.uuid16 = (uint16_t)(uuid16_val),}, }
 
-/**
- * @brief SDP status parameters
- */
 typedef enum {
     ESP_SDP_SUCCESS = 0,      /*!< Successful operation. */
     ESP_SDP_FAILURE,          /*!< Generic failure. */
@@ -235,8 +231,8 @@ typedef union {
 /**
  * @brief       SDP callback function type.
  *
- * @param[in]   event:      Event type
- * @param[in]   param:      Point to callback parameter, currently is union type
+ * @param       event:      Event type
+ * @param       param:      Point to callback parameter, currently is union type
  */
 typedef void (* esp_sdp_cb_t)(esp_sdp_cb_event_t event, esp_sdp_cb_param_t *param);
 
@@ -247,7 +243,6 @@ typedef void (* esp_sdp_cb_t)(esp_sdp_cb_event_t event, esp_sdp_cb_param_t *para
  *
  * @return
  *              - ESP_OK: success
- *              - ESP_ERR_INVALID_ARG: if callback is a NULL function pointer
  *              - other: failed
  */
 esp_err_t esp_sdp_register_callback(esp_sdp_cb_t callback);
@@ -278,7 +273,7 @@ esp_err_t esp_sdp_init(void);
 esp_err_t esp_sdp_deinit(void);
 
 /**
- * @brief       Perform service discovery for the services provided by the given peer device.
+ * @brief       This function is called to performs service discovery for the services provided by the given peer device.
  *              When the operation is completed, the callback function will be called with ESP_SDP_SEARCH_COMP_EVT.
  *              This function must be called after esp_sdp_init() successful and before esp_sdp_deinit().
  *
@@ -287,8 +282,6 @@ esp_err_t esp_sdp_deinit(void);
  *
  * @return
  *              - ESP_OK: success
- *              - ESP_ERR_INVALID_ARG: if bd_addr is NULL, or uuid.len is not
- *                ESP_UUID_LEN_16, ESP_UUID_LEN_32, or ESP_UUID_LEN_128
  *              - other: failed
  */
 esp_err_t esp_sdp_search_record(esp_bd_addr_t bd_addr, esp_bt_uuid_t uuid);
@@ -307,7 +300,7 @@ esp_err_t esp_sdp_search_record(esp_bd_addr_t bd_addr, esp_bt_uuid_t uuid);
 esp_err_t esp_sdp_create_record(esp_bluetooth_sdp_record_t *record);
 
 /**
- * @brief       Remove an SDP record.
+ * @brief       This function is called to remove a SDP record.
  *              When the operation is completed, the callback function will be called with ESP_SDP_REMOVE_RECORD_COMP_EVT.
  *              This function must be called after esp_sdp_init() successful and before esp_sdp_deinit().
  *

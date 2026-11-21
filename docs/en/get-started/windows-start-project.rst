@@ -2,8 +2,6 @@
 Start a Project on Windows from Command Line
 ********************************************
 
-:link_to_translation:`zh_CN:[中文]`
-
 This guide helps you to start a new project on the {IDF_TARGET_NAME} and build, flash, and monitor the device output on Windows.
 
 
@@ -47,10 +45,10 @@ Now you are ready to prepare your application for {IDF_TARGET_NAME}. You can sta
 
 Copy the project :example:`get-started/hello_world` to ``~/esp`` directory:
 
-.. code-block:: powershell
+.. code-block:: batch
 
-    cd $env:USERPROFILE\esp
-    xcopy /e /i $env:IDF_PATH\examples\get-started\hello_world hello_world
+    cd %userprofile%\esp
+    xcopy /e /i %IDF_PATH%\examples\get-started\hello_world hello_world
 
 .. note:: There is a range of example projects in the :idf:`examples` directory in ESP-IDF. You can copy any project in the same way as presented above and run it. It is also possible to build examples in-place without copying them first.
 
@@ -79,9 +77,9 @@ Navigate to your ``hello_world`` directory, set {IDF_TARGET_NAME} as the target,
 Windows
 ~~~~~~~
 
-.. code-block:: powershell
+.. code-block:: batch
 
-    cd $env:USERPROFILE\esp\hello_world
+    cd %userprofile%\esp\hello_world
     idf.py set-target {IDF_TARGET_PATH_NAME}
     idf.py menuconfig
 
@@ -101,7 +99,7 @@ You are using this menu to set up project specific variables, e.g., Wi-Fi networ
 
     .. attention::
 
-        If you use ESP32-DevKitC board with the **ESP32-SOLO-1** module, or ESP32-DevKitM-1 board with the **ESP32-MIN1-1/1U** module, please enable single core mode (:menuitem:`CONFIG_FREERTOS_UNICORE`) in menuconfig before flashing examples.
+        If you use ESP32-DevKitC board with the **ESP32-SOLO-1** module, or ESP32-DevKitM-1 board with the **ESP32-MIN1-1/1U** module, please enable single core mode (:ref:`CONFIG_FREERTOS_UNICORE`) in menuconfig before flashing examples.
 
 .. note::
 

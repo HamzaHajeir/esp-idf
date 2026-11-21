@@ -962,6 +962,7 @@ wpas_rrm_process_msr_req_elems(struct wpa_supplicant *wpa_s, const u8 *pos,
 			wpa_printf(MSG_DEBUG,
 				   "RRM: Expected Measurement Request element, but EID is %u",
 				   req->eid);
+			printf("len is %d", len);
 			goto out;
 		}
 

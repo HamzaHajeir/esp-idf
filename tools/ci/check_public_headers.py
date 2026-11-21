@@ -2,7 +2,7 @@
 #
 # Checks all public headers in IDF in the ci
 #
-# SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 #
 import argparse
@@ -112,13 +112,12 @@ class PublicHeaderChecker:
         # - components/esp_adc/**
         # - components/esp_driver_*/**
         # - components/esp_hw_support/**
-        # - components/esp_sleep/**
         # - components/sdmmc/**
         # - components/ieee802154/**
         # - components/esp_eth/**
         # - components/esp_lcd/**
         self.freertos_scope = re.compile(
-            r'^(components/(esp_adc|esp_hw_support|esp_sleep|sdmmc|ieee802154|esp_eth|esp_lcd)/|components/esp_driver_[^/]+/)'
+            r'^(components/(esp_adc|esp_hw_support|sdmmc|ieee802154|esp_eth|esp_lcd)/|components/esp_driver_[^/]+/)'
         )
         self.assembly_nocode = r'^\s*(\.file|\.text|\.ident|\.option|\.attribute|(\.section)?).*$'
         self.check_threads: list[Thread] = []
@@ -365,14 +364,11 @@ class PublicHeaderChecker:
         include_dir_flags = []
         include_dirs = []
         # process compilation flags (includes and defines)
-        # Only walk IDF's own components/; skip example main, managed_components, etc.
-        idf_components = os.path.join(idf_path, 'components') + os.sep
         for item in build_command:
             if item.startswith('-I'):
                 include_dir_flags.append(item)
-                include_path = item[2:]
-                if include_path.startswith(idf_components):
-                    include_dirs.append(include_path)
+                if 'components' in item:
+                    include_dirs.append(item[2:])  # Removing the leading "-I"
             if item.startswith('-D'):
                 include_dir_flags.append(
                     item.replace('\\', '')
@@ -402,7 +398,7 @@ class PublicHeaderChecker:
             if os.path.relpath(d, idf_path).startswith(tuple(ignore_dirs)):
                 self.log(f'{d} - directory ignored')
                 continue
-            for root, _, filenames in os.walk(d):
+            for root, dirnames, filenames in os.walk(d):
                 for filename in fnmatch.filter(filenames, '*.h'):
                     all_include_files.append(os.path.join(root, filename))
         self.main_c = main_c
@@ -450,8 +446,7 @@ def check_all_headers() -> None:
         * public headers is not allowed
 
     Notes:
-    * The script validates *all* header files (recursively) in public folders under IDF components/.
-      External include paths (managed_components, example main, ...) are used only for compilation.
+    * The script validates *all* header files (recursively) in public folders for all components.
     * The script locates include paths from running a default build of  "examples/get-started/blink'
     * The script does not support any other targets than esp32
 

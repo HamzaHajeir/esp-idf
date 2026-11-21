@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,7 +9,6 @@
 
 #include "esp_err.h"
 #include "esp_bt_defs.h"
-#include "esp_gap_bt_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,7 +18,6 @@ extern "C" {
 #define ESP_SPP_MAX_SCN                 31          /*!< SPP max SCN */
 #define ESP_SPP_MIN_TX_BUFFER_SIZE      100         /*!< SPP min tx buffer */
 #define ESP_SPP_MAX_TX_BUFFER_SIZE      (ESP_SPP_MAX_MTU * 10)  /*!< SPP max tx buffer size */
-#define ESP_SPP_DEFAULT_TX_BUFFER_SIZE  ESP_SPP_MAX_TX_BUFFER_SIZE /*!< SPP default tx buffer size */
 
 /**
  * @brief SPP default configuration
@@ -27,16 +25,7 @@ extern "C" {
 #define BT_SPP_DEFAULT_CONFIG() { \
     .mode = ESP_SPP_MODE_VFS, \
     .enable_l2cap_ertm = true, \
-    .tx_buffer_size = ESP_SPP_DEFAULT_TX_BUFFER_SIZE, \
-}
-
-/**
- * @brief SPP default configuration for callback mode
- */
-#define BT_SPP_CB_MODE_DEFAULT_CONFIG() { \
-    .mode = ESP_SPP_MODE_CB, \
-    .enable_l2cap_ertm = true, \
-    .tx_buffer_size = ESP_SPP_DEFAULT_TX_BUFFER_SIZE, \
+    .tx_buffer_size = ESP_SPP_MAX_TX_BUFFER_SIZE, \
 }
 
 /* Security Setting Mask
@@ -53,18 +42,15 @@ Due to certain limitations, do not use these mask modes:
 2. ESP_SPP_SEC_MODE4_LEVEL4
 3. ESP_SPP_SEC_MITM
 */
-#define ESP_SPP_SEC_NONE            ESP_BT_SEC_NONE             /*!< No security. */
-#define ESP_SPP_SEC_AUTHORIZE       ESP_BT_SEC_AUTHORIZE        /*!< Authorization required (only needed for out going connection ) */
-#define ESP_SPP_SEC_AUTHENTICATE    ESP_BT_SEC_AUTHENTICATE     /*!< Authentication required. */
-#define ESP_SPP_SEC_ENCRYPT         ESP_BT_SEC_ENCRYPT          /*!< Encryption required. */
-#define ESP_SPP_SEC_MODE4_LEVEL4    ESP_BT_SEC_MODE4_LEVEL4     /*!< Mode 4 level 4 service, i.e. incoming/outgoing MITM and P-256 encryption. */
-#define ESP_SPP_SEC_MITM            ESP_BT_SEC_MITM             /*!< Man-In-The-Middle protection. */
-#define ESP_SPP_SEC_IN_16_DIGITS    ESP_BT_SEC_IN_16_DIGITS     /*!< Min 16 digit for pin code. */
-typedef uint16_t esp_spp_sec_t;               /*!< SPP security type */
+#define ESP_SPP_SEC_NONE            0x0000    /*!< No security. relate to BTA_SEC_NONE in bta/bta_api.h */
+#define ESP_SPP_SEC_AUTHORIZE       0x0001    /*!< Authorization required (only needed for out going connection ) relate to BTA_SEC_AUTHORIZE in bta/bta_api.h*/
+#define ESP_SPP_SEC_AUTHENTICATE    0x0012    /*!< Authentication required.  relate to BTA_SEC_AUTHENTICATE in bta/bta_api.h*/
+#define ESP_SPP_SEC_ENCRYPT         0x0024    /*!< Encryption required.  relate to BTA_SEC_ENCRYPT in bta/bta_api.h*/
+#define ESP_SPP_SEC_MODE4_LEVEL4    0x0040    /*!< Mode 4 level 4 service, i.e. incoming/outgoing MITM and P-256 encryption  relate to BTA_SEC_MODE4_LEVEL4 in bta/bta_api.h*/
+#define ESP_SPP_SEC_MITM            0x3000    /*!< Man-In-The_Middle protection  relate to BTA_SEC_MITM in bta/bta_api.h*/
+#define ESP_SPP_SEC_IN_16_DIGITS    0x4000    /*!< Min 16 digit for pin code  relate to BTA_SEC_IN_16_DIGITS in bta/bta_api.h*/
+typedef uint16_t esp_spp_sec_t;
 
-/**
- * @brief SPP status type.
- */
 typedef enum {
     ESP_SPP_SUCCESS   = 0,          /*!< Successful operation. */
     ESP_SPP_FAILURE,                /*!< Generic failure. */
@@ -77,17 +63,11 @@ typedef enum {
     ESP_SPP_NO_SERVER,              /*!< No SPP server */
 } esp_spp_status_t;
 
-/**
- * @brief SPP role type.
- */
 typedef enum {
     ESP_SPP_ROLE_MASTER     = 0,          /*!< Role: master */
     ESP_SPP_ROLE_SLAVE      = 1,          /*!< Role: slave */
 } esp_spp_role_t;
 
-/**
- * @brief SPP mode type.
- */
 typedef enum {
     ESP_SPP_MODE_CB         = 0,          /*!< When data is coming, a callback will come with data */
     ESP_SPP_MODE_VFS        = 1,          /*!< Use VFS to write/read data */
@@ -99,9 +79,7 @@ typedef enum {
 typedef struct {
     esp_spp_mode_t mode;                  /*!< Choose the mode of SPP, ESP_SPP_MODE_CB or ESP_SPP_MODE_VFS. */
     bool enable_l2cap_ertm;               /*!< Enable/disable Logical Link Control and Adaptation Layer Protocol enhanced retransmission mode. */
-    uint16_t tx_buffer_size;              /*!< Tx buffer size for a new SPP channel. A smaller setting can save memory, but may incur a decrease in throughput.
-                                               0 uses ESP_SPP_DEFAULT_TX_BUFFER_SIZE. Any other value must be from
-                                               ESP_SPP_MIN_TX_BUFFER_SIZE to ESP_SPP_MAX_TX_BUFFER_SIZE. */
+    uint16_t tx_buffer_size;              /*!< Tx buffer size for a new SPP channel. A smaller setting can save memory, but may incur a decrease in throughput. Only for ESP_SPP_MODE_VFS mode. */
 } esp_spp_cfg_t;
 
 /**
@@ -127,8 +105,8 @@ typedef enum {
     ESP_SPP_START_EVT                   = 28,               /*!< When SPP server started, the event comes */
     ESP_SPP_CL_INIT_EVT                 = 29,               /*!< When SPP client initiated a connection, the event comes */
     ESP_SPP_DATA_IND_EVT                = 30,               /*!< When SPP connection received data, the event comes, only for ESP_SPP_MODE_CB */
-    ESP_SPP_CONG_EVT                    = 31,               /*!< When SPP TX buffer becomes uncongested, the event comes, only for ESP_SPP_MODE_CB */
-    ESP_SPP_WRITE_EVT                   = 33,               /*!< When SPP has submitted a chunk to RFCOMM, the event comes, only for ESP_SPP_MODE_CB */
+    ESP_SPP_CONG_EVT                    = 31,               /*!< When SPP connection congestion status changed, the event comes, only for ESP_SPP_MODE_CB */
+    ESP_SPP_WRITE_EVT                   = 33,               /*!< When SPP write operation completes, the event comes, only for ESP_SPP_MODE_CB */
     ESP_SPP_SRV_OPEN_EVT                = 34,               /*!< When SPP Server connection open, the event comes */
     ESP_SPP_SRV_STOP_EVT                = 35,               /*!< When SPP server stopped, the event comes */
     ESP_SPP_VFS_REGISTER_EVT            = 36,               /*!< When SPP VFS register, the event comes */
@@ -234,13 +212,10 @@ typedef union {
      * @brief ESP_SPP_WRITE_EVT
      */
     struct spp_write_evt_param {
-        esp_spp_status_t    status;         /*!< Always ESP_SPP_SUCCESS. Sent only after the chunk is submitted to RFCOMM */
+        esp_spp_status_t    status;         /*!< status */
         uint32_t            handle;         /*!< The connection handle */
-        int                 len;            /*!< The length of the data submitted to RFCOMM. */
-        bool                cong;           /*!< TRUE when the TX buffer is congested, not RFCOMM congestion.
-                                               Sending the next packet after this event reports cong equal to false
-                                               still works, but is not recommended.
-                                               Prefer the esp_spp_write() return value and ESP_SPP_CONG_EVT. */
+        int                 len;            /*!< The length of the data written. */
+        bool                cong;           /*!< congestion status */
     } write;                                /*!< SPP callback param of ESP_SPP_WRITE_EVT */
 
     /**
@@ -259,7 +234,7 @@ typedef union {
     struct spp_cong_evt_param {
         esp_spp_status_t    status;         /*!< status */
         uint32_t            handle;         /*!< The connection handle */
-        bool                cong;           /*!< Always FALSE. This event is only the TX buffer uncongest edge */
+        bool                cong;           /*!< TRUE, congested. FALSE, uncongested */
     } cong;                                 /*!< SPP callback param of ESP_SPP_CONG_EVT */
 
     /**
@@ -307,8 +282,6 @@ esp_err_t esp_spp_register_callback(esp_spp_cb_t callback);
  *
  * @note        The member variable enable_l2cap_etrm in esp_spp_cfg_t can affect all L2CAP channel
  *              configurations of the upper layer RFCOMM protocol.
- *              tx_buffer_size 0 is replaced with ESP_SPP_DEFAULT_TX_BUFFER_SIZE and a warning is logged.
- *              Any other value outside ESP_SPP_MIN_TX_BUFFER_SIZE to ESP_SPP_MAX_TX_BUFFER_SIZE is rejected.
  *
  * @return
  *              - ESP_OK: success
@@ -331,7 +304,7 @@ esp_err_t esp_spp_deinit(void);
 
 
 /**
- * @brief       Perform service discovery for the services provided by the given peer device.
+ * @brief       This function is called to performs service discovery for the services provided by the given peer device.
  *              When the operation is completed, the callback function will be called with ESP_SPP_DISCOVERY_COMP_EVT.
  *              This function must be called after esp_spp_enhanced_init() successful and before esp_spp_deinit().
  *
@@ -356,7 +329,6 @@ esp_err_t esp_spp_start_discovery(esp_bd_addr_t bd_addr);
  *
  * @return
  *              - ESP_OK: success
- *              - ESP_ERR_INVALID_ARG: peer address is NULL, remote SCN is out of range, or role is invalid
  *              - other: failed
  */
 esp_err_t esp_spp_connect(esp_spp_sec_t sec_mask, esp_spp_role_t role, uint8_t remote_scn, esp_bd_addr_t peer_bd_addr);
@@ -389,7 +361,6 @@ esp_err_t esp_spp_disconnect(uint32_t handle);
  *
  * @return
  *              - ESP_OK: success
- *              - ESP_ERR_INVALID_ARG: server name is invalid, local SCN is out of range, or role is invalid
  *              - other: failed
  */
 esp_err_t esp_spp_start_srv(esp_spp_sec_t sec_mask, esp_spp_role_t role, uint8_t local_scn, const char *name);
@@ -403,7 +374,6 @@ esp_err_t esp_spp_start_srv(esp_spp_sec_t sec_mask, esp_spp_role_t role, uint8_t
  *
  * @return
  *              - ESP_OK: success
- *              - ESP_ERR_INVALID_ARG: if cfg is NULL, or name/SCN/role is invalid
  *              - other: failed
  */
 esp_err_t esp_spp_start_srv_with_cfg(const esp_spp_start_srv_cfg_t *cfg);
@@ -438,31 +408,19 @@ esp_err_t esp_spp_stop_srv(void);
 esp_err_t esp_spp_stop_srv_scn(uint8_t scn);
 
 /**
- * @brief       Write data on an SPP connection, only for ESP_SPP_MODE_CB.
- *              The whole buffer is copied into the transmit buffer and the call returns immediately.
- *              Waking the stack to send does not block on the BTC task queue.
- *              ESP_OK means the data is queued, not that it has been sent. The buffer size is tx_buffer_size
- *              passed to esp_spp_enhanced_init(). If len can never fit in that buffer, ESP_ERR_INVALID_SIZE
- *              is returned and nothing is queued. For ESP_ERR_INVALID_SIZE, waiting for ESP_SPP_CONG_EVT
- *              does not help because the buffer never shrinks.
- *              If len can fit but free space is less than len, ESP_ERR_NO_MEM is returned
- *              and nothing is queued. Retry only after ESP_SPP_CONG_EVT with cong equal to false.
- *              Queued data is sent in chunks of at most the peer MTU. ESP_SPP_WRITE_EVT reports
- *              each chunk after it has been submitted to RFCOMM. write.cong still reports TX buffer
- *              congestion, so the next packet can wait for cong equal to false. That pacing still works,
- *              but is not recommended. Prefer the return value and ESP_SPP_CONG_EVT.
- *              This function must be called after the connection has been established.
+ * @brief       This function is used to write data, only for ESP_SPP_MODE_CB.
+ *              When this function need to be called repeatedly, it is strongly recommended to call this function again after
+ *              the previous event ESP_SPP_WRITE_EVT is received and the parameter 'cong' is equal to false. If the previous event
+ *              ESP_SPP_WRITE_EVT with parameter 'cong' is equal to true, the function can only be called again when the event
+ *              ESP_SPP_CONG_EVT with parameter 'cong' equal to false is received.
+ *              This function must be called after an connection between initiator and acceptor has been established.
  *
  * @param[in]   handle: The connection handle.
  * @param[in]   len:    The length of the data written.
  * @param[in]   p_data: The data written.
  *
  * @return
- *              - ESP_OK: data queued in the transmit buffer
- *              - ESP_ERR_INVALID_SIZE: len can never be queued
- *              - ESP_ERR_NO_MEM: not enough free space
- *              - ESP_ERR_INVALID_ARG: invalid len or p_data
- *              - ESP_ERR_INVALID_STATE: SPP is not ready, or the connection is not open
+ *              - ESP_OK: success
  *              - other: failed
  */
 esp_err_t esp_spp_write(uint32_t handle, int len, uint8_t *p_data);

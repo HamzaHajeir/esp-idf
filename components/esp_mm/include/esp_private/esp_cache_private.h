@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -42,7 +42,6 @@ void esp_cache_resume_ext_mem_cache(void);
  * @note This API is only for internal usage, no thread safety guaranteed
  * @note This API is Non-Nestable and Non-Reentrant
  * @note Call to this API must be followed by a `esp_cache_unfreeze_ext_mem_cache`
- * @note Branch prediction is disabled until `esp_cache_unfreeze_ext_mem_cache`
  */
 void esp_cache_freeze_ext_mem_cache(void);
 

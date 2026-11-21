@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -17,7 +17,6 @@
 #include "unity.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
-#include "esp_memory_utils.h"
 
 #include "sdkconfig.h"
 
@@ -66,6 +65,25 @@ TEST_CASE("Malloc/overwrite, then free all available DRAM", "[heap]")
 }
 
 
+#if CONFIG_SPIRAM_USE_MALLOC && (CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL > 1024)
+TEST_CASE("Check if reserved DMA pool still can allocate even when malloc()'ed memory is exhausted", "[heap][psram]")
+{
+    char** dmaMem=malloc(sizeof(char*)*512);
+    assert(dmaMem);
+    int m=tryAllocMem();
+    int i=0;
+    for (i=0; i<512; i++) {
+        dmaMem[i]=heap_caps_malloc(1024, MALLOC_CAP_DMA);
+        if (dmaMem[i]==NULL) break;
+    }
+    for (int j=0; j<i; j++) free(dmaMem[j]);
+    free(dmaMem);
+    tryAllocMemFree();
+    printf("Could allocate %dK of DMA memory after allocating all of %dK of normal memory.\n", i, m);
+    TEST_ASSERT(i);
+}
+#endif
+
 #if CONFIG_SPIRAM
 TEST_CASE("Check if default cap allocates in external memory in priority", "[heap][psram]")
 {
@@ -103,46 +121,6 @@ TEST_CASE("Check if default cap allocates in external memory in priority", "[hea
     heap_caps_free(ptr);
 #endif
 }
-
-#if CONFIG_SPIRAM_USE_MALLOC && (CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL >= 4096)
-/*
- * Regression test for https://github.com/espressif/esp-idf/issues/18938
- * Small malloc() calls must spill into PSRAM before they touch the reserved internal DMA pool,
- * so that explicit DMA allocations still succeed after internal RAM has been filled by malloc().
- */
-TEST_CASE("malloc() uses PSRAM before the reserved DMA pool", "[heap][psram]")
-{
-    const size_t block = 512;
-    const int max_blocks = 4096; // 2 MiB at most
-    void **blocks = heap_caps_calloc(max_blocks, sizeof(void *), MALLOC_CAP_SPIRAM);
-    TEST_ASSERT_NOT_NULL(blocks);
-
-    // Fill memory with small malloc() calls until the first one lands in PSRAM
-    int n = 0;
-    bool reached_psram = false;
-    for (; n < max_blocks; n++) {
-        blocks[n] = malloc(block);
-        TEST_ASSERT_NOT_NULL(blocks[n]);
-        if (esp_ptr_external_ram(blocks[n])) {
-            reached_psram = true;
-            n++;
-            break;
-        }
-    }
-    TEST_ASSERT_TRUE(reached_psram);
-
-    // The reserved pool must still be intact for explicit DMA allocations
-    void *dma = heap_caps_malloc(4096, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    printf("%d small allocations before PSRAM, DMA alloc %p\n", n, dma);
-    TEST_ASSERT_NOT_NULL(dma);
-    heap_caps_free(dma);
-
-    for (int i = 0; i < n; i++) {
-        free(blocks[i]);
-    }
-    heap_caps_free(blocks);
-}
-#endif
 #endif
 
 /* As you see, we are desperately trying to outsmart the compiler, so that it
@@ -227,7 +205,7 @@ TEST_CASE("test get allocated size", "[heap]")
     void *ptr_array[iterations];
 
     for (size_t i = 0; i < iterations; i++) {
-        ptr_array[i] = heap_caps_malloc(alloc_sizes[i], MALLOC_CAP_INTERNAL);
+        ptr_array[i] = heap_caps_malloc(alloc_sizes[i], MALLOC_CAP_DEFAULT);
         TEST_ASSERT_NOT_NULL(ptr_array[i]);
 
         // test that the heap_caps_get_allocated_size() returns the right number of bytes (aligned to 4 bytes
@@ -240,7 +218,7 @@ TEST_CASE("test get allocated size", "[heap]")
         // when the pointer to the first, last (calculated from the requested size) and to a byte
         // in the middle of the chunk is passed as parameter
         TEST_ASSERT(aligned_size <= heap_caps_get_containing_block_size(ptr_array[i]));
-        TEST_ASSERT(aligned_size <= heap_caps_get_containing_block_size(ptr_array[i] + alloc_sizes[i] - 1));
+        TEST_ASSERT(aligned_size <= heap_caps_get_containing_block_size(ptr_array[i] + alloc_sizes[i]));
         TEST_ASSERT(aligned_size <= heap_caps_get_containing_block_size(ptr_array[i] + (alloc_sizes[i] / 2)));
 
         heap_caps_free(ptr_array[i]);

@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 """
 Generate Kconfig.soc_caps.in with defines from soc_caps.h
 """
 
+import argparse
 import inspect
 import io
+import logging
 import os
 import sys
 from difflib import unified_diff
@@ -16,11 +18,6 @@ from pathlib import Path
 from string import Template
 
 import pyparsing
-import rich_click as click
-from esp_pylib.cli_options import OptionEatAll
-from esp_pylib.excepthook import install_exception_reporting
-from esp_pylib.logger import Verbosity
-from esp_pylib.logger import log
 from pyparsing import CaselessLiteral
 from pyparsing import Char
 from pyparsing import Combine
@@ -37,7 +34,6 @@ from pyparsing import alphas
 from pyparsing import hexnums
 from pyparsing import nums
 from pyparsing import rest_of_line
-from rich.markup import escape
 
 pyparsing.usePackrat = True
 
@@ -81,7 +77,7 @@ class KconfigWriter:
 
     def add_entry(self, name, entry_type, value):  # type: (str, str, typing.Any) -> None
         if name in self.entries:
-            log.debug(f'Duplicate entry: {name}')
+            logging.info(f'Duplicate entry: {name}')
             return
 
         # Format values for kconfig
@@ -122,11 +118,11 @@ class KconfigWriter:
         # Check if file was updated and print diff for users
         diff = unified_diff(old_content, new_content, fromfile=str(self.kconfig_path), n=2)
         for line in diff:
-            log.print(escape(line), end='')
+            print(line, end='')
             file_needs_update = True
 
         if file_needs_update:
-            log.print(f'\nUpdating file: {escape(str(self.kconfig_path))}')
+            print('\n' + f'Updating file: {self.kconfig_path}')
             with open(self.kconfig_path, 'w', encoding='utf-8') as f:
                 f.writelines(new_content)
 
@@ -210,7 +206,7 @@ def generate_defines(soc_caps_dir, filename, always_write):  # type: (Path, str,
         try:
             res = parse_define(line)
         except pyparsing.ParseException:
-            log.debug(f'Failed to parse: {line}')
+            logging.debug(f'Failed to parse: {line}')
             continue
 
         if res.ignore_pragma:
@@ -237,7 +233,7 @@ def generate_defines(soc_caps_dir, filename, always_write):  # type: (Path, str,
 
 def get_defines(header_path):  # type: (Path) -> list[str]
     defines = []
-    log.debug(f'Reading macros from {header_path}...')
+    logging.info(f'Reading macros from {header_path}...')
     with open(header_path, encoding='utf-8') as f:
         output = f.read()
 
@@ -249,35 +245,33 @@ def get_defines(header_path):  # type: (Path) -> list[str]
     return defines
 
 
-@click.command(context_settings={'help_option_names': ['-h', '--help']}, help=__doc__)
-@click.option(
-    '-d',
-    '--dir',
-    'dirs',
-    multiple=True,
-    type=str,
-    cls=OptionEatAll,
-    help='SoC caps folder paths, support wildcards',
-)
-@click.option('-n', '--filename', default='*caps.h', help='SoC caps filename, support wildcards')
-@click.option(
-    '-v',
-    '--verbose',
-    count=True,
-    help='Increase the logging level of the script. Can be specified multiple times.',
-)
-@click.option('--always-write', is_flag=True, help='Always generate new output files')
-def main(dirs, filename, verbose, always_write):  # type: (tuple[str, ...], str, int, bool) -> None
-    if verbose:
-        log.set_verbosity(Verbosity.VERBOSE)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-d', '--dir', help='SoC caps folder paths, support wildcards', nargs='+', default=[])
+    parser.add_argument('-n', '--filename', nargs='?', default='*caps.h', help='SoC caps filename, support wildcards')
+    parser.add_argument(
+        '-v',
+        '--verbose',
+        action='count',
+        help='Increase the logging level of the script. Can be specified multiple times.',
+    )
+    parser.add_argument('--always-write', help='Always generate new output files', action='store_true')
+    args = parser.parse_args()
+
+    if not args.verbose:
+        log_level = logging.WARNING
+    elif args.verbose == 1:
+        log_level = logging.INFO
     else:
-        log.set_verbosity(Verbosity.NORMAL)
+        log_level = logging.DEBUG
+
+    logging.basicConfig(level=log_level)
 
     files_updated = []
     writers = []  # type: typing.List[typing.Optional[KconfigWriter]]
-    for caps_dir in dirs:
+    for caps_dir in args.dir:
         soc_caps_dirs = Path().glob(caps_dir)
-        new_writers = [generate_defines(d, filename, always_write) for d in soc_caps_dirs if path.isdir(d)]
+        new_writers = [generate_defines(d, args.filename, args.always_write) for d in soc_caps_dirs if path.isdir(d)]
         writers.extend(new_writers)
 
     configs = dict()  # type: typing.Dict[str, str] # key: config name, value: config_type
@@ -299,24 +293,22 @@ def main(dirs, filename, verbose, always_write):  # type: (tuple[str, ...], str,
                 configs[config_name] = writer.entries[config_name][0]
 
     if configs_with_differing_types:
-        details = [
+        print(
             'The following macro constants would be translated to config options with different types'
             ' for different targets (which may lead to unexpected behavior).'
-        ]
+        )
+
         for config_name in configs_with_differing_types:
-            details.append(
+            print(
                 f'  {config_name} has types'
                 f'{", ".join(config_type for config_type in configs_with_differing_types[config_name])}'
             )
-        details.append('Please ensure all the macro constants will translate to the same config type for all targets.')
-        log.die('\n'.join(details))
+
+        print('Please ensure all the macro constants will translate to the same config type for all targets.')
+
+        sys.exit(1)
 
     files_updated = [writer.update_file() for writer in writers if writer is not None]
-    log.print(f'Updated {sum(files_updated)} files')
+    print(f'Updated {sum(files_updated)} files')
 
     sys.exit(all(files_updated))
-
-
-if __name__ == '__main__':
-    install_exception_reporting()
-    main()

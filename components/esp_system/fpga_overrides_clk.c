@@ -52,7 +52,7 @@ void bootloader_clock_configure(void)
 #endif
 }
 
-void IRAM_ATTR esp_rtc_init(void)
+void esp_rtc_init(void)
 {
 #if SOC_PMU_SUPPORTED
     pmu_init();

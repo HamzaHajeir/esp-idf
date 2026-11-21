@@ -114,7 +114,7 @@ void app_main(void)
 
     /* Register commands */
     register_system_common();
-    iperf_cmd_register_iperf();
+    app_register_iperf_commands();
     register_ethernet_commands();
 
     printf("\n =======================================================\n");

@@ -1,6 +1,4 @@
 preserve_non_test_related_apps = false
-filter_non_test_related_apps_by_modified_files = true
-filter_apps_by_component_target = true
 exclude_dirs = [
     'tools/test_mkdfu',
     'tools/test_idf_size',
@@ -9,9 +7,6 @@ exclude_dirs = [
     'tools/test_bsasm',
     'tools/ci/test_autocomplete',
     'tools/test_build_system',
-    'tools/bt/ble_log_console',
-    'components/ulp/test_apps/lp_core/host_tests/lp_core_custom_linker',
-    'components/ulp/test_apps/lp_core/host_tests/lp_core_custom_linker_v2',
 ]
 
 [local_runtime_envs]
@@ -21,121 +16,91 @@ LDGEN_CHECK_MAPPING = "1"
 IDF_CI_BUILD = "1"
 
 [gitlab]
-build_enabled_toolchains = ['gcc', 'clang']
-test_enabled_toolchains = ['gcc', 'clang']
 
 [gitlab.build_pipeline]
-runs_per_job = 30
+workflow_name = "build_child_pipeline"
+presigned_json_job_name = 'generate_pytest_build_report'
 
 job_tags = ['build', 'shiny']
 job_template_name = '.dynamic_build_template'
 job_template_jinja = ''  # write in tools/ci/dynamic_pipelines/templates/.dynamic_jobs.yml
-additional_include_yaml_files = [
-    '.gitlab/ci/common.yml',
-    'tools/ci/dynamic_pipelines/templates/.dynamic_jobs.yml',
-]
+pre_yaml_jinja = """
+include:
+  - .gitlab/ci/common.yml
+  - tools/ci/dynamic_pipelines/templates/.dynamic_jobs.yml
+  - tools/ci/dynamic_pipelines/templates/test_child_pipeline.yml
+"""
+yaml_jinja = """
+{{ settings.gitlab.build_pipeline.pre_yaml_jinja }}
+
+workflow:
+  name: {{ settings.gitlab.build_pipeline.workflow_name }}
+  rules:
+    - when: always
+
+{{ jobs }}
+"""  # simplified since we included the tools/ci/dynamic_pipelines/templates/test_child_pipeline.yml
 
 [gitlab.test_pipeline]
 job_template_name = '.dynamic_target_test_template'
 job_template_jinja = ''  # write in tools/ci/dynamic_pipelines/templates/.dynamic_jobs.yml
-parent_pipeline_id = '$PARENT_PIPELINE_ID'  # pytest downloads artifacts from the original parent pipeline
-skip_mr_labels = ['For Maintainers: Only Build Tests']
-exclude_runner_tags = [
-    'esp32,ip101',
-    'esp32c2,jtag,xtal_40mhz',
-    'esp32c3,flash_multi',
-    'esp32c3,sdcard_sdmode',
-    'esp32c5,jtag',
-    'esp32c6,jtag',
-    'esp32c61,jtag',
-    'esp32h2,jtag',
-    'esp32h4,usb_host_flash_disk',
-    'esp32p4,jtag',
-    'esp32s2,usb_host_flash_disk',
-    'esp32s31,usb_host_flash_disk',
-]
-extra_extends_by_env_marker = { ethernet_stress = ['.timeout_4h_template'] }
 pre_yaml_jinja = """
 include:
   - .gitlab/ci/common.yml
   - tools/ci/dynamic_pipelines/templates/.dynamic_jobs.yml
 """
 
-[gitlab.artifacts.s3]
-enable = true
-
-[gitlab.artifacts.s3.configs.debug]
+[gitlab.artifacts.s3.debug]
 bucket = "idf-artifacts"
-zip_first = true
-build_dir_pattern = "**/build*/"
 patterns = [
-    'bootloader/*.map',
-    'bootloader/*.elf',
-    '*.map',
-    '*.elf',
+    '**/build*/bootloader/*.map',
+    '**/build*/bootloader/*.elf',
+    '**/build*/*.map',
+    '**/build*/*.elf',
     # customized
-    'esp_tee/*.map',
-    'esp_tee/*.elf',
-    'gdbinit/*',
+    '**/build*/esp_tee/*.map',
+    '**/build*/esp_tee/*.elf',
+    '**/build*/gdbinit/*',
 ]
-if_clause = 'CI_JOB_GROUP_NAME != "build_non_test_related_apps"'
 
-[gitlab.artifacts.s3.configs.flash]
+[gitlab.artifacts.s3.flash]
 bucket = "idf-artifacts"
-zip_first = true
-build_dir_pattern = "**/build*/"
 patterns = [
-    'bootloader/*.bin',
-    '*.bin',
-    'partition_table/*.bin',
-    'flasher_args.json',
-    'flash_project_args',
-    'config/sdkconfig.json',
-    'sdkconfig',
-    'project_description.json',
+    '**/build*/bootloader/*.bin',
+    '**/build*/*.bin',
+    '**/build*/partition_table/*.bin',
+    '**/build*/flasher_args.json',
+    '**/build*/flash_project_args',
+    '**/build*/config/sdkconfig.json',
+    '**/build*/sdkconfig',
+    '**/build*/project_description.json',
     # customized
-    'esp_tee/*.bin',
+    '**/build*/esp_tee/*.bin',
 ]
-if_clause = 'CI_JOB_GROUP_NAME != "build_non_test_related_apps"'
 
-[gitlab.artifacts.s3.configs.app_extra]
-bucket = "idf-artifacts"
-# App-dir files needed at target-test time but outside build_* (uploaded without --build-dir).
-# Add patterns here as needed, e.g. coverage info produced during build.
-patterns = [
-    '**/managed_components/**/*.py',
-]
-if_clause = 'CI_JOB_GROUP_NAME != "build_non_test_related_apps"'
-
-[gitlab.artifacts.s3.configs.log]
+[gitlab.artifacts.s3.log]
 bucket = "idf-artifacts"
 patterns = [
     '**/build*/build_log.txt',
-]
-
-[gitlab.artifacts.s3.configs.size]
-bucket = "idf-artifacts"
-patterns = [
     '**/build*/size*.json',
 ]
-if_clause = 'CI_JOB_STAGE == "build"'
 
-[gitlab.artifacts.s3.configs.junit]
+[gitlab.artifacts.s3.junit]
 bucket = "idf-artifacts"
 patterns = [
     '**/XUNIT_RESULT_*.xml',
     '**/build_summary_*.xml',
 ]
 
-[gitlab.artifacts.s3.configs.env]
+[gitlab.artifacts.s3.env]
 bucket = "idf-artifacts"
 patterns = [
     '**/pipeline.env',
 ]
 
-[gitlab.artifacts.s3.configs.longterm]
+[gitlab.artifacts.s3.longterm]
 bucket = "longterm"
-if_clause = 'CI_COMMIT_REF_PROTECTED == "true" and CI_JOB_STAGE == "build"'
+if_clause = 'CI_COMMIT_REF_NAME == "master"'
 patterns = [
     '**/build*/size*.json',
 ]

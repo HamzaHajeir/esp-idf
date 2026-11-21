@@ -32,15 +32,14 @@
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
 static uint8_t ext_adv_pattern_1[] = {
-    0x02, BLE_HS_ADV_TYPE_FLAGS, 0x06,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0xab, 0xcd,
-    0x03, BLE_HS_ADV_TYPE_COMP_UUIDS16, 0x5B, 0x18,
-    0x11, BLE_HS_ADV_TYPE_COMP_NAME, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
+    0x02, 0x01, 0x06,
+    0x03, 0x03, 0xab, 0xcd,
+    0x03, 0x03, 0x5B, 0x18,
+    0x11, 0X09, 'n', 'i', 'm', 'b', 'l', 'e', '-', 'b', 'l', 'e', 'p', 'r', 'p', 'h', '-', 'e',
 };
 #endif
 static const char *tag = "NimBLE_BLE_CHAN_REFLECTOR";
 static int bleprph_gap_event(struct ble_gap_event *event, void *arg);
-static uint8_t own_addr_type;
 void ble_store_config_init(void);
 
 struct ble_cs_event ranging_subevent;
@@ -71,17 +70,13 @@ void print_cs_event(const struct ble_cs_event *event)
             MODLOG_DFLT(INFO, "subev_result.num_antenna_paths = %u\n", event->subev_result.num_antenna_paths);
             MODLOG_DFLT(INFO, "subev_result.num_steps_reported = %u\n", event->subev_result.num_steps_reported);
 
-            {
-                const uint8_t *p = (const uint8_t *)event->subev_result.steps;
-                for (int i = 0; i < event->subev_result.num_steps_reported; i++) {
-                    const struct cs_steps_data *step = (const struct cs_steps_data *)p;
-                    MODLOG_DFLT(INFO, "steps[%d]: mode=%u, channel=%u, data_len=%u, data=", i, step->mode, step->channel, step->data_len);
-                    for (int j = 0; j < step->data_len; j++) {
-                        esp_rom_printf("%02x ", step->data[j]);
-                    }
-                    esp_rom_printf("\n");
-                    p += sizeof(struct cs_steps_data) + step->data_len;
+            for (int i = 0; i < event->subev_result.num_steps_reported; i++) {
+                const struct cs_steps_data *step = &event->subev_result.steps[i];
+                MODLOG_DFLT(INFO, "steps[%d]: mode=%u, channel=%u, data_len=%u, data=", i, step->mode, step->channel, step->data_len);
+                for (int j = 0; j < step->data_len; j++) {
+                    esp_rom_printf("%02x ", step->data[j]);
                 }
+                esp_rom_printf("\n");
             }
             break;
         case BLE_CS_EVENT_SUBEVET_RESULT_CONTINUE:
@@ -93,17 +88,13 @@ void print_cs_event(const struct ble_cs_event *event)
             MODLOG_DFLT(INFO, "subev_result_continue.num_antenna_paths = %u\n", event->subev_result_continue.num_antenna_paths);
             MODLOG_DFLT(INFO, "subev_result_continue.num_steps_reported = %u\n", event->subev_result_continue.num_steps_reported);
 
-            {
-                const uint8_t *p = (const uint8_t *)event->subev_result_continue.steps;
-                for (int i = 0; i < event->subev_result_continue.num_steps_reported; i++) {
-                    const struct cs_steps_data *step = (const struct cs_steps_data *)p;
-                    MODLOG_DFLT(INFO, "steps[%d]: mode=%u, channel=%u, data_len=%u, data=", i, step->mode, step->channel, step->data_len);
-                    for (int j = 0; j < step->data_len; j++) {
-                        esp_rom_printf("%02x ", step->data[j]);
-                    }
-                    esp_rom_printf("\n");
-                    p += sizeof(struct cs_steps_data) + step->data_len;
+            for (int i = 0; i < event->subev_result_continue.num_steps_reported; i++) {
+                const struct cs_steps_data *step = &event->subev_result_continue.steps[i];
+                MODLOG_DFLT(INFO, "steps[%d]: mode=%u, channel=%u, data_len=%u, data=", i, step->mode, step->channel, step->data_len);
+                for (int j = 0; j < step->data_len; j++) {
+                    esp_rom_printf("%02x ", step->data[j]);
                 }
+                esp_rom_printf("\n");
             }
 
             break;
@@ -125,14 +116,12 @@ static int blecs_gap_event(struct ble_cs_event *event, void *arg)
                 most_recent_local_ranging_counter=event->subev_result.procedure_counter;
 
             } else if(event->subev_result.procedure_done_status == BLE_HCI_LE_CS_SUBEVENT_DONE_STATUS_PARTIAL) {
-               memset(&ranging_subevent, 0, sizeof(ranging_subevent));
-               ranging_subevent.type = BLE_CS_EVENT_SUBEVET_RESULT;
-               ranging_subevent.subev_result = event->subev_result;
+               ranging_subevent.type=BLE_CS_EVENT_SUBEVET_RESULT;
+               ranging_subevent.subev_result= event->subev_result;
                idx++;
                 if (idx==1) {
                     most_recent_local_ranging_counter=event->subev_result.procedure_counter;
                 }
-                ble_gatts_store_ranging_data(ranging_subevent);
                 MODLOG_DFLT(INFO, "LE CS Subevent Result , status: Partial, procedure counter %d\n", event->subev_result.procedure_counter);
             } else {
                 MODLOG_DFLT(INFO, "LE CS Subevent Result , status: Unknown\n");
@@ -144,21 +133,15 @@ static int blecs_gap_event(struct ble_cs_event *event, void *arg)
                 MODLOG_DFLT(INFO, "LE CS Subevent Result Continue , status: Aborted\n");
             } else if ( event->subev_result_continue.procedure_done_status == BLE_HCI_LE_CS_SUBEVENT_DONE_STATUS_COMPLETE) {
                 MODLOG_DFLT(INFO, "LE CS Subevent Result Continue , status: Complete\n");
+                ranging_subevent.subev_result_continue = event->subev_result_continue;
                 /* To
                 * Get total number of CS procedure from CS enable event and then accordigly indicate to most recent ranging counter
                 Currently we are considering only one CS procedure
                 */
                ind ++;
                if (ind==1) {
-#if MYNEWT_VAL(BLE_GATTS) && CONFIG_BT_NIMBLE_RAS_SERVICE
-	           struct ble_cs_event continue_event;
-                   continue_event.type = BLE_CS_EVENT_SUBEVET_RESULT_CONTINUE;
-                   continue_event.subev_result_continue = event->subev_result_continue;
-                   ble_gatts_store_ranging_data(continue_event);
-                   ble_gatts_indicate_ranging_data_ready(most_recent_local_ranging_counter);
-                   idx = 0;
-                   ind = 0;
-#endif
+                ble_gatts_store_ranging_data(ranging_subevent);
+                ble_gatts_indicate_ranging_data_ready(most_recent_local_ranging_counter);
                }
             }
 
@@ -214,8 +197,8 @@ ext_bleprph_advertise(void)
     memset (&params, 0, sizeof(params));
     /* enable connectable advertising */
     params.connectable = 1;
-    /* advertise using the inferred address type */
-    params.own_addr_type = own_addr_type;
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_PUBLIC;
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
     params.sid = 1;
@@ -240,9 +223,6 @@ ext_bleprph_advertise(void)
 
     /* start advertising */
     rc = ble_gap_ext_adv_start(instance, 0, 0);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error starting extended advertisement; rc=%d\n", rc);
-    }
 }
 #else
 /**
@@ -255,9 +235,7 @@ bleprph_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     const char *name;
-#endif
     int rc;
     /**
      *  Set the advertisement data included in our advertisements:
@@ -279,16 +257,13 @@ bleprph_advertise(void)
      */
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
-#endif
-    static const ble_uuid16_t uuids16[] = {
+    fields.uuids16 = (ble_uuid16_t[]) {
         BLE_UUID16_INIT(BLE_UUID_RANGING_SERVICE_VAL)
     };
-    fields.uuids16 = uuids16;
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
     rc = ble_gap_adv_set_fields(&fields);
@@ -300,7 +275,7 @@ bleprph_advertise(void)
     memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER,
+    rc = ble_gap_adv_start(0, NULL, BLE_HS_FOREVER,
                            &adv_params, bleprph_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
@@ -355,9 +330,6 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
         bleprph_print_conn_desc(&event->disconnect.conn);
         MODLOG_DFLT(INFO, "\n");
-        idx = 0;
-        ind = 0;
-        most_recent_local_ranging_counter = -1;
         /* Connection terminated; resume advertising. */
 #if CONFIG_EXAMPLE_EXTENDED_ADV
         ext_bleprph_advertise();
@@ -390,7 +362,7 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
         rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
         assert(rc == 0);
         bleprph_print_conn_desc(&desc);
-        struct ble_cs_reflector_setup_params params = {0};
+        struct ble_cs_reflector_setup_params params;
         params.cb=blecs_gap_event;
         ble_cs_reflector_setup(&params);
 
@@ -404,10 +376,8 @@ bleprph_gap_event(struct ble_gap_event *event, void *arg)
                     event->notify_tx.indication);
 
         if (event->notify_tx.status == BLE_HS_EDONE) {
-#if MYNEWT_VAL(BLE_GATTS) && CONFIG_BT_NIMBLE_RAS_SERVICE
-    	    vTaskDelay(4000 / portTICK_PERIOD_MS);
+            vTaskDelay(4000 / portTICK_PERIOD_MS);
             ble_gatts_indicate_control_point_response(event->notify_tx.attr_handle,most_recent_local_ranging_counter);
-#endif
         }
         return 0;
     case BLE_GAP_EVENT_SUBSCRIBE:
@@ -434,22 +404,18 @@ static void
 bleprph_on_reset(int reason)
 {
     MODLOG_DFLT(ERROR, "Resetting state; reason=%d\n", reason);
-    idx = 0;
-    ind = 0;
-    most_recent_local_ranging_counter = -1;
 }
 
 static void
 bleprph_on_sync(void)
 {
     int rc;
+    uint8_t own_addr_type = 0;
     /* Make sure we have set Host feature bit for Channel Sounding*/
     rc = ble_gap_set_host_feat(47,0x01);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error setting host feature; rc=%d\n", rc);
-    }
     /* Make sure we have proper identity address set (public preferred) */
     rc = ble_hs_util_ensure_addr(0);
+
     assert(rc == 0);
     /* Figure out address to use while advertising (no privacy for now) */
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
@@ -496,9 +462,7 @@ app_main(void)
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = bleprph_on_reset;
     ble_hs_cfg.sync_cb = bleprph_on_sync;
-#if MYNEWT_VAL(BLE_GATTS) && CONFIG_BT_NIMBLE_RAS_SERVICE
     ble_hs_cfg.gatts_register_cb = custom_gatt_svr_register_cb;
-#endif
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
     ble_hs_cfg.sm_io_cap = 0x03;
 #ifdef CONFIG_EXAMPLE_BONDING
@@ -524,11 +488,9 @@ app_main(void)
 #endif
     rc = custom_gatt_svr_init();
     assert(rc == 0);
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     /* Set the default device name. */
     rc = ble_svc_gap_device_name_set("nimble-ble_chan_reflector");
     assert(rc == 0);
-#endif
     /* XXX Need to have template for store */
     ble_store_config_init();
     nimble_port_freertos_init(bleprph_host_task);

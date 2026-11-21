@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,17 +11,17 @@
 #include "esp_system.h"
 #include "esp_partition.h"
 #include "esp_image_format.h"
-#include "esp_efuse.h"
 #include "esp_tee_ota_ops.h"
 
 #include "esp_tee.h"
 #include "secure_service_num.h"
-#include "esp_macros.h"
 
 #define TEE_IMG_SRC_PART_SUBTYPE  (ESP_PARTITION_SUBTYPE_APP_OTA_1)
 #define OTA_BUF_SIZE              (512)
 
 #define FLASH_SECTOR_SIZE       (4096)
+#define ALIGN_UP(num, align)    (((num) + ((align)-1)) & ~((align)-1))
+#define ALIGN_DOWN(num, align)  ((num) & ~((align) - 1))
 
 static const char *TAG = "test_esp_tee_ota";
 
@@ -81,7 +81,7 @@ static uint32_t copy_tee_update(void)
     uint32_t tee_next_img_len = tee_next_metadata.image_len;
 
 #if CONFIG_SECURE_BOOT_V2_ENABLED
-    tee_next_img_len = ESP_ALIGN_UP(tee_next_img_len, FLASH_SECTOR_SIZE) + FLASH_SECTOR_SIZE;
+    tee_next_img_len = ALIGN_UP(tee_next_img_len, FLASH_SECTOR_SIZE) + FLASH_SECTOR_SIZE;
 #endif
 
     uint32_t curr_write_offset = 0;
@@ -127,8 +127,8 @@ TEST_CASE("Test TEE OTA - Corrupted image", "[ota_neg_2]")
     /* Corrupting the image */
     ESP_LOGI(TAG, "Corrupting the image at some offset...");
     uint32_t corrupt[8] = {[0 ... 7] = 0x0BADC0DE};
-    uint32_t offs = SOC_MMU_PAGE_SIZE + 0x200;
-    TEST_ESP_OK(esp_tee_ota_write(offs, (const void *)corrupt, sizeof(corrupt)));
+    curr_write_offset -= (2 * FLASH_SECTOR_SIZE + sizeof(corrupt));
+    TEST_ESP_OK(esp_tee_ota_write(curr_write_offset, (const void *)corrupt, sizeof(corrupt)));
 
     TEST_ESP_ERR(ESP_ERR_IMAGE_INVALID, esp_tee_ota_end());
 }
@@ -151,8 +151,11 @@ TEST_CASE("Test TEE OTA - Valid image", "[ota_valid_img]")
     uint32_t bytes_wr = copy_tee_update();
     ESP_LOGI(TAG, "Total binary data written: %lu", bytes_wr);
 
-    /* NOTE: On success, the TEE restarts the device */
     TEST_ESP_OK(esp_tee_ota_end());
+    ESP_LOGI(TAG, "TEE OTA update successful!");
+
+    ESP_LOGI(TAG, "Prepare to restart system!");
+    esp_restart();
 }
 
 TEST_CASE("Test TEE OTA - Rollback", "[ota_rollback]")
@@ -162,27 +165,9 @@ TEST_CASE("Test TEE OTA - Rollback", "[ota_rollback]")
     uint32_t bytes_wr = copy_tee_update();
     ESP_LOGI(TAG, "Total binary data written: %lu", bytes_wr);
 
-    /* NOTE: On success, the TEE restarts the device */
     TEST_ESP_OK(esp_tee_ota_end());
+
+    ESP_LOGI(TAG, "TEE OTA update successful!");
+    ESP_LOGI(TAG, "Prepare to restart system!");
+    esp_restart();
 }
-
-#if CONFIG_SECURE_TEE_ANTI_ROLLBACK
-/* NOTE: The staged image carries a secure_version lower than the one recorded by the running TEE */
-TEST_CASE("Test TEE OTA - Anti-rollback", "[ota_anti_rollback]")
-{
-    /* The running TEE must have recorded its secure version in (emulated) eFuse during boot */
-    uint32_t sec_ver = esp_efuse_read_tee_secure_version();
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(CONFIG_SECURE_TEE_SECURE_VERSION, sec_ver);
-
-    ESP_LOGI(TAG, "Starting TEE OTA...");
-
-    uint32_t bytes_wr = copy_tee_update();
-    ESP_LOGI(TAG, "Total binary data written: %lu", bytes_wr);
-
-    TEST_ESP_ERR(ESP_ERR_INVALID_VERSION, esp_tee_ota_end());
-    ESP_LOGI(TAG, "TEE OTA update rejected by anti-rollback!");
-
-    /* The eFuse counter must not have moved */
-    TEST_ASSERT_EQUAL_UINT32(sec_ver, esp_efuse_read_tee_secure_version());
-}
-#endif

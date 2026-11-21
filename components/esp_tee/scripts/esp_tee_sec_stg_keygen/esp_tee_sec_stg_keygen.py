@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+import argparse
 import os
 import struct
 from enum import Enum
 from enum import IntFlag
+from typing import Any
 
-import rich_click as click
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from esp_pylib.logger import log
 
 # === Constants ===
 SEC_STG_KEY_DATA_SZ = 256
 AES_KEY_LEN = 32
+AES_DEFAULT_IV_LEN = 16
+AES_GCM_IV_LEN = 12
 ECDSA_P256_LEN = 32
+ECDSA_P192_LEN = 24
 ECDSA_P384_LEN = 48
 
 
@@ -24,6 +27,7 @@ ECDSA_P384_LEN = 48
 class KeyType(Enum):
     AES256 = 0
     ECDSA_P256 = 1
+    ECDSA_P192 = 2
     ECDSA_P384 = 3
 
 
@@ -31,7 +35,6 @@ class KeyType(Enum):
 class Flags(IntFlag):
     NONE = 0x00000000
     WRITE_ONCE = 0x00000001
-    TEE_ONLY = 0x00000002
 
 
 # === Key Generators ===
@@ -46,10 +49,22 @@ def generate_aes256_key(flags: Flags, key_file: str | None = None) -> bytes:
             raise ValueError('AES key file must be at least 32 bytes long')
 
         key = key_data[:AES_KEY_LEN]
+        iv_data = key_data[AES_KEY_LEN:]
+
+        iv_len = len(iv_data)
+        if iv_len == 0:
+            iv = os.urandom(AES_DEFAULT_IV_LEN)
+        elif iv_len == AES_GCM_IV_LEN:
+            iv = iv_data + b'\x00' * (AES_DEFAULT_IV_LEN - AES_GCM_IV_LEN)
+        elif iv_len == AES_DEFAULT_IV_LEN:
+            iv = iv_data
+        else:
+            raise ValueError('IV length must be exactly 12 or 16 bytes, or omitted to generate one')
     else:
         key = os.urandom(AES_KEY_LEN)
+        iv = os.urandom(AES_DEFAULT_IV_LEN)
 
-    packed = struct.pack('<II32s', KeyType.AES256.value, flags.value, key)
+    packed = struct.pack('<II32s16s', KeyType.AES256.value, flags.value, key, iv)
     return packed + b'\x00' * (SEC_STG_KEY_DATA_SZ - len(packed))
 
 
@@ -78,6 +93,8 @@ def generate_key_data(key_type: KeyType, flags: Flags, input_file: str | None) -
         return generate_aes256_key(flags, input_file)
     elif key_type == KeyType.ECDSA_P256:
         return generate_ecdsa_key(ec.SECP256R1(), key_type, ECDSA_P256_LEN, flags, input_file)
+    elif key_type == KeyType.ECDSA_P192:
+        return generate_ecdsa_key(ec.SECP192R1(), key_type, ECDSA_P192_LEN, flags, input_file)
     elif key_type == KeyType.ECDSA_P384:
         return generate_ecdsa_key(ec.SECP384R1(), key_type, ECDSA_P384_LEN, flags, input_file)
     else:
@@ -87,73 +104,56 @@ def generate_key_data(key_type: KeyType, flags: Flags, input_file: str | None) -
 # === CLI ===
 
 
-@click.command(context_settings=dict(help_option_names=['-h', '--help']))
-@click.option(
-    '-k',
-    '--key-type',
-    'key_type',
-    type=click.Choice([e.name.lower() for e in KeyType], case_sensitive=False),
-    required=True,
-    help='key type to be processed',
-)
-@click.option(
-    '-o',
-    '--output',
-    required=True,
-    help='output binary file name',
-)
-@click.option(
-    '-i',
-    '--input',
-    'input_file',
-    default=None,
-    help='input key file (.pem for ecdsa, .bin for aes)',
-)
-@click.option(
-    '--write-once',
-    is_flag=True,
-    default=False,
-    help='make key persistent - cannot be modified or deleted once written',
-)
-@click.option(
-    '--tee-only',
-    is_flag=True,
-    default=False,
-    help='mark key as owned exclusively by the TEE - the REE cannot use, generate or clear it',
-)
-def main(key_type: str, output: str, input_file: str | None, write_once: bool, tee_only: bool) -> None:
-    """Generate or import a cryptographic key structure for secure storage."""
-    selected_type = KeyType[key_type.upper()]
-    flags = Flags.NONE
-    if write_once:
-        flags |= Flags.WRITE_ONCE
-    if tee_only:
-        flags |= Flags.TEE_ONLY
-
-    log.print(
-        f'[+] Generating key of type: {selected_type.name} (value: {selected_type.value})',
-        markup=False,
-        soft_wrap=True,
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Generate or import a cryptographic key structure for secure storage')
+    parser.add_argument(
+        '-k',
+        '--key-type',
+        type=str,
+        choices=[e.name.lower() for e in KeyType],
+        required=True,
+        help='key type to be processed',
     )
-    if input_file:
-        log.print(f'[+] Using user-provided key file: {input_file}', markup=False, soft_wrap=True)
-    if write_once:
-        log.print('[+] WRITE_ONCE flag is set', markup=False, soft_wrap=True)
-    if tee_only:
-        log.print('[+] TEE_ONLY flag is set', markup=False, soft_wrap=True)
+    parser.add_argument(
+        '-o',
+        '--output',
+        required=True,
+        help='output binary file name',
+    )
+    parser.add_argument(
+        '-i',
+        '--input',
+        help='input key file (.pem for ecdsa, .bin for aes)',
+    )
+    parser.add_argument(
+        '--write-once',
+        action='store_true',
+        help='make key persistent - cannot be modified or deleted once written',
+    )
+    return parser.parse_args()
 
-    try:
-        key_data = generate_key_data(selected_type, flags, input_file)
-        with open(output, 'wb') as f:
-            f.write(key_data)
-    except (ValueError, OSError) as e:
-        raise click.ClickException(str(e))
 
-    log.print(f'[✓] Key written to {output}', markup=False, soft_wrap=True)
+def main() -> None:
+    args: Any = parse_args()
+
+    key_type = KeyType[args.key_type.upper()]
+    flags = Flags.NONE
+    if args.write_once:
+        flags |= Flags.WRITE_ONCE
+
+    print(f'[+] Generating key of type: {key_type.name} (value: {key_type.value})')
+    if args.input:
+        print(f'[+] Using user-provided key file: {args.input}')
+    if args.write_once:
+        print('[+] WRITE_ONCE flag is set')
+
+    key_data = generate_key_data(key_type, flags, args.input)
+
+    with open(args.output, 'wb') as f:
+        f.write(key_data)
+
+    print(f'[✓] Key written to {args.output}')
 
 
 if __name__ == '__main__':
-    from esp_pylib.excepthook import install_exception_reporting
-
-    install_exception_reporting()
     main()

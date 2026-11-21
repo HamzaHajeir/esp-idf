@@ -2266,12 +2266,17 @@ void bta_hh_le_input_rpt_notify(tBTA_GATTC_NOTIFY *p_data)
         p_buf = p_data->value;
     }
 
-    if (p_buf == p_data->value) {
-        bta_hh_le_co_data((UINT8)p_dev_cb->hid_handle, p_buf, p_data->len, p_dev_cb->mode, 0, /* no sub class*/
-                          p_dev_cb->dscp_info.ctry_code, p_dev_cb->addr, app_id);
-    } else {
-        bta_hh_le_co_data_owned((UINT8)p_dev_cb->hid_handle, p_buf, p_data->len, p_dev_cb->mode, 0, /* no sub class*/
-                                p_dev_cb->dscp_info.ctry_code, p_dev_cb->addr, app_id);
+    bta_hh_co_data((UINT8)p_dev_cb->hid_handle,
+                   p_buf,
+                   p_data->len,
+                   p_dev_cb->mode,
+                   0 , /* no sub class*/
+                   p_dev_cb->dscp_info.ctry_code,
+                   p_dev_cb->addr,
+                   app_id);
+
+    if (p_buf != p_data->value) {
+        osi_free(p_buf);
     }
 }
 
@@ -2600,9 +2605,8 @@ static void bta_hh_le_add_dev_bg_conn(tBTA_HH_DEV_CB *p_cb, BOOLEAN check_bond)
         BTA_GATTC_Enh_Open(bta_hh_cb.gatt_if, p_cb->addr, BLE_ADDR_UNKNOWN_TYPE, FALSE,
                 BTA_GATT_TRANSPORT_LE, FALSE, BLE_ADDR_UNKNOWN_TYPE, false, 0xFF, 0xFF, 0, NULL, NULL);
         p_cb->in_bg_conn = TRUE;
-#if (BLE_GATT_BGCONN == TRUE)
+
         BTA_DmBleSetBgConnType(BTA_DM_BLE_CONN_AUTO, NULL);
-#endif // (BLE_GATT_BGCONN == TRUE)
     }
     return;
 }

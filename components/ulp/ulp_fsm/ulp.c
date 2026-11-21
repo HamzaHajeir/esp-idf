@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2010-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2010-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,13 +30,6 @@
 
 #include "esp_check.h"
 #include "esp_private/rtc_ctrl.h"
-#include "esp_private/periph_ctrl.h"
-
-#if SOC_RTC_CNTL_NEEDS_ATOMIC_ACCESS
-#define RTC_CNTL_ATOMIC() PERIPH_RCC_ATOMIC()
-#else
-#define RTC_CNTL_ATOMIC()
-#endif
 
 typedef struct {
     uint32_t magic;
@@ -53,10 +46,7 @@ static const char* TAG = "ulp";
 esp_err_t ulp_isr_register(intr_handler_t fn, void *arg)
 {
     ESP_RETURN_ON_FALSE(fn, ESP_ERR_INVALID_ARG, TAG, "ULP ISR is NULL");
-    /* Enable the interrupt bit atomically to avoid race condition with other code accessing RTC_CNTL_INT_ENA_REG */
-    RTC_CNTL_ATOMIC() {
-        REG_SET_BIT(RTC_CNTL_INT_ENA_REG, RTC_CNTL_ULP_CP_INT_ENA_M);
-    }
+    REG_SET_BIT(RTC_CNTL_INT_ENA_REG, RTC_CNTL_ULP_CP_INT_ENA_M);
 #if CONFIG_IDF_TARGET_ESP32
     return rtc_isr_register(fn, arg, RTC_CNTL_SAR_INT_ST_M, 0);
 #else
@@ -67,10 +57,7 @@ esp_err_t ulp_isr_register(intr_handler_t fn, void *arg)
 esp_err_t ulp_isr_deregister(intr_handler_t fn, void *arg)
 {
     ESP_RETURN_ON_FALSE(fn, ESP_ERR_INVALID_ARG, TAG, "ULP ISR is NULL");
-    /* Disable the interrupt bit atomically to avoid race condition with other code accessing RTC_CNTL_INT_ENA_REG */
-    RTC_CNTL_ATOMIC() {
-        REG_CLR_BIT(RTC_CNTL_INT_ENA_REG, RTC_CNTL_ULP_CP_INT_ENA_M);
-    }
+    REG_CLR_BIT(RTC_CNTL_INT_ENA_REG, RTC_CNTL_ULP_CP_INT_ENA_M);
     return rtc_isr_deregister(fn, arg);
 }
 
@@ -154,13 +141,6 @@ esp_err_t ulp_load_binary(uint32_t load_addr, const uint8_t* program_binary, siz
     }
 
     size_t text_data_size = header.text_size + header.data_size;
-    if (text_data_size > CONFIG_ULP_COPROC_RESERVE_MEM - load_addr_bytes) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    if ((size_t) header.bss_size > CONFIG_ULP_COPROC_RESERVE_MEM - load_addr_bytes - text_data_size) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
     uint8_t* base = (uint8_t*) RTC_SLOW_MEM;
 
     memcpy(base + load_addr_bytes, program_binary + header.text_offset, text_data_size);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,11 +22,8 @@
 #include "hal/hal_utils.h"
 
 #define I2S_LL_GET(_attr)       I2S_LL_ ## _attr
-#define I2S_LL_SUPPORT(_feat)   I2S_LL_SUPPORT_ ## _feat
 #define I2S_LL_BUS_WIDTH        24
 #define I2S_LL_INST_NUM         2
-#define I2S_LL_PCM2PDM_SUPPORTED_PORT_MASK    (1U << 0)  // PCM2PDM is supported on I2S0
-#define I2S_LL_PDM2PCM_SUPPORTED_PORT_MASK    (1U << 0)  // PDM2PCM is supported on I2S0
 #define I2S_LL_TRANS_SIZE_ALIGN_WORD  1  // I2S DMA transfer size must be aligned to word
 #define I2S_LL_ADC_DAC_CAPABLE        1  // I2S supports to connect to ADC / DAC converters
 
@@ -46,7 +43,6 @@ extern "C" {
 #define I2S_LL_BCK_MAX_PRESCALE   (64)
 
 #define I2S_LL_EVENT_RX_EOF         BIT(9)
-#define I2S_LL_EVENT_TX_DONE        BIT(11)
 #define I2S_LL_EVENT_TX_EOF         BIT(12)
 #define I2S_LL_EVENT_RX_DSCR_ERR    BIT(13)
 #define I2S_LL_EVENT_TX_DSCR_ERR    BIT(14)
@@ -329,28 +325,6 @@ static inline void i2s_ll_rx_clk_set_src(i2s_dev_t *hw, i2s_clock_src_t src)
 }
 
 /**
- * @brief Get TX source clock
- *
- * @param hw Peripheral I2S hardware instance address.
- * @return Current TX clock source (i2s_clock_src_t).
- */
-static inline i2s_clock_src_t i2s_ll_tx_clk_get_src(i2s_dev_t *hw)
-{
-    return (hw->clkm_conf.clka_en) ? (i2s_clock_src_t)I2S_CLK_SRC_APLL : (i2s_clock_src_t)I2S_CLK_SRC_PLL_160M;
-}
-
-/**
- * @brief Get RX source clock
- *
- * @param hw Peripheral I2S hardware instance address.
- * @return Current RX clock source (i2s_clock_src_t).
- */
-static inline i2s_clock_src_t i2s_ll_rx_clk_get_src(i2s_dev_t *hw)
-{
-    return (hw->clkm_conf.clka_en) ? (i2s_clock_src_t)I2S_CLK_SRC_APLL : (i2s_clock_src_t)I2S_CLK_SRC_PLL_160M;
-}
-
-/**
  * @brief Set I2S tx bck div num
  *
  * @param hw Peripheral I2S hardware instance address.
@@ -543,7 +517,6 @@ static inline void i2s_ll_rx_reset_dma(i2s_dev_t *hw)
  *
  * @param hw Peripheral I2S hardware instance address.
  */
-__attribute__((always_inline))
 static inline void i2s_ll_start_out_link(i2s_dev_t *hw)
 {
     hw->out_link.start = 1;
@@ -555,7 +528,6 @@ static inline void i2s_ll_start_out_link(i2s_dev_t *hw)
  * @param hw Peripheral I2S hardware instance address.
  * @param val value to set out link address
  */
-__attribute__((always_inline))
 static inline void i2s_ll_set_out_link_addr(i2s_dev_t *hw, uint32_t val)
 {
     hw->out_link.addr = val;
@@ -587,7 +559,6 @@ static inline void i2s_ll_rx_start(i2s_dev_t *hw)
  * @param hw Peripheral I2S hardware instance address.
  * @param link_addr DMA descriptor link address.
  */
-__attribute__((always_inline))
 static inline void i2s_ll_tx_start_link(i2s_dev_t *hw, uint32_t link_addr)
 {
     i2s_ll_set_out_link_addr(hw, link_addr);
@@ -1154,41 +1125,6 @@ static inline void i2s_ll_enable_builtin_adc_dac(i2s_dev_t *hw, bool enable)
 {
     hw->conf2.lcd_en = enable;
     hw->conf2.camera_en = 0;
-}
-
-/**
- * @brief Set I2S data destination
- */
-static inline void i2s_ll_set_destination(i2s_dev_t *hw, i2s_dir_t dir, i2s_destination_t destination)
-{
-    (void)hw;
-    (void)dir;
-    (void)destination;
-}
-
-/**
- * @brief Check whether an I2S data destination is supported on the specified port
- */
-static inline bool i2s_ll_is_destination_supported(int port_id, i2s_destination_t destination)
-{
-    (void)port_id;
-    return destination == I2S_DESTINATION_DMA;
-}
-
-/**
- * @brief Check whether I2S TX PCM2PDM converter is supported on the specified port
- */
-static inline bool i2s_ll_is_pcm2pdm_supported(int port_id)
-{
-    return (I2S_LL_PCM2PDM_SUPPORTED_PORT_MASK & (1U << port_id)) != 0;
-}
-
-/**
- * @brief Check whether I2S RX PDM2PCM converter is supported on the specified port
- */
-static inline bool i2s_ll_is_pdm2pcm_supported(int port_id)
-{
-    return (I2S_LL_PDM2PCM_SUPPORTED_PORT_MASK & (1U << port_id)) != 0;
 }
 
 #ifdef __cplusplus

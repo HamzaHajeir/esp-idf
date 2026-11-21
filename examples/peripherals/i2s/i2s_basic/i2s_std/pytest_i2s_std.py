@@ -3,13 +3,12 @@
 import pytest
 from pytest_embedded import Dut
 from pytest_embedded_idf.utils import idf_parametrize
-from pytest_embedded_idf.utils import soc_filtered_targets
 
 
 @pytest.mark.generic
 @idf_parametrize(
     'target',
-    soc_filtered_targets('SOC_I2S_SUPPORTED == 1'),
+    ['esp32', 'esp32s2', 'esp32s3', 'esp32c3', 'esp32c5', 'esp32c6', 'esp32h2', 'esp32p4', 'esp32c61'],
     indirect=['target'],
 )
 def test_i2s_basic_example(dut: Dut) -> None:

@@ -462,10 +462,8 @@ static void avdt_msg_bld_multi(UINT8 **p, tAVDT_MSG *p_msg)
 static void avdt_msg_bld_security_cmd(UINT8 **p, tAVDT_MSG *p_msg)
 {
     AVDT_MSG_BLD_SEID(*p, p_msg->security_cmd.hdr.seid);
-    if (p_msg->security_cmd.p_data && p_msg->security_cmd.len > 0) {
-        memcpy(*p, p_msg->security_cmd.p_data, p_msg->security_cmd.len);
-        *p += p_msg->security_cmd.len;
-    }
+    memcpy(*p, p_msg->security_cmd.p_data, p_msg->security_cmd.len);
+    *p += p_msg->security_cmd.len;
 }
 
 /*******************************************************************************
@@ -627,11 +625,6 @@ static UINT8 avdt_msg_prs_cfg(tAVDT_CFG *p_cfg, UINT8 *p, UINT16 len, UINT8 *p_e
             }
         }
 
-        if ((size_t)(p_end - p) < elem_len) {
-            err = AVDT_ERR_LENGTH;
-            break;
-        }
-
         if ((elem_len > avdt_msg_ie_len_max[elem]) ||
                 (elem_len < avdt_msg_ie_len_min[elem])) {
             err = avdt_msg_ie_err[elem];
@@ -738,7 +731,7 @@ static UINT8 avdt_msg_prs_cfg(tAVDT_CFG *p_cfg, UINT8 *p, UINT16 len, UINT8 *p_e
                 tmp = AVDT_CODEC_SIZE - 1;
             }
             p_cfg->num_codec++;
-            p_cfg->codec_info[0] = tmp;
+            p_cfg->codec_info[0] = elem_len;
             memcpy(&p_cfg->codec_info[1], p, tmp);
             p += elem_len;
             break;
@@ -982,18 +975,11 @@ static UINT8 avdt_msg_prs_discover_rsp(tAVDT_MSG *p_msg, UINT8 *p, UINT16 len)
     int     i;
     UINT8   err = 0;
 
-    if (p_msg->discover_rsp.p_sep_info == NULL) {
-        return AVDT_ERR_BAD_STATE;
-    }
-
     /* determine number of seps; seps in msg is len/2, but set to minimum
     ** of seps app has supplied memory for and seps in msg
     */
     if (p_msg->discover_rsp.num_seps > (len / 2)) {
         p_msg->discover_rsp.num_seps = (len / 2);
-    }
-    if (p_msg->discover_rsp.num_seps > AVDT_DIS_RES_MAX_NUM_SEPS) {
-        p_msg->discover_rsp.num_seps = AVDT_DIS_RES_MAX_NUM_SEPS;
     }
 
     /* parse out sep info */
@@ -1032,8 +1018,6 @@ static UINT8 avdt_msg_prs_svccap(tAVDT_MSG *p_msg, UINT8 *p, UINT16 len)
     UINT8   err = avdt_msg_prs_cfg(p_msg->svccap.p_cfg, p, len, &p_msg->hdr.err_param, AVDT_SIG_GETCAP);
     if (p_msg->svccap.p_cfg) {
         p_msg->svccap.p_cfg->psc_mask &= AVDT_LEG_PSC;
-    } else {
-        return AVDT_ERR_BAD_STATE;
     }
 
     return (err);
@@ -1055,8 +1039,6 @@ static UINT8 avdt_msg_prs_all_svccap(tAVDT_MSG *p_msg, UINT8 *p, UINT16 len)
     UINT8   err = avdt_msg_prs_cfg(p_msg->svccap.p_cfg, p, len, &p_msg->hdr.err_param, AVDT_SIG_GET_ALLCAP);
     if (p_msg->svccap.p_cfg) {
         p_msg->svccap.p_cfg->psc_mask &= AVDT_MSG_PSC_MASK;
-    } else {
-        return AVDT_ERR_BAD_STATE;
     }
     return (err);
 }
@@ -1168,10 +1150,6 @@ BOOLEAN avdt_msg_send(tAVDT_CCB *p_ccb, BT_HDR *p_msg)
     /* set the current message if there is a message passed in */
     if (p_msg != NULL) {
         p_ccb->p_curr_msg = p_msg;
-    }
-
-    if (p_ccb->p_curr_msg == NULL) {
-        return FALSE;
     }
 
     /* store copy of curr_msg->len */
@@ -1341,11 +1319,6 @@ BT_HDR *avdt_msg_asmbl(tAVDT_CCB *p_ccb, BT_HDR *p_buf)
             return NULL;
         }
         p_ccb->p_rx_msg = (BT_HDR *)osi_malloc(BT_DEFAULT_BUFFER_SIZE);
-        if (p_ccb->p_rx_msg == NULL) {
-            AVDT_TRACE_ERROR("Cannot alloc buffer for reassembly !!");
-            osi_free(p_buf);
-            return NULL;
-        }
         memcpy(p_ccb->p_rx_msg, p_buf,
                sizeof(BT_HDR) + p_buf->offset + p_buf->len);
 
@@ -1395,16 +1368,10 @@ BT_HDR *avdt_msg_asmbl(tAVDT_CCB *p_ccb, BT_HDR *p_buf)
                        (UINT8 *)(p_buf + 1) + p_buf->offset, p_buf->len);
 
                 if (pkt_type == AVDT_PKT_TYPE_END) {
-                    if (p_ccb->p_rx_msg->len <= p_ccb->p_rx_msg->offset) {
-                        p_ccb->p_rx_msg->offset -= p_ccb->p_rx_msg->len;
-                        p_ccb->p_rx_msg->len += p_buf->len;
-                        p_ret = p_ccb->p_rx_msg;
-                        p_ccb->p_rx_msg = NULL;
-                    } else {
-                        osi_free(p_ccb->p_rx_msg);
-                        p_ccb->p_rx_msg = NULL;
-                        p_ret = NULL;
-                    }
+                    p_ccb->p_rx_msg->offset -= p_ccb->p_rx_msg->len;
+                    p_ccb->p_rx_msg->len += p_buf->len;
+                    p_ret = p_ccb->p_rx_msg;
+                    p_ccb->p_rx_msg = NULL;
                 } else {
                     p_ccb->p_rx_msg->offset += p_buf->len;
                     p_ccb->p_rx_msg->len += p_buf->len;
@@ -1437,10 +1404,6 @@ void avdt_msg_send_cmd(tAVDT_CCB *p_ccb, void *p_scb, UINT8 sig_id, tAVDT_MSG *p
     BT_HDR      *p_buf;
     UINT8       *p;
     UINT8       *p_start;
-
-    if (sig_id < AVDT_SIG_DISCOVER || sig_id > AVDT_SIG_MAX) {
-        return;
-    }
 
     /* get a buffer */
     p_buf = (BT_HDR *) osi_malloc(AVDT_CMD_BUF_SIZE);
@@ -1506,10 +1469,6 @@ void avdt_msg_send_rsp(tAVDT_CCB *p_ccb, UINT8 sig_id, tAVDT_MSG *p_params)
     BT_HDR      *p_buf;
     UINT8       *p;
     UINT8       *p_start;
-
-    if (sig_id < AVDT_SIG_DISCOVER || sig_id > AVDT_SIG_MAX) {
-        return;
-    }
 
     /* get a buffer */
     p_buf = (BT_HDR *) osi_malloc(AVDT_CMD_BUF_SIZE);
@@ -1697,11 +1656,7 @@ void avdt_msg_ind(tAVDT_CCB *p_ccb, BT_HDR *p_buf)
         gen_rej = TRUE;
         if (p_ccb->p_curr_cmd != NULL) {
             msg.hdr.sig_id = sig = (UINT8) p_ccb->p_curr_cmd->event;
-            if (sig >= AVDT_SIG_DISCOVER && sig <= AVDT_SIG_MAX) {
-                evt = avdt_msg_rej_2_evt[sig - 1];
-            } else {
-                ok = FALSE;
-            }
+            evt = avdt_msg_rej_2_evt[sig - 1];
             msg.hdr.err_code = AVDT_ERR_NSC;
             msg.hdr.err_param = 0;
         }

@@ -18,11 +18,11 @@ In most cases, no application behavior changes are expected, except for reduced 
 
     **Breaking change:** It is not possible to redefine stdin, stdout, and stderr for specific tasks as was possible with Newlib. These streams are global and shared between all tasks. This is POSIX-standardized behavior.
 
-:menuitem:`CONFIG_LIBC_PICOLIBC_NEWLIB_COMPATIBILITY`, which is enabled by default, provides limited compatibility with Newlib by providing thread-local copies of ``global stdin``, ``stdout``, ``stderr``, and the ``getreent()`` implementation. If a library built with Newlib headers operates with "internal" fields of "struct reent", there may be task stack corruption. Note that manipulating ``struct reent`` fields is expected only by the Newlib library itself.
+:ref:`CONFIG_LIBC_PICOLIBC_NEWLIB_COMPATIBILITY`, which is enabled by default, provides limited compatibility with Newlib by providing thread-local copies of ``global stdin``, ``stdout``, ``stderr``, and the ``getreent()`` implementation. If a library built with Newlib headers operates with "internal" fields of "struct reent", there may be task stack corruption. Note that manipulating ``struct reent`` fields is expected only by the Newlib library itself.
 
-If you are not linking against external libraries built against Newlib headers, you may disable :menuitem:`CONFIG_LIBC_PICOLIBC_NEWLIB_COMPATIBILITY` to save a small amount of memory.
+If you are not linking against external libraries built against Newlib headers, you may disable :ref:`CONFIG_LIBC_PICOLIBC_NEWLIB_COMPATIBILITY` to save a small amount of memory.
 
-Newlib is still maintained in ESP-IDF toolchains. To switch to using it, select Newlib in menuconfig via the option LIBC_NEWLIB in :menuitem:`CONFIG_LIBC`.
+Newlib is still maintained in ESP-IDF toolchains. To switch to using it, select Newlib in menuconfig via the option LIBC_NEWLIB in :ref:`CONFIG_LIBC`.
 
 Comparison of Newlib vs Picolibc
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -68,7 +68,7 @@ The test code was compiled with both Newlib and Picolibc, and the results were c
 
 .. note::
 
-    Even when :menuitem:`CONFIG_LIBC_NEWLIB_NANO_FORMAT` is enabled, which disables float formatting, applications with Picolibc are still smaller by 6% (224,592 vs 239,888 bytes).
+    Even when :ref:`CONFIG_LIBC_NEWLIB_NANO_FORMAT` is enabled, which disables float formatting, applications with Picolibc are still smaller by 6% (224,592 vs 239,888 bytes).
 
 Xtensa
 ------
@@ -107,71 +107,10 @@ Update to:
         handle_timer_wakeup();
     }
 
-.. _gpio_wakeup_api_changes:
-
-GPIO Wakeup API Changes
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-The following APIs and types have been removed and replaced with new ones that support both Deep Sleep and Light Sleep (when peripheral power domain is powered down):
-
-**Removed APIs:**
-
-- :func:`esp_deep_sleep_enable_gpio_wakeup` - Use :func:`esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` instead
-- :func:`gpio_deep_sleep_wakeup_enable` - Use :func:`gpio_wakeup_enable_on_hp_periph_powerdown_sleep` instead
-- :func:`gpio_deep_sleep_wakeup_disable` - Use :func:`gpio_wakeup_disable_on_hp_periph_powerdown_sleep` instead
-
-**Removed Types:**
-
-- :cpp:type:`esp_deepsleep_gpio_wake_up_mode_t` - Use :cpp:type:`esp_sleep_gpio_wake_up_mode_t` instead
-
-**Removed Macros:**
-
-- ``GPIO_IS_DEEP_SLEEP_WAKEUP_VALID_GPIO()`` - Use ``GPIO_IS_HP_PERIPH_PD_WAKEUP_VALID_IO()`` instead
-
-**Migration Example:**
-
-Old code:
-
-.. code-block:: c
-
-    #include "esp_sleep.h"
-    #include "driver/gpio.h"
-
-    // Enable GPIO wakeup for deep sleep
-    esp_deep_sleep_enable_gpio_wakeup(BIT(GPIO_NUM_0), ESP_GPIO_WAKEUP_GPIO_LOW);
-
-    // Or using GPIO driver API
-    gpio_deep_sleep_wakeup_enable(GPIO_NUM_0, GPIO_INTR_LOW_LEVEL);
-
-    // Check if GPIO is valid for deep sleep wakeup
-    if (GPIO_IS_DEEP_SLEEP_WAKEUP_VALID_GPIO(GPIO_NUM_0)) {
-        // ...
-    }
-
-New code:
-
-.. code-block:: c
-
-    #include "esp_sleep.h"
-    #include "driver/gpio.h"
-
-    // Enable GPIO wakeup for deep sleep or light sleep (when peripheral power domain is powered down)
-    esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown(BIT(GPIO_NUM_0), ESP_GPIO_WAKEUP_GPIO_LOW);
-
-    // Or using GPIO driver API
-    gpio_wakeup_enable_on_hp_periph_powerdown_sleep(GPIO_NUM_0, GPIO_INTR_LOW_LEVEL);
-
-    // Check if GPIO is valid for wakeup on peripheral powerdown sleep
-    if (GPIO_IS_HP_PERIPH_PD_WAKEUP_VALID_IO(GPIO_NUM_0)) {
-        // ...
-    }
-
-**Note:** The new APIs work for both Deep Sleep and Light Sleep modes when the peripheral power domain is powered down (``PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP`` enabled in menuconfig).
-
 Bootloader
 ----------
 
-Removed option for compiling bootloader with no optimization level (-O0, `CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_NONE`). On most targets it was no longer possible to compile the bootloader with -O0, as IRAM sections would overflow. For debugging purposes, it is recommended to use the -Og (:menuitem:`CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_DEBUG`) optimization level instead. This provides a good balance between optimization and debuggability.
+Removed option for compiling bootloader with no optimization level (-O0, `CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_NONE`). On most targets it was no longer possible to compile the bootloader with -O0, as IRAM sections would overflow. For debugging purposes, it is recommended to use the -Og (:ref:`CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_DEBUG<CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_DEBUG>`) optimization level instead. This provides a good balance between optimization and debuggability.
 
 Time
 ----
@@ -205,7 +144,7 @@ The application tracing configuration menu has been moved. Previously located at
 
 Previously, application tracing was automatically enabled when a destination was configured. Now you must explicitly enable application tracing by selecting the trace transport before configuring any destination.
 
-To enable application tracing, set :menuitem:`CONFIG_ESP_TRACE_TRANSPORT` to ``ESP-IDF apptrace``. The related application-level tracing options will then become available.
+To enable application tracing, go to ``Component config`` > ``ESP Trace Configuration`` > ``Trace transport`` and select ``ESP-IDF apptrace`` in menuconfig. After that, configuration can be done at ``Component config`` > ``ESP Trace Configuration`` > ``Application Level Tracing``.
 
 If apptrace will be used without a library (for example when SEGGER SystemView is disabled) in standalone mode, the following configurations need to be set in your sdkconfig file:
 
@@ -231,14 +170,14 @@ The ``app_trace`` component is now a sub-component of ``esp_trace`` and will be 
 Initialization Flow Changes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For runtime configuration override, a new callback system is available. See the :doc:`Application Tracing documentation <../../../api-guides/tracing/transports>` for details on ``esp_apptrace_get_user_params()`` and ``esp_trace_get_user_params()``.
+For runtime configuration override, a new callback system is available. See the :doc:`Application Tracing documentation <../../../api-guides/app_trace>` for details on ``esp_apptrace_get_user_params()`` and ``esp_trace_get_user_params()``.
 
 API Changes
 ^^^^^^^^^^^
 
 The destination parameter has been removed from all apptrace APIs.
 
-The default destination is now configured with :menuitem:`CONFIG_APPTRACE_DESTINATION` and can be altered at runtime by providing a callback with custom tracing configuration.
+Default destination is now configured in menuconfig under ``Component config`` > ``ESP Trace Configuration`` > ``Application Level Tracing`` and can be altered at runtime by providing callback with custom tracing configuration.
 
 The UART destination configuration has been simplified:
 
@@ -279,9 +218,9 @@ Add the dependency in your component manifest:
     dependencies:
       espressif/esp_sysview: ^1
 
-Then enable :menuitem:`CONFIG_ESP_TRACE_LIB_EXTERNAL`.
+Then, in menuconfig, select: ``Component config`` > ``ESP Trace Configuration`` > ``Trace library`` > ``External library from component registry``.
 
-After that, the SystemView configuration options become available.
+After that, the SystemView configuration can be shown by selecting ``Component config`` > ``SEGGER SystemView Configuration``.
 
 The SystemView no longer has its own separate destination configuration. It shares the configuration with the application tracing transport (JTAG or UART).
 
@@ -319,7 +258,7 @@ For safe use while the scheduler is running, use ``vTaskSuspendAll()`` before ca
 Memory Placement
 ^^^^^^^^^^^^^^^^
 
-- To reduce IRAM usage, the default placement for most FreeRTOS functions has been changed from IRAM to flash. Consequently, the ``CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH`` option has been removed. This change saves a significant amount of IRAM but may have a slight performance impact. For performance-critical applications, you can restore the previous behavior by enabling the new :menuitem:`CONFIG_FREERTOS_IN_IRAM` option.
+- To reduce IRAM usage, the default placement for most FreeRTOS functions has been changed from IRAM to flash. Consequently, the ``CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH`` option has been removed. This change saves a significant amount of IRAM but may have a slight performance impact. For performance-critical applications, you can restore the previous behavior by enabling the new :ref:`CONFIG_FREERTOS_IN_IRAM` option.
 - Before enabling ``CONFIG_FREERTOS_IN_IRAM``, it is recommended to run performance tests to measure the actual impact on your specific use case. The performance difference between flash and IRAM configurations depends on factors such as flash cache efficiency, API usage patterns, and system load.
 - A baseline performance test is provided in ``components/freertos/test_apps/freertos/performance/test_freertos_api_performance.c``. This test measures the execution time of commonly used FreeRTOS APIs and can help you evaluate the effect of memory placement for your target hardware and application requirements.
 - Task snapshot functions are automatically placed in IRAM when ``CONFIG_ESP_PANIC_HANDLER_IRAM`` is enabled, ensuring they remain accessible during panic handling.
@@ -339,7 +278,7 @@ Ring Buffer
 Memory Placement
 ^^^^^^^^^^^^^^^^
 
-To reduce IRAM usage, the default placement for `esp_ringbuf` functions has been changed from IRAM to Flash. Consequently, the ``CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH`` option has been removed. This change saves a significant amount of IRAM but may have a slight performance impact. For performance-critical applications, the previous behavior can be restored by enabling the new :menuitem:`CONFIG_RINGBUF_IN_IRAM` option.
+To reduce IRAM usage, the default placement for `esp_ringbuf` functions has been changed from IRAM to Flash. Consequently, the ``CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH`` option has been removed. This change saves a significant amount of IRAM but may have a slight performance impact. For performance-critical applications, the previous behavior can be restored by enabling the new :ref:`CONFIG_RINGBUF_IN_IRAM` option.
 
 Log
 ---
@@ -376,7 +315,7 @@ OTA Updates
 
 The partial download functionality in ESP HTTPS OTA has been moved under a configuration option in order to reduce the memory footprint if partial download is not used.
 
-To use partial download features in your OTA applications, enable :menuitem:`CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD`.
+To use partial download features in your OTA applications, you need to enable the component-level configuration :ref:`CONFIG_ESP_HTTPS_OTA_ENABLE_PARTIAL_DOWNLOAD` in menuconfig (``Component config`` > ``ESP HTTPS OTA`` > ``Enable partial HTTP download for OTA``).
 
 Removed Deprecated APIs
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -423,12 +362,12 @@ System Console (STDIO)
 LibC
 ------
 
-:menuitem:`CONFIG_COMPILER_ASSERT_NDEBUG_EVALUATE` default value is changed to `n`. This means asserts will no longer evaluate the expression inside the assert when ``NDEBUG`` is set. This reverts the default behavior to be in line with the C standard.
+:ref:`CONFIG_COMPILER_ASSERT_NDEBUG_EVALUATE` default value is changed to `n`. This means asserts will no longer evaluate the expression inside the assert when ``NDEBUG`` is set. This reverts the default behavior to be in line with the C standard.
 
 ULP
 ---
 
-The LP-Core will now wake up the main CPU when it encounters an exception during deep sleep. This feature is enabled by default but can be disabled via the :menuitem:`CONFIG_ULP_TRAP_WAKEUP` Kconfig option is this behavior is not desired.
+The LP-Core will now wake up the main CPU when it encounters an exception during deep sleep. This feature is enabled by default but can be disabled via the :ref:`CONFIG_ULP_TRAP_WAKEUP` Kconfig option is this behavior is not desired.
 
 Heap
 ----

@@ -3,14 +3,11 @@
 import pytest
 from pytest_embedded import Dut
 from pytest_embedded_idf.utils import idf_parametrize
-from pytest_embedded_idf.utils import soc_filtered_targets
 
 
 @pytest.mark.generic
 @idf_parametrize(
-    'target',
-    soc_filtered_targets('SOC_I2S_SUPPORTS_TDM == 1'),
-    indirect=['target'],
+    'target', ['esp32s3', 'esp32c3', 'esp32c5', 'esp32c6', 'esp32h2', 'esp32p4', 'esp32c61'], indirect=['target']
 )
 def test_i2s_tdm_example(dut: Dut) -> None:
     dut.expect(r'i2s_common: tx channel is registered on I2S0 successfully', timeout=5)

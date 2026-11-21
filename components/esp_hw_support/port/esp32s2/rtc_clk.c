@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -21,13 +21,10 @@
 #include "esp_hw_log.h"
 #include "sdkconfig.h"
 #include "hal/clk_tree_ll.h"
-#include "hal/gpio_ll.h"
-#include "hal/rtc_io_ll.h"
 #ifndef BOOTLOADER_BUILD
 #include "esp_private/systimer.h"
 #include "hal/systimer_ll.h"
 #endif
-#include "esp_attr.h"
 
 ESP_HW_LOG_ATTR_TAG(TAG, "rtc_clk");
 
@@ -65,27 +62,11 @@ void rtc_clk_32k_disable_external(void)
 
 void rtc_clk_32k_bootstrap(uint32_t cycle)
 {
-    SET_PERI_REG_MASK(RTC_IO_XTAL_32P_PAD_REG, RTC_IO_X32P_MUX_SEL);
-    SET_PERI_REG_MASK(RTC_IO_XTAL_32N_PAD_REG, RTC_IO_X32N_MUX_SEL);
-    clk_ll_xtal32k_enable(CLK_LL_XTAL32K_ENABLE_MODE_BOOTSTRAP);
-
-    if (cycle) {
-        /*
-         * 32K-N is the drive pin for the crystal oscillator circuit. Empirical testing shows that better results are achieved when the auxiliary signal is output from the 32K-P pin.
-         * By controlling the pull-up and pull-down resistors on the corresponding IO pins, a low-intensity 32.768kHz drive signal is output to assist the crystal oscillator in starting up.
-         * With the pull-down resistor always enabled, the drive amplitude is approximately 1/2*VCC, which is closer to the actual signal.
-        */
-        const uint32_t delay_us = (1000000 / SOC_CLK_XTAL32K_FREQ_APPROX / 2);
-        rtcio_ll_pulldown_enable(SOC_XTAL32K_P_GPIO_NUM);
-        while (cycle) {
-            esp_rom_delay_us(delay_us);
-            rtcio_ll_pullup_enable(SOC_XTAL32K_P_GPIO_NUM);
-            esp_rom_delay_us(delay_us);
-            rtcio_ll_pullup_disable(SOC_XTAL32K_P_GPIO_NUM);
-            cycle--;
-        }
-        rtcio_ll_pulldown_disable(SOC_XTAL32K_P_GPIO_NUM);
-    }
+    /* No special bootstrapping needed for ESP32-S2, 'cycle' argument is to keep the signature
+     * same as for the ESP32. Just enable the XTAL here.
+     */
+    (void)cycle;
+    rtc_clk_32k_enable(true);
 }
 
 bool rtc_clk_32k_enabled(void)
@@ -464,7 +445,7 @@ void rtc_clk_cpu_freq_set_xtal(void)
     /* BBPLL is kept enabled */
 }
 
-FORCE_IRAM_ATTR void rtc_clk_cpu_set_to_default_config(void)
+void rtc_clk_cpu_set_to_default_config(void)
 {
     rtc_clk_cpu_freq_to_xtal(CLK_LL_XTAL_FREQ_MHZ, 1);
 }
@@ -479,7 +460,7 @@ void rtc_clk_cpu_freq_set_xtal_for_sleep(void)
  * Must satisfy: cpu_freq = XTAL_FREQ / div.
  * Does not disable the PLL.
  */
-static FORCE_IRAM_ATTR void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
+static void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
 {
     rtc_cpu_freq_config_t cur_config;
     rtc_clk_cpu_freq_get_config(&cur_config);

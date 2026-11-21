@@ -1,2 +1,0 @@
-# OpenOCD start and stop control. Autostart stays off.
-CONFIG_ESP_RISCV_TRACE_OPENOCD=y

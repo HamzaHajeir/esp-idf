@@ -13,6 +13,4 @@
    idf-size
    idf-sbom
    idf-diag
-   idf-build-file
-   esp-clangd
    :TARGET_SUPPORT_QEMU: qemu

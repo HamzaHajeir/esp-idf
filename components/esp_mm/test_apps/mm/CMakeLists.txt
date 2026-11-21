@@ -10,25 +10,15 @@ set(COMPONENTS main esp_psram)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(mm_test)
 
+string(JOIN "," ignore_refs)
+
 if(CONFIG_SOC_MMU_PER_EXT_MEM_TARGET AND CONFIG_SPIRAM_FLASH_LOAD_TO_PSRAM)
     # On SOC_MMU_PER_EXT_MEM_TARGET chips, when xip_psram, we need
     #   - _instruction_reserved_start, _instruction_reserved_end
     #   - _rodata_reserved_start, _rodata_reserved_end
     # to do some calculation. As we don't access the addresses, so we disable this check
-    list(APPEND ignore_refs
-        esp_mmu_map_init/__func__*
-        esp_mmu_map_init/_instruction_reserved_start
-        esp_mmu_map_init/_instruction_reserved_end
-        s_reserve_irom_region/__func__*
-        s_reserve_irom_region/_instruction_reserved_start
-        s_reserve_irom_region/_instruction_reserved_end
-        s_reserve_drom_region/__func__*
-        s_reserve_drom_region/_rodata_reserved_start
-        s_reserve_drom_region/_rodata_reserved_end
-    )
+    list(APPEND ignore_refs esp_mmu_map_init/*)
 endif()
-
-list(JOIN ignore_refs "," ignore_refs_arg)
 
 idf_build_get_property(elf EXECUTABLE)
 if(CONFIG_COMPILER_DUMP_RTL_FILES)
@@ -39,7 +29,7 @@ if(CONFIG_COMPILER_DUMP_RTL_FILES)
                       find-refs
                       --from-sections=.iram0.text
                       --to-sections=.flash.text,.flash.rodata
-                      --ignore-refs=${ignore_refs_arg}
+                      --ignore-refs=${ignore_refs}
                       --exit-code
                       DEPENDS ${elf}
                       )

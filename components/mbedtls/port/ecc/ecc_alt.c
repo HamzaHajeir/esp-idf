@@ -1,17 +1,16 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
 #include "soc/hwcrypto_periph.h"
 #include "ecc_impl.h"
 #include "hal/ecc_ll.h"
 
-#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
 #include "mbedtls/ecp.h"
 #include "mbedtls/platform_util.h"
-#include "mbedtls/bignum.h"
 
 #if defined(MBEDTLS_ECP_MUL_ALT) || defined(MBEDTLS_ECP_MUL_ALT_SOFT_FALLBACK)
 
@@ -33,9 +32,6 @@ static int esp_mbedtls_ecp_point_multiply(const mbedtls_ecp_group *grp, mbedtls_
     MBEDTLS_MPI_CHK(mbedtls_mpi_write_binary_le(m, m_le, MAX_SIZE));
 
     ret = esp_ecc_point_multiply(&p_pt, m_le, &r_pt, false);
-    if (ret != 0) {
-        goto cleanup;
-    }
 
     for (int i = 0; i < MAX_SIZE; i++) {
         x_tmp[MAX_SIZE - i - 1] = r_pt.x[i];
@@ -45,15 +41,9 @@ static int esp_mbedtls_ecp_point_multiply(const mbedtls_ecp_group *grp, mbedtls_
     MBEDTLS_MPI_CHK(mbedtls_mpi_read_binary(&R->MBEDTLS_PRIVATE(X), x_tmp, MAX_SIZE));
     MBEDTLS_MPI_CHK(mbedtls_mpi_read_binary(&R->MBEDTLS_PRIVATE(Y), y_tmp, MAX_SIZE));
     MBEDTLS_MPI_CHK(mbedtls_mpi_lset(&R->MBEDTLS_PRIVATE(Z), 1));
-    /* m_le holds the secret scalar (EC private key / per-signature nonce) in
-     * little-endian form. Scrub it on the success path so it cannot be
-     * recovered from stack RAM after the operation completes. */
-    mbedtls_platform_zeroize(m_le, sizeof(m_le));
     return ret;
 
 cleanup:
-    /* Same scrub on every error path that reached here via MBEDTLS_MPI_CHK. */
-    mbedtls_platform_zeroize(m_le, sizeof(m_le));
     return MBEDTLS_ERR_ECP_BAD_INPUT_DATA;
 }
 
@@ -63,7 +53,7 @@ int ecp_mul_restartable_internal( mbedtls_ecp_group *grp, mbedtls_ecp_point *R,
              mbedtls_ecp_restart_ctx *rs_ctx )
 {
     int ret = MBEDTLS_ERR_ECP_BAD_INPUT_DATA;
-    if (grp->id != MBEDTLS_ECP_DP_SECP256R1
+    if (grp->id != MBEDTLS_ECP_DP_SECP192R1 && grp->id != MBEDTLS_ECP_DP_SECP256R1
 #if SOC_ECC_SUPPORT_CURVE_P384
         && (grp->id != MBEDTLS_ECP_DP_SECP384R1 || !ecc_ll_is_p384_curve_operations_supported())
 #endif
@@ -98,7 +88,7 @@ int mbedtls_ecp_check_pubkey( const mbedtls_ecp_group *grp,
         return MBEDTLS_ERR_ECP_BAD_INPUT_DATA;
     }
 
-    if (grp->id != MBEDTLS_ECP_DP_SECP256R1
+    if (grp->id != MBEDTLS_ECP_DP_SECP192R1 && grp->id != MBEDTLS_ECP_DP_SECP256R1
 #if SOC_ECC_SUPPORT_CURVE_P384
         && (grp->id != MBEDTLS_ECP_DP_SECP384R1 || !ecc_ll_is_p384_curve_operations_supported())
 #endif
@@ -117,10 +107,8 @@ int mbedtls_ecp_check_pubkey( const mbedtls_ecp_group *grp,
 
     mbedtls_platform_zeroize((void *)&point, sizeof(ecc_point_t));
 
-    if (mbedtls_mpi_write_binary_le(&pt->MBEDTLS_PRIVATE(X), point.x, sizeof(point.x)) != 0 ||
-        mbedtls_mpi_write_binary_le(&pt->MBEDTLS_PRIVATE(Y), point.y, sizeof(point.y)) != 0) {
-        return MBEDTLS_ERR_ECP_INVALID_KEY;
-    }
+    memcpy(&point.x, pt->MBEDTLS_PRIVATE(X).MBEDTLS_PRIVATE(p), mbedtls_mpi_size(&pt->MBEDTLS_PRIVATE(X)));
+    memcpy(&point.y, pt->MBEDTLS_PRIVATE(Y).MBEDTLS_PRIVATE(p), mbedtls_mpi_size(&pt->MBEDTLS_PRIVATE(Y)));
 
     point.len = grp->pbits / 8;
 

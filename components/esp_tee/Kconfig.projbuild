@@ -12,14 +12,14 @@ menu "ESP-TEE (Trusted Execution Environment)"
         config SECURE_TEE_IRAM_SIZE
             hex "IRAM region size"
             default 0x8000
-            range 0x5000 0xF000
+            range 0x5000 0xA000
             help
                 This configuration sets the IRAM size for the TEE module.
                 This should be 256-byte (0x100) aligned.
 
         config SECURE_TEE_DRAM_SIZE
             hex "DRAM region size"
-            default 0x5000
+            default 0x4000
             range 0x3000 0x7000
             help
                 This configuration sets the DRAM size for the TEE module.
@@ -27,7 +27,6 @@ menu "ESP-TEE (Trusted Execution Environment)"
 
         config SECURE_TEE_STACK_SIZE
             hex "Stack size"
-            default 0x1000 if SECURE_BOOT
             default 0xc00
             range 0x800 0x1000
             help
@@ -46,7 +45,7 @@ menu "ESP-TEE (Trusted Execution Environment)"
 
         config SECURE_TEE_IROM_SIZE
             hex
-            default 0x20000
+            default 0x10000
             help
                 This should be a multiple of MMU_PAGE_SIZE.
 
@@ -99,6 +98,11 @@ menu "ESP-TEE (Trusted Execution Environment)"
 
         menu "Secure Storage: Additional supported curves for ECDSA signing"
 
+            config SECURE_TEE_SEC_STG_SUPPORT_SECP192R1_SIGN
+                bool "SECP192R1"
+                help
+                    Enable ECDSA signing with the SECP192R1 curve using TEE secure storage
+
             config SECURE_TEE_SEC_STG_SUPPORT_SECP384R1_SIGN
                 bool "SECP384R1"
                 depends on SOC_ECDSA_SUPPORT_CURVE_P384
@@ -123,54 +127,7 @@ menu "ESP-TEE (Trusted Execution Environment)"
                 storing the ECDSA keypair for executing sign/verify operations
                 from the TEE side for attestation.
 
-        config SECURE_TEE_ATT_PSA_CERT_REF
-            depends on SECURE_TEE_ATTESTATION
-            string
-            default "0632793520245-10010" if IDF_TARGET_ESP32C6
-            default "0632793520351-10100" if IDF_TARGET_ESP32H2
-            default "XXXXXXXXXXXXX-XXXXX"
-            help
-                PSA certification ID string for the attestation token
-
     endmenu
-
-    config SECURE_TEE_ANTI_ROLLBACK
-        bool "Enable TEE anti-rollback support"
-        depends on SECURE_ENABLE_TEE
-        default n
-        help
-            This option prevents rollback to a previous TEE image with a lower secure version.
-
-            The bootloader refuses to load a TEE image whose secure version is lower than
-            the one recorded in eFuse, the TEE rejects such an image during a TEE OTA update,
-            and the TEE updates the eFuse counter once the running image is confirmed valid.
-
-            The TEE secure version is stored in the top 3 bits of the SECURE_VERSION eFuse
-            field, which reduces the bits available for the app secure version
-            (see BOOTLOADER_APP_SEC_VER_SIZE_EFUSE_FIELD).
-
-    config SECURE_TEE_SEC_VER_SIZE_EFUSE_FIELD
-        int
-        depends on SECURE_TEE_ANTI_ROLLBACK
-        default 3
-        help
-            Number of top bits of the SECURE_VERSION eFuse field reserved for the TEE secure
-            version, i.e. how many times it can be increased. The bits available for the app
-            secure version (BOOTLOADER_APP_SEC_VER_SIZE_EFUSE_FIELD) are reduced by this value.
-            Fixed, as it defines the eFuse layout shared by the bootloader, the TEE and the app.
-
-    config SECURE_TEE_SECURE_VERSION
-        int "eFuse secure version of the TEE image"
-        depends on SECURE_TEE_ANTI_ROLLBACK
-        range 0 SECURE_TEE_SEC_VER_SIZE_EFUSE_FIELD
-        default 0
-        help
-            The secure version recorded in the TEE image descriptor. It is compared with the
-            TEE secure version stored in eFuse (as the number of set bits) and must be greater
-            than or equal to it for the image to boot.
-
-            The version is worth increasing if a previous TEE image has a significant
-            vulnerability and its use is no longer acceptable.
 
     config SECURE_TEE_EXT_FLASH_MEMPROT_SPI1
         bool "Memprot: Isolate TEE flash regions over SPI1"
@@ -200,20 +157,6 @@ menu "ESP-TEE (Trusted Execution Environment)"
 
             Note: All accesses to the TEE partitions over SPI0 (i.e. the MMU) are blocked
             unconditionally.
-
-    choice SECURE_TEE_LIBC
-        prompt "LibC to build the TEE application with"
-        depends on SECURE_ENABLE_TEE
-        default SECURE_TEE_LIBC_NEWLIB if IDF_TOOLCHAIN_CLANG
-        default SECURE_TEE_LIBC_PICOLIBC
-
-        config SECURE_TEE_LIBC_PICOLIBC
-            bool "Picolibc"
-            depends on !IDF_TOOLCHAIN_CLANG
-        config SECURE_TEE_LIBC_NEWLIB
-            bool "NewLib"
-
-    endchoice
 
     config SECURE_TEE_DEBUG_MODE
         bool "Enable Debug Mode"

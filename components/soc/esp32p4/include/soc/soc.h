@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -22,6 +22,7 @@
 #define REG_SPI_MEM_BASE(i)                     (DR_REG_FLASH_SPI0_BASE + (i) * 0x1000)  // SPIMEM0 and SPIMEM1
 #define REG_SPI_BASE(i)                         (((i)>=2) ? (DR_REG_SPI2_BASE + (i-2) * 0x1000) : (0))    // GPSPI2 and GPSPI3
 #define REG_I2C_BASE(i)                         (DR_REG_I2C0_BASE + (i) * 0x1000)
+#define REG_MCPWM_BASE(i)                       (DR_REG_MCPWM_BASE + (i) * 0x1000)
 #define REG_TWAI_BASE(i)                        (DR_REG_TWAI0_BASE + (i) * 0x1000)       // TWAI0 and TWAI1
 
 //Registers Operation {{
@@ -133,6 +134,7 @@
 
 //Periheral Clock {{
 #define  APB_CLK_FREQ                                ( 90*1000000 )
+#define  REF_CLK_FREQ                                ( 1000000 )
 //}}
 
 /* Overall memory map */
@@ -154,8 +156,8 @@
 #define SOC_IROM_MASK_HIGH 0x4fc20000
 #define SOC_DROM_MASK_LOW  0x4fc00000
 #define SOC_DROM_MASK_HIGH 0x4fc20000
-#define SOC_SPM_LOW     0x30100000
-#define SOC_SPM_HIGH    0x30102000
+#define SOC_TCM_LOW     0x30100000
+#define SOC_TCM_HIGH    0x30102000
 #define SOC_IRAM_LOW    0x4ff00000
 #define SOC_IRAM_HIGH   0x4ffc0000
 #define SOC_DRAM_LOW    0x4ff00000
@@ -218,10 +220,6 @@
 #define SOC_ROM_STACK_START_REV2    0x4ffbcfc0
 #define SOC_ROM_STACK_START         0x4ff3cfc0
 #define SOC_ROM_STACK_SIZE          0x2000
-
-// non-cacheable offset for memory behind the cache
-#define SOC_NON_CACHEABLE_OFFSET_SRAM        0x40000000
-#define SOC_NON_CACHEABLE_OFFSET_PSRAM       0x40000000
 
 #define LP_ROM_DRAM_START 0x5010fa80 // Value taken from ROM elf, includes LP ROM stack
 #define LP_RAM_END        0x50110000

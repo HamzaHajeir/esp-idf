@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,6 @@
 #include "soc/lp_clkrst_struct.h"
 #include "soc/hp_sys_clkrst_struct.h"
 #include "soc/usb_serial_jtag_struct.h"
-#include "hal/config.h"
 #include "hal/usb_serial_jtag_types.h"
 #include "hal/misc.h"
 
@@ -87,23 +86,6 @@ static inline __attribute__((always_inline)) uint32_t usb_serial_jtag_ll_get_int
 }
 
 /**
- * @brief  Get the frame number of the most recently received USB SOF packet
- *
- * The 11-bit frame number advances with every SOF received from the host, so unlike the SOF raw
- * interrupt bit it cannot be lost between reading and clearing.
- *
- * @return Frame number (0 to 2047)
- */
-static inline __attribute__((always_inline)) uint32_t usb_serial_jtag_ll_get_frame_num(void)
-{
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-    return USB_SERIAL_JTAG.fram_num.serial_jtag_sof_frame_index;
-#else
-    return USB_SERIAL_JTAG.fram_num.sof_frame_index;
-#endif
-}
-
-/**
  * @brief  Clear the USB_SERIAL_JTAG interrupt status based on the given mask.
  *
  * @param  mask The bitmap of the interrupts need to be cleared.
@@ -140,7 +122,7 @@ static inline int usb_serial_jtag_ll_read_rxfifo(uint8_t *buf, uint32_t rd_len)
         if (!USB_SERIAL_JTAG.ep1_conf.serial_out_ep_data_avail) {
             break;
         }
-        buf[i] = USB_SERIAL_JTAG.ep1.val;
+        buf[i] = HAL_FORCE_READ_U32_REG_FIELD(USB_SERIAL_JTAG.ep1, rdwr_byte);
     }
     return i;
 }
@@ -161,7 +143,7 @@ static inline int usb_serial_jtag_ll_write_txfifo(const uint8_t *buf, uint32_t w
         if (!USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free) {
             break;
         }
-        USB_SERIAL_JTAG.ep1.val = buf[i];
+        HAL_FORCE_MODIFY_U32_REG_FIELD(USB_SERIAL_JTAG.ep1, rdwr_byte, buf[i]);
     }
     return i;
 }

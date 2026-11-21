@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <sys/random.h>
+#include <sys/socket.h>
 #include <arpa/inet.h>
 #include "esp_log.h"
 #include "esp_transport.h"
@@ -17,6 +18,7 @@
 #include "esp_transport_internal.h"
 #include "errno.h"
 #include "esp_tls_crypto.h"
+#include <arpa/inet.h>
 
 static const char *TAG = "transport_ws";
 
@@ -57,13 +59,6 @@ typedef struct {
 } ws_transport_frame_state_t;
 
 typedef struct {
-    bool is_text;                       /*!< The data message being received is TEXT (set by its first frame) */
-    uint8_t needed;                     /*!< Continuation bytes still expected for the current code point */
-    uint8_t min;                        /*!< Lowest valid value of the next continuation byte */
-    uint8_t max;                        /*!< Highest valid value of the next continuation byte */
-} ws_utf8_state_t;
-
-typedef struct {
     char *path;
     char *sub_protocol;
     char *user_agent;
@@ -76,9 +71,6 @@ typedef struct {
     int http_status_code;
     bool propagate_control_frames;
     ws_transport_frame_state_t frame_state;
-    bool fragmented_msg_in_progress;    /*!< A data frame with FIN=0 was received, continuation frames are expected */
-    ws_utf8_state_t utf8_state;         /*!< UTF-8 decoder state, carried across reads and continuation frames */
-    bool rx_failed;                     /*!< The connection was failed; reads, writes, and polls return -1 until the next ws_connect */
     esp_transport_handle_t parent;
     char *redir_host;
     char *response_header;
@@ -181,10 +173,6 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
 
     free(ws->redir_host);
     ws->redir_host = NULL;
-    ws->fragmented_msg_in_progress = false;
-    memset(&ws->utf8_state, 0, sizeof(ws->utf8_state));
-    ws->rx_failed = false;
-    ws->frame_state.bytes_remaining = 0;
 
     if (esp_transport_connect(ws->parent, host, port, timeout_ms) < 0) {
         ESP_LOGE(TAG, "Error connecting to host %s:%d", host, port);
@@ -283,27 +271,22 @@ static int ws_connect(esp_transport_handle_t t, const char *host, int port, int 
         ESP_LOGD(TAG, "Read header chunk %d, current header size: %d", len, header_len);
     } while (NULL == strstr(ws->buffer, delimiter) && header_len < WS_BUFFER_SIZE - 1);
 
-    if (header_len > WS_BUFFER_SIZE - 1) {
+    if (header_len >= WS_BUFFER_SIZE - 1) {
         ESP_LOGE(TAG, "Header size exceeded buffer size (need=%d, max=%d)", header_len + 1, WS_BUFFER_SIZE);
         return -1;
     }
 
     if(ws->response_header) {
-        int copy_len = header_len;
         if(ws->response_header_len - 1 < header_len) {
             ESP_LOGW(TAG, "Received header length exceedes the allocated buffer size (need=%d, allocated=%d), truncating to allocated size", header_len, ws->response_header_len);
-            copy_len = ws->response_header_len - 1;
+            header_len = ws->response_header_len;
         }
         // Copy response header to the static array
-        strncpy(ws->response_header, ws->buffer, copy_len);
-        ws->response_header[copy_len] = '\0';
+        strncpy(ws->response_header, ws->buffer, header_len);
+        ws->response_header[ws->response_header_len - 1] = '\0';
     }
 
     char* delim_ptr = strstr(ws->buffer, delimiter);
-    if (!delim_ptr) {
-        ESP_LOGE(TAG, "Header size exceeded buffer size or delimiter not found");
-        return -1;
-    }
 
     ws->http_status_code = get_http_status_code(ws->buffer);
     if (ws->http_status_code == -1)  {
@@ -493,20 +476,12 @@ int esp_transport_ws_send_raw(esp_transport_handle_t t, ws_transport_opcodes_t o
         ESP_LOGE(TAG, "Transport must be a valid ws handle");
         return ESP_ERR_INVALID_ARG;
     }
-    transport_ws_t *ws = esp_transport_get_context_data(t);
-    if (ws->rx_failed) {
-        return -1;
-    }
     ESP_LOGD(TAG, "Sending raw ws message with opcode %d", op_code);
     return _ws_write(t, op_code, WS_MASK, b, len, timeout_ms);
 }
 
 static int ws_write(esp_transport_handle_t t, const char *b, int len, int timeout_ms)
 {
-    transport_ws_t *ws = esp_transport_get_context_data(t);
-    if (ws->rx_failed) {
-        return -1;
-    }
     if (len == 0) {
         // Default transport write of zero length in ws layer sends out a ping message.
         // This behaviour could however be altered in IDF 5.0, since a separate API for sending
@@ -535,9 +510,7 @@ static int ws_read_payload(esp_transport_handle_t t, char *buffer, int len, int 
 
     // Receive and process payload
     if (bytes_to_read != 0 && (rlen = esp_transport_read_internal(ws, buffer, bytes_to_read, timeout_ms)) <= 0) {
-        if (rlen < 0) {
-            ESP_LOGE(TAG, "Error read data(%d)", rlen);
-        }
+        ESP_LOGE(TAG, "Error read data(%d)", rlen);
         return rlen;
     }
     ws->frame_state.bytes_remaining -= rlen;
@@ -546,89 +519,6 @@ static int ws_read_payload(esp_transport_handle_t t, char *buffer, int len, int 
         buffer[i] = (buffer[i] ^ ws->frame_state.mask_key[i % 4]);
     }
     return rlen;
-}
-
-/* Incremental UTF-8 validation (RFC 3629): rejects overlong forms, surrogates and code points above U+10FFFF */
-static bool ws_utf8_validate(ws_utf8_state_t *s, const uint8_t *data, int len)
-{
-    for (int i = 0; i < len; i++) {
-        uint8_t c = data[i];
-        if (s->needed) {
-            if (c < s->min || c > s->max) {
-                return false;
-            }
-            s->needed--;
-            s->min = 0x80;
-            s->max = 0xBF;
-        } else if (c >= 0x80) {
-            s->min = 0x80;
-            s->max = 0xBF;
-            if (c >= 0xC2 && c <= 0xDF) {
-                s->needed = 1;
-            } else if (c >= 0xE0 && c <= 0xEF) {
-                s->needed = 2;
-                if (c == 0xE0) {
-                    s->min = 0xA0;      // overlong
-                } else if (c == 0xED) {
-                    s->max = 0x9F;      // UTF-16 surrogates
-                }
-            } else if (c >= 0xF0 && c <= 0xF4) {
-                s->needed = 3;
-                if (c == 0xF0) {
-                    s->min = 0x90;      // overlong
-                } else if (c == 0xF4) {
-                    s->max = 0x8F;      // above U+10FFFF
-                }
-            } else {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-static int ws_fail_connection(transport_ws_t *ws)
-{
-    ws->rx_failed = true;
-    esp_transport_close(ws->parent);
-    return -1;
-}
-
-/* Validates a chunk of the current frame's payload; control frames are not part of the text message.
- * RFC 6455 Section 8.1: invalid UTF-8 fails the connection. */
-static int ws_check_text_payload(transport_ws_t *ws, const char *data, int len)
-{
-    if (!ws->utf8_state.is_text || (ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME)) {
-        return 0;
-    }
-    if (!ws_utf8_validate(&ws->utf8_state, (const uint8_t *)data, len) ||
-            (ws->frame_state.fin && ws->frame_state.bytes_remaining == 0 && ws->utf8_state.needed)) {
-        ESP_LOGE(TAG, "Invalid UTF-8 in text message - protocol violation");
-        return ws_fail_connection(ws);
-    }
-    return 0;
-}
-
-/* RFC 6455 Section 5.5.1: an empty body is valid. A 1-byte body cannot hold a
- * status code and fails the connection. The bytes after a 2-byte status code
- * must be UTF-8. The same check applies whether the CLOSE frame is handled
- * here or returned to the caller. */
-static int ws_check_close_reason(transport_ws_t *ws, const char *buffer, int payload_len)
-{
-    if (ws->frame_state.opcode != WS_OPCODE_CLOSE || buffer == NULL || payload_len == 0) {
-        return 0;
-    }
-    if (payload_len < (int)sizeof(uint16_t)) {
-        ESP_LOGE(TAG, "CLOSE payload of length 1 - protocol violation");
-        return ws_fail_connection(ws);
-    }
-    ws_utf8_state_t reason_state = { 0 };
-    if (!ws_utf8_validate(&reason_state, (const uint8_t *)buffer + sizeof(uint16_t),
-                          payload_len - (int)sizeof(uint16_t)) || reason_state.needed) {
-        ESP_LOGE(TAG, "Invalid UTF-8 in CLOSE reason - protocol violation");
-        return ws_fail_connection(ws);
-    }
-    return 0;
 }
 
 static int esp_transport_read_exact_size(transport_ws_t *ws, char *buffer, int requested_len, int timeout_ms)
@@ -661,7 +551,6 @@ static int esp_transport_read_exact_size(transport_ws_t *ws, char *buffer, int r
 
 
 /* Read and parse the WS header, determine length of payload */
-
 static int ws_read_header(esp_transport_handle_t t, char *buffer, int len, int timeout_ms)
 {
     transport_ws_t *ws = esp_transport_get_context_data(t);
@@ -670,12 +559,10 @@ static int ws_read_header(esp_transport_handle_t t, char *buffer, int len, int t
     char ws_header[MAX_WEBSOCKET_HEADER_SIZE];
     char *data_ptr = ws_header, mask;
     int rlen;
+    int poll_read;
     ws->frame_state.header_received = false;
-    if (ws->buffer_len == 0) {
-        int poll_read = esp_transport_poll_read(ws->parent, timeout_ms);
-        if (poll_read <= 0) {
-            return poll_read;
-        }
+    if ((poll_read = esp_transport_poll_read(ws->parent, timeout_ms)) <= 0) {
+        return poll_read;
     }
 
     // Receive and process header first (based on header size)
@@ -688,53 +575,11 @@ static int ws_read_header(esp_transport_handle_t t, char *buffer, int len, int t
     ws->frame_state.header_received = true;
     ws->frame_state.fin = (*data_ptr & 0x80) != 0;
     ws->frame_state.opcode = (*data_ptr & 0x0F);
-    uint8_t rsv = (*data_ptr & 0x70);
     data_ptr ++;
     mask = ((*data_ptr >> 7) & 0x01);
     payload_len = (*data_ptr & 0x7F);
     data_ptr++;
-    ESP_LOGD(TAG, "Opcode: %d, mask: %d, len: %d, rsv: 0x%02X", ws->frame_state.opcode, mask, payload_len, rsv);
-
-    // RFC 6455 Section 5.2: RSV bits MUST be 0 unless an extension is negotiated
-    if (rsv != 0) {
-        ESP_LOGE(TAG, "Non-zero RSV bits detected (rsv=0x%02X) - protocol violation, no extensions negotiated", rsv);
-        return -1;
-    }
-
-    // RFC 6455 Section 5.2: Validate opcode (only 0x0-0x2 for data, 0x8-0xA for control are defined)
-    if ((ws->frame_state.opcode >= 0x3 && ws->frame_state.opcode <= 0x7) ||
-        (ws->frame_state.opcode >= 0xB && ws->frame_state.opcode <= 0xF)) {
-        ESP_LOGE(TAG, "Reserved opcode detected (opcode=0x%02X) - protocol violation", ws->frame_state.opcode);
-        return -1;
-    }
-
-    // RFC 6455 Section 5.5: Control frames MUST NOT be fragmented
-    if ((ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME) && !ws->frame_state.fin) {
-        ESP_LOGE(TAG, "Fragmented control frame detected (opcode=0x%02X, fin=%d) - protocol violation",
-                ws->frame_state.opcode, ws->frame_state.fin);
-        return -1;
-    }
-
-    // RFC 6455 Section 5.4: Continuation frames are only valid inside a fragmented message, and a new
-    // data message must not start before it completes. Control frames may be interleaved.
-    if (!(ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME)) {
-        if (ws->frame_state.opcode == WS_OPCODE_CONT && !ws->fragmented_msg_in_progress) {
-            ESP_LOGE(TAG, "Continuation frame without a fragmented message in progress - protocol violation");
-            return -1;
-        }
-        if (ws->frame_state.opcode != WS_OPCODE_CONT && ws->fragmented_msg_in_progress) {
-            ESP_LOGE(TAG, "Data frame (opcode=0x%02X) received before fragmented message completed - protocol violation",
-                     ws->frame_state.opcode);
-            return -1;
-        }
-        ws->fragmented_msg_in_progress = !ws->frame_state.fin;
-        if (ws->frame_state.opcode != WS_OPCODE_CONT) {
-            ws->utf8_state = (ws_utf8_state_t) {
-                .is_text = (ws->frame_state.opcode == WS_OPCODE_TEXT),
-            };
-        }
-    }
-
+    ESP_LOGD(TAG, "Opcode: %d, mask: %d, len: %d", ws->frame_state.opcode, mask, payload_len);
     if (payload_len == 126) {
         // headerLen += 2;
         if ((rlen = esp_transport_read_exact_size(ws, data_ptr, header, timeout_ms)) <= 0) {
@@ -750,42 +595,21 @@ static int ws_read_header(esp_transport_handle_t t, char *buffer, int len, int t
             return rlen;
         }
 
-        if (data_ptr[0] != 0 || data_ptr[1] != 0 || data_ptr[2] != 0 || data_ptr[3] != 0 ||
-            ((uint8_t)data_ptr[4] & 0x80)) {
-            ESP_LOGE(TAG, "Payload length out of range");
-            return -1;
+        if (data_ptr[0] != 0 || data_ptr[1] != 0 || data_ptr[2] != 0 || data_ptr[3] != 0) {
+            // really too big!
+            payload_len = 0xFFFFFFFF;
+        } else {
+            payload_len = (uint8_t)data_ptr[4] << 24 | (uint8_t)data_ptr[5] << 16 | (uint8_t)data_ptr[6] << 8 | data_ptr[7];
         }
-        payload_len = (int)((uint32_t)(uint8_t)data_ptr[4] << 24 |
-                            (uint32_t)(uint8_t)data_ptr[5] << 16 |
-                            (uint32_t)(uint8_t)data_ptr[6] << 8 |
-                            (uint32_t)(uint8_t)data_ptr[7]);
     }
-    // RFC 6455 Section 5.5: Control frames MUST have payload length of 125 bytes or less
-    if ((ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME) && payload_len > 125) {
-        ESP_LOGE(TAG, "Control frame with excessive payload detected (opcode=0x%02X, payload_len=%d) - protocol violation",
-                 ws->frame_state.opcode, payload_len);
-        // Consume the payload bytes from the TCP stream to keep it in sync before returning error
-        int remaining = payload_len;
-        while (remaining > 0 && len > 0) {
-            int to_read = remaining < len ? remaining : len;
-            int bytes_read = esp_transport_read_internal(ws, buffer, to_read, timeout_ms);
-            if (bytes_read <= 0) {
-                break;
-            }
-            remaining -= bytes_read;
-        }
-        return -1;
-    }
+
     if (mask) {
-        // Read the 4-byte masking key directly into the frame state. The caller's
-        // buffer must never be used as scratch here: it may be smaller than
-        // mask_len (4) and the MASK bit is attacker-controlled (servers must not
-        // mask per RFC 6455 5.1), which would otherwise cause an out-of-bounds write.
-        if (payload_len != 0 &&
-                (rlen = esp_transport_read_exact_size(ws, ws->frame_state.mask_key, mask_len, timeout_ms)) <= 0) {
+        // Read and store mask
+        if (payload_len != 0 && (rlen = esp_transport_read_exact_size(ws, buffer, mask_len, timeout_ms)) <= 0) {
             ESP_LOGE(TAG, "Error read data(%d)", rlen);
             return rlen;
         }
+        memcpy(ws->frame_state.mask_key, buffer, mask_len);
     } else {
         memset(ws->frame_state.mask_key, 0, mask_len);
     }
@@ -851,10 +675,6 @@ static int ws_read(esp_transport_handle_t t, char *buffer, int len, int timeout_
     int rlen = 0;
     transport_ws_t *ws = esp_transport_get_context_data(t);
 
-    if (ws->rx_failed) {
-        return -1;
-    }
-
     // If message exceeds buffer len then subsequent reads will skip reading header and read whatever is left of the payload
     if (ws->frame_state.bytes_remaining <= 0) {
 
@@ -873,51 +693,17 @@ static int ws_read(esp_transport_handle_t t, char *buffer, int len, int timeout_
             return ws_handle_control_frame_internal(t, timeout_ms);
         }
 
-        // Read the full control frame payload into the caller's buffer in one shot.
-        // This prevents the client from receiving the payload in chunks and
-        // incorrectly echoing only the last chunk as a PONG response.
-        if ((ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME) && ws->frame_state.payload_len > 0) {
-            int payload_len = ws->frame_state.payload_len;
-            if (payload_len > len) {
-                ESP_LOGE(TAG, "Control frame payload (%d) exceeds caller buffer (%d)", payload_len, len);
-                return -1;
-            }
-            int bytes_read = esp_transport_read_exact_size(ws, buffer, payload_len, timeout_ms);
-            if (bytes_read != payload_len) {
-                ESP_LOGE(TAG, "Control frame payload read failed (expected=%d, got=%d)", payload_len, bytes_read);
-                return -1;
-            }
-            ws->frame_state.bytes_remaining = 0;
-            if (ws_check_close_reason(ws, buffer, payload_len) < 0) {
-                return -1;
-            }
-            return payload_len;
-        }
-
         if (rlen == 0) {
             ws->frame_state.bytes_remaining = 0;
-            // An empty final frame can still end a text message inside a UTF-8 sequence
-            if (ws->frame_state.header_received && !(ws->frame_state.opcode & WS_OPCODE_CONTROL_FRAME) &&
-                    ws_check_text_payload(ws, NULL, 0) < 0) {
-                return -1;
-            }
             return 0; // timeout
         }
     }
 
     if (ws->frame_state.payload_len) {
         if ( (rlen = ws_read_payload(t, buffer, len, timeout_ms)) <= 0) {
-            if (rlen < 0) {
-                ESP_LOGE(TAG, "Error reading payload data(%d)", rlen);
-                ws->frame_state.bytes_remaining = 0;
-            }
+            ESP_LOGE(TAG, "Error reading payload data(%d)", rlen);
+            ws->frame_state.bytes_remaining = 0;
             return rlen;
-        }
-        if (ws_check_text_payload(ws, buffer, rlen) < 0) {
-            /* Leave bytes_remaining set so the unread tail is not parsed as a new header.
-             * The connection has been failed: further reads and writes return -1 until ws_connect.
-             */
-            return -1;
         }
     }
 
@@ -928,22 +714,12 @@ static int ws_read(esp_transport_handle_t t, char *buffer, int len, int timeout_
 static int ws_poll_read(esp_transport_handle_t t, int timeout_ms)
 {
     transport_ws_t *ws = esp_transport_get_context_data(t);
-    if (ws->rx_failed) {
-        return -1;
-    }
-    if (ws->buffer_len > 0) {
-        ESP_LOGD(TAG, "ws_poll_read: buffered data available (%zu bytes)", ws->buffer_len);
-        return 1;
-    }
     return esp_transport_poll_read(ws->parent, timeout_ms);
 }
 
 static int ws_poll_write(esp_transport_handle_t t, int timeout_ms)
 {
     transport_ws_t *ws = esp_transport_get_context_data(t);
-    if (ws->rx_failed) {
-        return -1;
-    }
     return esp_transport_poll_write(ws->parent, timeout_ms);;
 }
 
@@ -997,9 +773,9 @@ void esp_transport_ws_set_path(esp_transport_handle_t t, const char *path)
 static int ws_get_socket(esp_transport_handle_t t)
 {
     if (t) {
-        transport_ws_t *ws = esp_transport_get_context_data(t);
-        if (ws) {
-            return esp_transport_get_socket(ws->parent);
+        transport_ws_t *ws = t->data;
+        if (ws && ws->parent && ws->parent->_get_socket) {
+            return ws->parent->_get_socket(ws->parent);
         }
     }
     return -1;
@@ -1287,13 +1063,9 @@ static int esp_transport_ws_handle_control_frames(esp_transport_handle_t t, char
 
     } else if (ws->frame_state.opcode == WS_OPCODE_CLOSE) {
         // handle CLOSE by the server: send a zero payload frame
-        if (ws_check_close_reason(ws, buffer, payload_len) < 0) {
-            return -1;
-        }
-        if (buffer && payload_len >= (int)sizeof(uint16_t)) {     // if a status code is present, print it out
-            uint16_t code_network_order;
-            memcpy(&code_network_order, buffer, sizeof(code_network_order));
-            ESP_LOGI(TAG, "Got CLOSE frame with status code=%u", ntohs(code_network_order));
+        if (buffer && payload_len > 0) {     // if some payload, print out the status code
+            uint16_t *code_network_order = (uint16_t *) buffer;
+            ESP_LOGI(TAG, "Got CLOSE frame with status code=%u", ntohs(*code_network_order));
         }
 
         if (client_closed == false) {
@@ -1307,7 +1079,7 @@ static int esp_transport_ws_handle_control_frames(esp_transport_handle_t t, char
 
         // control frame handled correctly, reset the flag indicating new header received
         ws->frame_state.header_received = false;
-        int ret = esp_transport_poll_connection_closed(ws->parent, timeout_ms);
+        int ret = esp_transport_ws_poll_connection_closed(t, timeout_ms);
         if (ret == 0) {
             ESP_LOGW(TAG, "Connection cannot be terminated gracefully within timeout=%d", timeout_ms);
             return -1;
@@ -1330,6 +1102,38 @@ static int esp_transport_ws_handle_control_frames(esp_transport_handle_t t, char
 
 int esp_transport_ws_poll_connection_closed(esp_transport_handle_t t, int timeout_ms)
 {
-    transport_ws_t *ws = esp_transport_get_context_data(t);
-    return esp_transport_poll_connection_closed(ws->parent, timeout_ms);
+    struct timeval timeout;
+    int sock = esp_transport_get_socket(t);
+    fd_set readset;
+    fd_set errset;
+    FD_ZERO(&readset);
+    FD_ZERO(&errset);
+    FD_SET(sock, &readset);
+    FD_SET(sock, &errset);
+
+    int ret = select(sock + 1, &readset, NULL, &errset, esp_transport_utils_ms_to_timeval(timeout_ms, &timeout));
+    if (ret > 0) {
+        if (FD_ISSET(sock, &readset)) {
+            uint8_t buffer;
+            if (recv(sock, &buffer, 1, MSG_PEEK) <= 0) {
+                // socket is readable, but reads zero bytes -- connection cleanly closed by FIN flag
+                return 1;
+            }
+            ESP_LOGW(TAG, "esp_transport_ws_poll_connection_closed: unexpected data readable on socket=%d", sock);
+        } else if (FD_ISSET(sock, &errset)) {
+            int sock_errno = 0;
+            uint32_t optlen = sizeof(sock_errno);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &sock_errno, &optlen);
+            ESP_LOGD(TAG, "esp_transport_ws_poll_connection_closed select error %d, errno = %s, fd = %d", sock_errno, strerror(sock_errno), sock);
+            if (sock_errno == ENOTCONN || sock_errno == ECONNRESET || sock_errno == ECONNABORTED) {
+                // the three err codes above might be caused by connection termination by RTS flag
+                // which we still assume as expected closing sequence of ws-transport connection
+                return 1;
+            }
+            ESP_LOGE(TAG, "esp_transport_ws_poll_connection_closed: unexpected errno=%d on socket=%d", sock_errno, sock);
+        }
+        return -1; // indicates error: socket unexpectedly reads an actual data, or unexpected errno code
+    }
+    return ret;
+
 }

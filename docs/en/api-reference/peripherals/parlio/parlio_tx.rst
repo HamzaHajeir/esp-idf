@@ -46,7 +46,7 @@ First, we need to create a TX unit instance. The following code shows how to cre
         .output_clk_freq_hz = 10 * 1000 * 1000, // Output clock frequency is 10 MHz
         .trans_queue_depth = 32,                // Transaction queue depth is 32
         .max_transfer_size = 256,               // Maximum transfer size is 256 bytes
-        .shift_edge = PARLIO_SHIFT_EDGE_NEG,    // Shift data on the falling edge of the clock
+        .sample_edge = PARLIO_SAMPLE_EDGE_NEG,  // Sample data on the falling edge of the clock
         .flags = {
             .invert_valid_out = true, // The valid signal is high by default, inverted to simulate the chip select signal CS in QPI timing
         }
@@ -74,7 +74,7 @@ The following are the configuration parameters of the :cpp:type:`parlio_tx_unit_
     -  :cpp:member:`parlio_tx_unit_config_t::trans_queue_depth` The depth of the internal transaction queue. The deeper the queue, the more transactions can be prepared in the pending queue.
     -  :cpp:member:`parlio_tx_unit_config_t::max_transfer_size` The maximum transfer size per transaction (in bytes).
     -  :cpp:member:`parlio_tx_unit_config_t::dma_burst_size` The DMA burst transfer size (in bytes), must be a power of 2.
-    -  :cpp:member:`parlio_tx_unit_config_t::shift_edge` The data shift edge of the TX unit.
+    -  :cpp:member:`parlio_tx_unit_config_t::sample_edge` The data sampling edge of the TX unit.
     -  :cpp:member:`parlio_tx_unit_config_t::bit_pack_order` Sets the order of data bits within a byte (valid only when data width < 8).
     -  :cpp:member:`parlio_tx_unit_config_t::flags` Usually used to fine-tune some behaviors of the driver, including the following options
     -  :cpp:member:`parlio_tx_unit_config_t::flags::invert_valid_out` Determines whether to invert the valid signal before sending it to the GPIO pin.
@@ -216,7 +216,7 @@ The TX unit can choose various clock sources, among which the external clock sou
         .output_clk_freq_hz = 5 * 1000 * 1000, // Output clock frequency is 5 MHz. Note that it cannot exceed the input clock frequency
         .trans_queue_depth = 32,
         .max_transfer_size = 256,
-        .shift_edge = PARLIO_SHIFT_EDGE_NEG,    // Shift data on the falling edge of the clock
+        .sample_edge = PARLIO_SAMPLE_EDGE_NEG,  // Sample data on the falling edge of the clock
     };
     // Create TX unit instance
     ESP_ERROR_CHECK(parlio_new_tx_unit(&config, &tx_unit));
@@ -273,7 +273,7 @@ The waveform of the external clock input is shown below:
             .output_clk_freq_hz = 10 * 1000 * 1000, // Output clock frequency is 10 MHz
             .trans_queue_depth = 32,
             .max_transfer_size = 256,
-            .shift_edge = PARLIO_SHIFT_EDGE_NEG,    // Shift data on the falling edge of the clock
+            .sample_edge = PARLIO_SAMPLE_EDGE_NEG,  // Sample data on the falling edge of the clock
             .flags = {
                 .invert_valid_out = true,  // The valid signal is high by default, inverted to simulate the chip select signal CS in QPI timing
             }
@@ -332,7 +332,7 @@ The waveform of the external clock input is shown below:
 Power Management
 ^^^^^^^^^^^^^^^^
 
-When power management :menuitem:`CONFIG_PM_ENABLE` is enabled, the system may adjust or disable the clock source before entering sleep, causing the TX unit's internal time base to not work as expected.
+When power management :ref:`CONFIG_PM_ENABLE` is enabled, the system may adjust or disable the clock source before entering sleep, causing the TX unit's internal time base to not work as expected.
 
 To prevent this, the TX unit driver internally creates a power management lock. The type of lock is set according to different clock sources. The driver will acquire the lock in :cpp:func:`parlio_tx_unit_enable` and release the lock in :cpp:func:`parlio_tx_unit_disable`. This means that regardless of the power management policy, the system will not enter sleep mode, and the clock source will not be disabled or adjusted between these two functions, ensuring that any TX transaction can work normally.
 
@@ -348,7 +348,7 @@ The driver uses critical sections to ensure atomic operations on registers. Key 
 Cache Safety
 ^^^^^^^^^^^^
 
-When the file system performs Flash read/write operations, the system temporarily disables the Cache function to avoid errors when loading instructions and data from Flash. This will cause the TX unit's interrupt handler to be unresponsive during this period, preventing user callback functions from being executed in time. If you want the interrupt handler to run normally while the Cache is disabled, you can enable the :menuitem:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE` option.
+When the file system performs Flash read/write operations, the system temporarily disables the Cache function to avoid errors when loading instructions and data from Flash. This will cause the TX unit's interrupt handler to be unresponsive during this period, preventing user callback functions from being executed in time. If you want the interrupt handler to run normally while the Cache is disabled, you can enable the :ref:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE` option.
 
 .. note::
 
@@ -358,16 +358,16 @@ When the file system performs Flash read/write operations, the system temporaril
 
     .. note::
 
-        When the following options are enabled, the Cache will not be disabled automatically during Flash read/write operations. You don't have to enable the :menuitem:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE`.
+        When the following options are enabled, the Cache will not be disabled automatically during Flash read/write operations. You don't have to enable the :ref:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE`.
 
         .. list::
-            :SOC_SPI_MEM_SUPPORT_AUTO_SUSPEND: - :menuitem:`CONFIG_SPI_FLASH_AUTO_SUSPEND`
-            :SOC_SPIRAM_XIP_SUPPORTED: - :menuitem:`CONFIG_SPIRAM_XIP_FROM_PSRAM`
+            :SOC_SPI_MEM_SUPPORT_AUTO_SUSPEND: - :ref:`CONFIG_SPI_FLASH_AUTO_SUSPEND`
+            :SOC_SPIRAM_XIP_SUPPORTED: - :ref:`CONFIG_SPIRAM_XIP_FROM_PSRAM`
 
 Performance
 ^^^^^^^^^^^
 
-To improve the real-time response capability of interrupt handling, the TX unit driver provides the :menuitem:`CONFIG_PARLIO_TX_ISR_HANDLER_IN_IRAM` option. Enabling this option will place the interrupt handler in internal RAM, reducing the latency caused by cache misses when loading instructions from Flash.
+To improve the real-time response capability of interrupt handling, the TX unit driver provides the :ref:`CONFIG_PARLIO_TX_ISR_HANDLER_IN_IRAM` option. Enabling this option will place the interrupt handler in internal RAM, reducing the latency caused by cache misses when loading instructions from Flash.
 
 .. note::
 
@@ -376,7 +376,7 @@ To improve the real-time response capability of interrupt handling, the TX unit 
 Other Kconfig Options
 ^^^^^^^^^^^^^^^^^^^^^
 
-- :menuitem:`CONFIG_PARLIO_ENABLE_DEBUG_LOG` option allows forcing the enablement of all debug logs of the TX unit driver, regardless of the global log level setting. Enabling this option can help developers obtain more detailed log information during debugging, making it easier to locate and solve problems. This option is shared with the RX unit driver.
+- :ref:`CONFIG_PARLIO_ENABLE_DEBUG_LOG` option allows forcing the enablement of all debug logs of the TX unit driver, regardless of the global log level setting. Enabling this option can help developers obtain more detailed log information during debugging, making it easier to locate and solve problems. This option is shared with the RX unit driver.
 
 Resource Consumption
 ^^^^^^^^^^^^^^^^^^^^
@@ -386,8 +386,8 @@ Use the :doc:`/api-guides/tools/idf-size` tool to view the code and data consump
 - The compiler optimization level is set to ``-Os`` to ensure the minimum code size.
 - The default log level is set to ``ESP_LOG_INFO`` to balance debugging information and performance.
 - The following driver optimization options are disabled:
-    - :menuitem:`CONFIG_PARLIO_TX_ISR_HANDLER_IN_IRAM` - The interrupt handler is not placed in IRAM.
-    - :menuitem:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE` - The Cache safety option is not enabled.
+    - :ref:`CONFIG_PARLIO_TX_ISR_HANDLER_IN_IRAM` - The interrupt handler is not placed in IRAM.
+    - :ref:`CONFIG_PARLIO_TX_ISR_CACHE_SAFE` - The Cache safety option is not enabled.
 
 **Note that the following data is not precise and is for reference only. The data may vary on different chip models and different versions of IDF.**
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,11 +11,6 @@
 
 static gdma_hal_priv_data_t gdma_ahb_hal_priv_data = {
     .m2m_free_periph_mask = GDMA_LL_M2M_FREE_PERIPH_ID_MASK,
-    .tx_event_mask = GDMA_LL_TX_EVENT_MASK,
-    .rx_event_mask = GDMA_LL_RX_EVENT_MASK,
-#if GDMA_LL_GET(AHB_BURST_SIZE_ADJUSTABLE)
-    .supported_burst_size_mask = GDMA_LL_AHB_SUPPORTED_BURST_SIZE_MASK,
-#endif
 };
 
 void gdma_ahb_hal_start_with_desc(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, intptr_t desc_base_addr)
@@ -65,30 +60,23 @@ void gdma_ahb_hal_set_priority(gdma_hal_context_t *hal, int chan_id, gdma_channe
     }
 }
 
-void gdma_ahb_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int periph_id)
+void gdma_ahb_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, gdma_trigger_peripheral_t periph, int periph_sub_id)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        gdma_ll_rx_connect_to_periph(hal->dev, chan_id, periph_id);
+        gdma_ll_rx_reset_channel(hal->dev, chan_id); // reset channel
+        gdma_ll_rx_connect_to_periph(hal->dev, chan_id, periph, periph_sub_id);
     } else {
-        gdma_ll_tx_connect_to_periph(hal->dev, chan_id, periph_id);
+        gdma_ll_tx_reset_channel(hal->dev, chan_id); // reset channel
+        gdma_ll_tx_connect_to_periph(hal->dev, chan_id, periph, periph_sub_id);
     }
 }
 
-void gdma_ahb_hal_connect_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int dummy_id)
+void gdma_ahb_hal_disconnect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        gdma_ll_rx_connect_to_mem(hal->dev, chan_id, dummy_id);
+        gdma_ll_rx_disconnect_from_periph(hal->dev, chan_id);
     } else {
-        gdma_ll_tx_connect_to_mem(hal->dev, chan_id, dummy_id);
-    }
-}
-
-void gdma_ahb_hal_disconnect_all(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
-{
-    if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        gdma_ll_rx_disconnect_all(hal->dev, chan_id);
-    } else {
-        gdma_ll_tx_disconnect_all(hal->dev, chan_id);
+        gdma_ll_tx_disconnect_from_periph(hal->dev, chan_id);
     }
 }
 
@@ -187,12 +175,6 @@ void gdma_ahb_hal_enable_etm_task(gdma_hal_context_t *hal, int chan_id, gdma_cha
 }
 #endif // SOC_GDMA_SUPPORT_ETM
 
-bool gdma_ahb_hal_is_tx_link_switch_event_supported(gdma_hal_context_t *hal)
-{
-    (void)hal;
-    return false;
-}
-
 void gdma_ahb_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 {
     hal->dev = GDMA_LL_GET_HW(config->group_id - GDMA_LL_AHB_GROUP_START_ID);
@@ -202,8 +184,7 @@ void gdma_ahb_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
     hal->reset = gdma_ahb_hal_reset;
     hal->set_priority = gdma_ahb_hal_set_priority;
     hal->connect_peri = gdma_ahb_hal_connect_peri;
-    hal->connect_mem = gdma_ahb_hal_connect_mem;
-    hal->disconnect_all = gdma_ahb_hal_disconnect_all;
+    hal->disconnect_peri = gdma_ahb_hal_disconnect_peri;
     hal->enable_burst = gdma_ahb_hal_enable_burst;
     hal->set_strategy = gdma_ahb_hal_set_strategy;
     hal->enable_intr = gdma_ahb_hal_enable_intr;
@@ -217,6 +198,5 @@ void gdma_ahb_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 #if GDMA_LL_GET(AHB_BURST_SIZE_ADJUSTABLE)
     hal->set_burst_size = gdma_ahb_hal_set_burst_size;
 #endif // GDMA_LL_GET(AHB_BURST_SIZE_ADJUSTABLE)
-    hal->is_tx_link_switch_event_supported = gdma_ahb_hal_is_tx_link_switch_event_supported;
     hal->priv_data = &gdma_ahb_hal_priv_data;
 }

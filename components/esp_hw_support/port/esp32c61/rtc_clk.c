@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,11 +17,11 @@
 #include "esp_rom_sys.h"
 #include "esp_sleep.h"
 #include "hal/clk_tree_ll.h"
+#include "hal/regi2c_ctrl_ll.h"
 #include "hal/gpio_ll.h"
 #include "soc/lp_aon_reg.h"
 #include "esp_private/sleep_event.h"
-#include "esp_attr.h"
-#include "esp_private/esp_pmu.h"
+#include "esp_private/regi2c_ctrl.h"
 
 ESP_HW_LOG_ATTR_TAG(TAG, "rtc_clk");
 
@@ -65,25 +65,11 @@ void rtc_clk_32k_disable_external(void)
 
 void rtc_clk_32k_bootstrap(uint32_t cycle)
 {
-    clk_ll_xtal32k_enable(CLK_LL_XTAL32K_ENABLE_MODE_BOOTSTRAP);
-
-    if (cycle) {
-        /*
-         * 32K-N is the drive pin for the crystal oscillator circuit. Empirical testing shows that better results are achieved when the auxiliary signal is output from the 32K-P pin.
-         * By controlling the pull-up and pull-down resistors on the corresponding IO pins, a low-intensity 32.768kHz drive signal is output to assist the crystal oscillator in starting up.
-         * With the pull-down resistor always enabled, the drive amplitude is approximately 1/2*VCC, which is closer to the actual signal.
-        */
-        const uint32_t delay_us = (1000000 / SOC_CLK_XTAL32K_FREQ_APPROX / 2);
-        gpio_ll_pulldown_en(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-        while (cycle) {
-            esp_rom_delay_us(delay_us);
-            gpio_ll_pullup_en(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-            esp_rom_delay_us(delay_us);
-            gpio_ll_pullup_dis(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-            cycle--;
-        }
-        gpio_ll_pulldown_dis(&GPIO, SOC_XTAL32K_P_GPIO_NUM);
-    }
+    /* No special bootstrapping needed for ESP32-C61, 'cycle' argument is to keep the signature
+     * same as for the ESP32. Just enable the XTAL here.
+     */
+    (void)cycle;
+    rtc_clk_32k_enable(true);
 }
 
 bool rtc_clk_32k_enabled(void)
@@ -164,13 +150,13 @@ static void rtc_clk_bbpll_configure(soc_xtal_freq_t xtal_freq, int pll_freq)
     /* Analog part */
     ANALOG_CLOCK_ENABLE();
     /* BBPLL CALIBRATION START */
-    clk_ll_bbpll_calibration_start();
+    regi2c_ctrl_ll_bbpll_calibration_start();
     clk_ll_bbpll_set_config(pll_freq, xtal_freq);
     /* WAIT CALIBRATION DONE */
-    while(!clk_ll_bbpll_calibration_is_done());
+    while(!regi2c_ctrl_ll_bbpll_calibration_is_done());
     esp_rom_delay_us(10); // wait for true stop
     /* BBPLL CALIBRATION STOP */
-    clk_ll_bbpll_calibration_stop();
+    regi2c_ctrl_ll_bbpll_calibration_stop();
     ANALOG_CLOCK_DISABLE();
 
     s_cur_pll_freq = pll_freq;
@@ -181,7 +167,7 @@ static void rtc_clk_bbpll_configure(soc_xtal_freq_t xtal_freq, int pll_freq)
  * Must satisfy: cpu_freq = XTAL_FREQ / div.
  * Does not disable the PLL.
  */
-static FORCE_IRAM_ATTR void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
+static void rtc_clk_cpu_freq_to_xtal(int cpu_freq, int div)
 {
     // let f_cpu = f_ahb
     clk_ll_cpu_set_divider(div);
@@ -207,9 +193,6 @@ static void rtc_clk_cpu_freq_to_rc_fast(void)
  */
 static void rtc_clk_cpu_freq_to_pll_160_mhz(int cpu_freq_mhz)
 {
-#if CONFIG_ESP_ENABLE_PVT && !defined(BOOTLOADER_BUILD)
-    pvt_auto_dbias_enable(true, true);
-#endif
     // f_hp_root = 160MHz
     uint32_t cpu_divider = CLK_LL_PLL_160M_FREQ_MHZ / cpu_freq_mhz;
     clk_ll_cpu_set_divider(cpu_divider);
@@ -345,7 +328,7 @@ void rtc_clk_cpu_freq_set_xtal(void)
     rtc_clk_bbpll_disable();
 }
 
-FORCE_IRAM_ATTR void rtc_clk_cpu_set_to_default_config(void)
+void rtc_clk_cpu_set_to_default_config(void)
 {
     int freq_mhz = (int)rtc_clk_xtal_freq_get();
 
@@ -355,18 +338,16 @@ FORCE_IRAM_ATTR void rtc_clk_cpu_set_to_default_config(void)
 
 void rtc_clk_cpu_freq_set_xtal_for_sleep(void)
 {
-#if CONFIG_ESP_ENABLE_PVT && !defined(BOOTLOADER_BUILD)
-    pvt_auto_dbias_enable(false, false);
-#endif
     rtc_clk_cpu_set_to_default_config();
 }
 
-void rtc_clk_modem_pll_lock_release(void)
+void rtc_clk_cpu_freq_to_pll_and_pll_lock_release(int cpu_freq_mhz)
 {
+    rtc_clk_cpu_freq_to_pll_160_mhz(cpu_freq_mhz);
     clk_ll_cpu_clk_src_lock_release();
 }
 
-FORCE_IRAM_ATTR soc_xtal_freq_t rtc_clk_xtal_freq_get(void)
+soc_xtal_freq_t rtc_clk_xtal_freq_get(void)
 {
     uint32_t xtal_freq_mhz = clk_ll_xtal_get_freq_mhz();
     assert(xtal_freq_mhz == SOC_XTAL_FREQ_40M);

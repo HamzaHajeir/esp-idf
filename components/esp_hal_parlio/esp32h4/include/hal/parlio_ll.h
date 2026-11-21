@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -42,7 +42,7 @@
 #define PARLIO_LL_EVENT_RX_MASK          (PARLIO_LL_EVENT_RX_FIFO_FULL)
 
 #define PARLIO_LL_TX_DATA_LINE_AS_CLK_GATE  7 // TXD[7] can be used as clock gate signal
-#define PARLIO_LL_TX_VALID_MAX_DELAY        65535
+#define PARLIO_LL_TX_VALID_MAX_DELAY        32767
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -74,7 +74,6 @@ static inline void parlio_ll_enable_bus_clock(int group_id, bool enable)
  *
  * @param group_id  The group id of the parlio module
  */
-__attribute__((always_inline))
 static inline void parlio_ll_reset_register(int group_id)
 {
     (void)group_id;
@@ -90,7 +89,6 @@ static inline void parlio_ll_reset_register(int group_id)
  * @param dev Parallel IO register base address
  * @param src Clock source
  */
-__attribute__((always_inline))
 static inline void parlio_ll_rx_set_clock_source(parl_io_dev_t *dev, parlio_clock_source_t src)
 {
     (void)dev;
@@ -266,9 +264,8 @@ static inline void parlio_ll_rx_start_soft_recv(parl_io_dev_t *dev, bool en)
 __attribute__((always_inline))
 static inline void parlio_ll_rx_set_sample_clock_edge(parl_io_dev_t *dev, parlio_sample_edge_t edge)
 {
-    bool invert = edge == PARLIO_SAMPLE_EDGE_NEG;
-    dev->rx_clk_cfg.rx_clk_i_inv = invert;
-    dev->rx_clk_cfg.rx_clk_o_inv = invert;
+    dev->rx_clk_cfg.rx_clk_i_inv = edge;
+    dev->rx_clk_cfg.rx_clk_o_inv = edge;
 }
 
 /**
@@ -564,12 +561,12 @@ static inline bool parlio_ll_tx_set_valid_delay(parl_io_dev_t *dev, uint32_t sta
 }
 
 /**
- * @brief Set the shift clock edge
+ * @brief Set the sample clock edge
  *
  * @param dev Parallel IO register base address
- * @param edge Shift clock edge
+ * @param edge Sample clock edge
  */
-static inline void parlio_ll_tx_set_shift_clock_edge(parl_io_dev_t *dev, parlio_shift_edge_t edge)
+static inline void parlio_ll_tx_set_sample_clock_edge(parl_io_dev_t *dev, parlio_sample_edge_t edge)
 {
     dev->tx_clk_cfg.tx_clk_i_inv = edge;
     dev->tx_clk_cfg.tx_clk_o_inv = edge;

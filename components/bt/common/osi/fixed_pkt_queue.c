@@ -92,8 +92,7 @@ size_t fixed_pkt_queue_capacity(fixed_pkt_queue_t *queue)
     return queue->capacity;
 }
 
-bool fixed_pkt_queue_enqueue_and_len(fixed_pkt_queue_t *queue, pkt_linked_item_t *linked_pkt,
-                                     uint32_t timeout, size_t *out_len)
+bool fixed_pkt_queue_enqueue(fixed_pkt_queue_t *queue, pkt_linked_item_t *linked_pkt, uint32_t timeout)
 {
     bool ret = false;
 
@@ -104,7 +103,7 @@ bool fixed_pkt_queue_enqueue_and_len(fixed_pkt_queue_t *queue, pkt_linked_item_t
         return false;
     }
 
-    ret = pkt_queue_enqueue_and_len(queue->pkt_list, linked_pkt, out_len);
+    ret = pkt_queue_enqueue(queue->pkt_list, linked_pkt);
 
     assert(ret == true);
     osi_sem_give(&queue->dequeue_sem);
@@ -112,33 +111,20 @@ bool fixed_pkt_queue_enqueue_and_len(fixed_pkt_queue_t *queue, pkt_linked_item_t
     return ret;
 }
 
-bool fixed_pkt_queue_enqueue(fixed_pkt_queue_t *queue, pkt_linked_item_t *linked_pkt, uint32_t timeout)
-{
-    return fixed_pkt_queue_enqueue_and_len(queue, linked_pkt, timeout, NULL);
-}
-
-pkt_linked_item_t *fixed_pkt_queue_dequeue_and_len(fixed_pkt_queue_t *queue, uint32_t timeout, size_t *out_len)
+pkt_linked_item_t *fixed_pkt_queue_dequeue(fixed_pkt_queue_t *queue, uint32_t timeout)
 {
     pkt_linked_item_t *ret = NULL;
 
     assert(queue != NULL);
 
     if (osi_sem_take(&queue->dequeue_sem, timeout) != 0) {
-        if (out_len != NULL) {
-            *out_len = 0;
-        }
         return NULL;
     }
-    ret = pkt_queue_dequeue_and_len(queue->pkt_list, out_len);
+    ret = pkt_queue_dequeue(queue->pkt_list);
 
     osi_sem_give(&queue->enqueue_sem);
 
     return ret;
-}
-
-pkt_linked_item_t *fixed_pkt_queue_dequeue(fixed_pkt_queue_t *queue, uint32_t timeout)
-{
-    return fixed_pkt_queue_dequeue_and_len(queue, timeout, NULL);
 }
 
 pkt_linked_item_t *fixed_pkt_queue_try_peek_first(fixed_pkt_queue_t *queue)

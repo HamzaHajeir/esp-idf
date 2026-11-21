@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2025 Amazon.com, Inc. or its affiliates
+ * SPDX-FileCopyrightText: 2021 Amazon.com, Inc. or its affiliates
  *
  * SPDX-License-Identifier: MIT
  */
@@ -31,74 +31,21 @@
  *
  */
 
-#pragma once
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef _WAIT_FOR_EVENT_H_
+#define _WAIT_FOR_EVENT_H_
 
 #include <stdbool.h>
 #include <time.h>
 
-/**
- * @brief
- *
- */
-typedef struct event
-{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    bool event_triggered;
-} event_t;
+struct event;
+
+struct event * event_create(void);
+void event_delete( struct event * );
+bool event_wait( struct event * ev );
+bool event_wait_timed( struct event * ev,
+                       time_t ms );
+void event_signal( struct event * ev );
 
 
-/**
- * @brief
- *
- * @return event_t*
- */
-event_t *event_create(void);
 
-/**
- * @brief
- *
- * @param ev
- */
-void event_delete(event_t *ev);
-
-/**
- * @brief
- *
- * @param ev
- * @return true
- * @return false
- */
-bool event_wait(event_t *ev);
-
-/**
- * @brief
- *
- * @param ev
- * @param ms
- * @return true
- * @return false
- */
-bool event_wait_timed(event_t *ev, time_t ms);
-
-/**
- * @brief
- *
- * @param ev
- */
-void event_signal(event_t *ev);
-
-/**
- * @brief Discard a pending signal that was never consumed by a wait
- *
- * @param ev
- */
-void event_clear(event_t *ev);
-
-#ifdef __cplusplus
-}
-#endif
+#endif /* ifndef _WAIT_FOR_EVENT_H_ */

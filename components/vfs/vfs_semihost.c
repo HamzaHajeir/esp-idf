@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,12 +10,19 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "esp_check.h"
 #include "esp_log.h"
 #include "esp_vfs.h"
 #include "esp_cpu.h"
 #include "include/esp_vfs.h"
 #include "openocd_semihosting.h"
+
+#ifndef CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS
+#define CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS 1
+#endif
+
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 const static char *TAG = "esp_semihost";
 
@@ -68,6 +75,17 @@ static inline int get_o_mode(int flags) {
     return -1; // there is no corresponding mode in the table
 }
 
+typedef struct {
+    char base_path[ESP_VFS_PATH_MAX + 1];                    /* base path in VFS where host semihosting dir is mounted */
+} vfs_semihost_ctx_t;
+
+static vfs_semihost_ctx_t s_semhost_ctx[CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS];
+
+static inline bool ctx_is_unused(const vfs_semihost_ctx_t* ctx)
+{
+    return ctx->base_path[0] == 0;
+}
+
 #define FAIL_IF_NO_DEBUGGER() \
     do { \
         if (!esp_cpu_dbgr_is_attached()) { \
@@ -76,10 +94,16 @@ static inline int get_o_mode(int flags) {
         } \
     } while(0)
 
-static esp_err_t vfs_semihost_drvinfo(void)
+static esp_err_t vfs_semihost_drvinfo(vfs_semihost_ctx_t *ctx)
 {
-    /* -1 means unsupported syscall, i.e. an old version of OpenOCD */
-    return semihosting_ver_info() == -1 ? ESP_ERR_INVALID_VERSION : ESP_OK;
+    FAIL_IF_NO_DEBUGGER();
+
+    int ret = semihosting_ver_info();
+    if (ret == -1) {
+        /* Unsupported syscall - old version of OpenOCD */
+        return ESP_ERR_INVALID_VERSION;
+    }
+    return ESP_OK;
 }
 
 static int vfs_semihost_open(void* ctx, const char* path, int flags, int mode)
@@ -417,8 +441,6 @@ static const esp_vfs_dir_ops_t s_vfs_semihost_dir = {
 };
 #endif
 
-#define VFS_SEMIHOST_FLAGS (ESP_VFS_FLAG_STATIC | ESP_VFS_FLAG_CONTEXT_PTR)
-
 static const esp_vfs_fs_ops_t s_vfs_semihost = {
     .write_p = &vfs_semihost_write,
     .open_p = &vfs_semihost_open,
@@ -434,19 +456,63 @@ static const esp_vfs_fs_ops_t s_vfs_semihost = {
 
 esp_err_t esp_vfs_semihost_register(const char* base_path)
 {
-    ESP_RETURN_ON_FALSE(base_path, ESP_ERR_INVALID_ARG, TAG, "base_path cannot be null");
-    ESP_LOGD(TAG, "Register semihosting driver '%s'", base_path);
+    assert(base_path);
 
-    ESP_RETURN_ON_FALSE(esp_cpu_dbgr_is_attached(), ESP_ERR_NOT_SUPPORTED, TAG, "OpenOCD is not connected!");
-    if (vfs_semihost_drvinfo() != ESP_OK) {
+    ESP_LOGD(TAG, "Register semihosting driver '%s'", base_path);
+    if (!esp_cpu_dbgr_is_attached()) {
+        ESP_LOGE(TAG, "OpenOCD is not connected!");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    int i = 0;
+    for (i = 0; i < CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS; i++) {
+        if (ctx_is_unused(&s_semhost_ctx[i])) {
+            break;
+        }
+        if (strcmp(base_path, s_semhost_ctx[i].base_path) == 0) {
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+    if (i == CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS) {
+        return ESP_ERR_NO_MEM;
+    }
+    strlcpy(s_semhost_ctx[i].base_path, base_path, sizeof(s_semhost_ctx[i].base_path) - 1);
+
+    ESP_LOGD(TAG, "Register semihosting driver %d %p", i, &s_semhost_ctx[i]);
+
+    esp_err_t err;
+    /* Check for older OpenOCD versions */
+    err = vfs_semihost_drvinfo(&s_semhost_ctx[i]); // define semihosting version
+    if (err != ESP_OK) {
         ESP_LOGE(TAG, "Incompatible OpenOCD version detected. Please follow the getting started guides to install the required version.");
     }
-    ESP_RETURN_ON_ERROR(esp_vfs_register_fs(base_path, &s_vfs_semihost, VFS_SEMIHOST_FLAGS, NULL),
-                        TAG, "Can't register the semihosting");
-    return ESP_OK;
+
+    err = esp_vfs_register_fs(base_path, &s_vfs_semihost, ESP_VFS_FLAG_STATIC | ESP_VFS_FLAG_CONTEXT_PTR, &s_semhost_ctx[i]);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Can't register the semihosting! Error: %s", esp_err_to_name(err));
+        return err;
+    }
+    return err;
 }
 
 esp_err_t esp_vfs_semihost_unregister(const char* base_path)
 {
-    return esp_vfs_unregister_fs_checked(base_path, &s_vfs_semihost, VFS_SEMIHOST_FLAGS, NULL);
+    assert(base_path);
+
+    ESP_LOGD(TAG, "Unregister semihosting driver @ '%s'", base_path);
+    int i = 0;
+    for (i = 0; i < CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS; i++) {
+        if (s_semhost_ctx[i].base_path[0] != 0 && strcmp(base_path, s_semhost_ctx[i].base_path) == 0) {
+            break;
+        }
+    }
+    if (i == CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t ret = esp_vfs_unregister(s_semhost_ctx[i].base_path);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    s_semhost_ctx[i].base_path[0] = 0;
+    ESP_LOGD(TAG, "Unregistered semihosting driver @ '%s'", base_path);
+    return ESP_OK;
 }

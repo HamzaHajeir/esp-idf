@@ -1,7 +1,3 @@
-if(IDF_CUSTOM_TOOLCHAIN)
-    return()
-endif()
-
 if(CONFIG_IDF_TOOLCHAIN_GCC)
     # Common flags
     idf_toolchain_add_flags(LINK_OPTIONS "-nostartfiles")
@@ -11,19 +7,17 @@ if(CONFIG_IDF_TOOLCHAIN_GCC)
         idf_toolchain_add_flags(COMPILE_OPTIONS "-Wno-frame-address")
     elseif(CONFIG_IDF_TARGET_ESP32C2 OR
            CONFIG_IDF_TARGET_ESP32C3)
-        set(_march "rv32imc")
+        set(_march "rv32imc_zicsr_zifencei")
     elseif(CONFIG_IDF_TARGET_ESP32C5 OR
            CONFIG_IDF_TARGET_ESP32C6 OR
            CONFIG_IDF_TARGET_ESP32C61 OR
            CONFIG_IDF_TARGET_ESP32H2 OR
            CONFIG_IDF_TARGET_ESP32H21)
-        set(_march "rv32imac")
-    elseif(CONFIG_IDF_TARGET_ESP32P4 AND CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
-        set(_march "rv32imafc")
-    elseif(CONFIG_IDF_TARGET_ESP32H4 OR
-           CONFIG_IDF_TARGET_ESP32P4 OR
-           CONFIG_IDF_TARGET_ESP32S31)
-        set(_march "rv32imafcb")
+        set(_march "rv32imac_zicsr_zifencei_zaamo_zalrsc")
+    elseif(CONFIG_IDF_TARGET_ESP32H4)
+        set(_march "rv32imafcb_zicsr_zifencei_zaamo_zalrsc")
+    elseif(CONFIG_IDF_TARGET_ESP32P4 OR CONFIG_IDF_TARGET_ESP32S31)
+        set(_march "rv32imafc_zicsr_zifencei_zaamo_zalrsc")
     elseif(NOT(CONFIG_IDF_TARGET_ESP32S2 OR CONFIG_IDF_TARGET_ESP32S3))
         message(FATAL_ERROR "Unknown Espressif target: ${CONFIG_IDF_TARGET}")
     endif()
@@ -41,11 +35,12 @@ if(CONFIG_IDF_TOOLCHAIN_GCC)
 
         # Clean compile options that were added by previous configurations and may be outdated
         idf_toolchain_remove_flags(COMPILE_OPTIONS "-march="
-                                                   "-mtune="
                                                    "-mno-cm-push-reverse"
                                                    "-mno-cm-popret")
 
-        set(_march "${_march}_zicsr_zifencei")
+        if(CONFIG_SOC_CPU_HAS_ZB_EXTENSIONS)
+            set(_march "${_march}_zba_zbb_zbs")
+        endif()
 
         if((CONFIG_SOC_CPU_HAS_ZC_EXTENSIONS AND NOT CONFIG_SOC_CPU_ZCMP_WORKAROUND) OR
            CONFIG_COMPILER_ENABLE_RISCV_ZCMP)
@@ -55,11 +50,9 @@ if(CONFIG_IDF_TOOLCHAIN_GCC)
                 if(CONFIG_SOC_CPU_ZCMP_PUSH_REVERSED)
                     idf_toolchain_add_flags(COMPILE_OPTIONS "-mno-cm-push-reverse")
                 endif()
-                # TODO GCC-493: uncomment when the issue is resolved
-                # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126454
-                # if(CONFIG_SOC_CPU_ZCMP_POPRET_ISSUE)
+                if(CONFIG_SOC_CPU_ZCMP_POPRET_ISSUE)
                     idf_toolchain_add_flags(COMPILE_OPTIONS "-mno-cm-popret")
-                # endif()
+                endif()
             endif()
         endif()
 
@@ -85,31 +78,7 @@ if(CONFIG_IDF_TOOLCHAIN_GCC)
         idf_toolchain_add_flags(COMPILE_OPTIONS "-march=${_march}")
 
         if(NOT CONFIG_SOC_CPU_MISALIGNED_ACCESS_ON_PMP_MISMATCH_ISSUE)
-            check_c_compiler_flag("-mtune=${CONFIG_IDF_TARGET}" COMPILER_SUPPORTS_MTUNE_${CONFIG_IDF_TARGET})
-            if(COMPILER_SUPPORTS_MTUNE_${CONFIG_IDF_TARGET})
-                idf_toolchain_add_flags(COMPILE_OPTIONS "-mtune=${CONFIG_IDF_TARGET}")
-            else()
-                idf_toolchain_add_flags(COMPILE_OPTIONS "-mtune=esp-base")
-            endif()
-        endif()
-        idf_toolchain_rerun_abi_detection()
-    else()
-        message(FATAL_ERROR "Unknown Espressif architecture: ${CONFIG_IDF_TARGET_ARCH}")
-    endif()
-elseif(CONFIG_IDF_TOOLCHAIN_CLANG)
-    idf_toolchain_add_flags(LINK_OPTIONS "-nostartfiles --ld-path=${CMAKE_LINKER} -z noexecstack")
-    # Clean compile options that were added by previous configurations and may be outdated
-    idf_toolchain_remove_flags(COMPILE_OPTIONS "-mcpu=")
-    if(CONFIG_IDF_TARGET_ARCH_XTENSA)
-        idf_toolchain_add_flags(COMPILE_OPTIONS "--target=xtensa-esp-elf")
-        idf_toolchain_add_flags(ASM_COMPILE_OPTIONS "-Xassembler --longcalls")
-        idf_toolchain_add_flags(COMPILE_OPTIONS "-mcpu=${CONFIG_IDF_TARGET}")
-    elseif(CONFIG_IDF_TARGET_ARCH_RISCV)
-        idf_toolchain_add_flags(COMPILE_OPTIONS "--target=riscv32-esp-elf")
-        if(CONFIG_IDF_TARGET_ESP32P4 AND CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
-            idf_toolchain_add_flags(COMPILE_OPTIONS "-mcpu=esp32p4eco4")
-        else()
-            idf_toolchain_add_flags(COMPILE_OPTIONS "-mcpu=${CONFIG_IDF_TARGET}")
+            idf_toolchain_add_flags(COMPILE_OPTIONS "-mtune=esp-base")
         endif()
         idf_toolchain_rerun_abi_detection()
     else()

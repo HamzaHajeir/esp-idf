@@ -65,7 +65,6 @@ typedef struct {
 #define SPI_SLAVE_HD_RXBIT_LSBFIRST     (1<<1)  ///< Receive data LSB first instead of the default MSB first
 #define SPI_SLAVE_HD_BIT_LSBFIRST       (SPI_SLAVE_HD_TXBIT_LSBFIRST|SPI_SLAVE_HD_RXBIT_LSBFIRST) ///< Transmit and receive LSB first
 #define SPI_SLAVE_HD_APPEND_MODE        (1<<2)  ///< Adopt DMA append mode for transactions. In this mode, users can load(append) DMA descriptors without stopping the DMA
-#define SPI_SLAVE_HD_3WIRE_MODE         (1<<3)  ///< Use MOSI (=spid) for both sending and receiving data, and the master should only use the 1-bit mask for SPI Slave HD commands
 
 /// Configuration structure for the SPI Slave HD driver
 typedef struct {
@@ -167,7 +166,7 @@ esp_err_t spi_slave_hd_queue_trans(spi_host_device_t host_id, spi_slave_chan_t c
  *  - ESP_OK: on success
  *  - ESP_ERR_INVALID_ARG: Function is not valid
  *  - ESP_ERR_TIMEOUT: There's no transaction done before timeout
- *  - ESP_ERR_INVALID_STATE: Function called in invalid state. This API should be called under segment mode. Or DMA hardware over/underflow occurred.
+ *  - ESP_ERR_INVALID_STATE: Function called in invalid state. This API should be called under segment mode.
  */
 esp_err_t spi_slave_hd_get_trans_res(spi_host_device_t host_id, spi_slave_chan_t chan, spi_slave_hd_data_t **out_trans, uint32_t timeout);
 
@@ -224,7 +223,7 @@ esp_err_t spi_slave_hd_append_trans(spi_host_device_t host_id, spi_slave_chan_t 
  *  - ESP_OK: on success
  *  - ESP_ERR_INVALID_ARG: Function is not valid
  *  - ESP_ERR_TIMEOUT: There's no transaction done before timeout
- *  - ESP_ERR_INVALID_STATE: Function called in invalid state. This API should be called under append mode. Or DMA hardware over/underflow occurred.
+ *  - ESP_ERR_INVALID_STATE: Function called in invalid state. This API should be called under append mode.
  */
 esp_err_t spi_slave_hd_get_append_trans_res(spi_host_device_t host_id, spi_slave_chan_t chan, spi_slave_hd_data_t **out_trans, uint32_t timeout);
 

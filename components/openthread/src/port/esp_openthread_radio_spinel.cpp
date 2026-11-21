@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,14 +17,8 @@
 #include "esp_system.h"
 #include "esp_spinel_interface.hpp"
 #include "esp_spinel_ncp_vendor_macro.h"
-#if CONFIG_OPENTHREAD_RADIO_SPINEL_UART
-#include "esp_radio_spinel_uart_interface.hpp"
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
 #include "esp_spi_spinel_interface.hpp"
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-#include "esp_radio_spinel_custom.hpp"
-#endif
-#include "esp_radio_spinel_host.h"
+#include "esp_uart_spinel_interface.hpp"
 #include "openthread-core-config.h"
 #include "lib/spinel/radio_spinel.hpp"
 #include "lib/spinel/spinel.h"
@@ -42,14 +36,11 @@ using esp::openthread::SpinelInterfaceAdapter;
 using ot::Spinel::SpinelDriver;
 
 #if CONFIG_OPENTHREAD_RADIO_SPINEL_UART // CONFIG_OPENTHREAD_RADIO_SPINEL_UART
-using esp::radio_spinel::UartSpinelInterface;
+using esp::openthread::UartSpinelInterface;
 static SpinelInterfaceAdapter<UartSpinelInterface> s_spinel_interface;
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI // CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
+#else // CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
 using esp::openthread::SpiSpinelInterface;
 static SpinelInterfaceAdapter<SpiSpinelInterface> s_spinel_interface;
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM // CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-using esp::radio_spinel::CustomSpinelInterface;
-static SpinelInterfaceAdapter<CustomSpinelInterface> s_spinel_interface;
 #endif
 
 static SpinelDriver s_spinel_driver;
@@ -62,9 +53,7 @@ static otRadioCaps s_radio_caps = (OT_RADIO_CAPS_ENERGY_SCAN       |
                                    OT_RADIO_CAPS_RECEIVE_TIMING    |
                                    OT_RADIO_CAPS_TRANSMIT_TIMING   |
                                    OT_RADIO_CAPS_ACK_TIMEOUT       |
-                                   OT_RADIO_CAPS_SLEEP_TO_TX       |
-                                   OT_RADIO_CAPS_CSMA_BACKOFF      |
-                                   OT_RADIO_CAPS_TRANSMIT_RETRIES);
+                                   OT_RADIO_CAPS_SLEEP_TO_TX);
 
 static const char *radiospinel_workflow = "radio_spinel";
 static const esp_openthread_radio_config_t *s_esp_openthread_radio_config = NULL;
@@ -108,7 +97,8 @@ void esp_openthread_set_coprocessor_reset_failure_callback(esp_openthread_coproc
 
 esp_err_t esp_openthread_radio_init(const esp_openthread_platform_config_t *config)
 {
-    ESP_RETURN_ON_FALSE(config != NULL, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG, "incoming config is NULL");
+    spinel_iid_t iidList[ot::Spinel::kSpinelHeaderMaxNumIid];
+    iidList[0] = 0;
 
     ot::Spinel::RadioSpinelCallbacks callbacks;
     memset(&callbacks, 0, sizeof(callbacks));
@@ -119,40 +109,15 @@ esp_err_t esp_openthread_radio_init(const esp_openthread_platform_config_t *conf
     s_radio.SetCallbacks(callbacks);
 
     esp_openthread_radio_config_set(&config->radio_config);
-    // validate incoming RCP Radio Mode
-#if CONFIG_OPENTHREAD_RADIO_SPINEL_UART
-    ESP_RETURN_ON_FALSE(config->radio_config.radio_mode == RADIO_MODE_UART_RCP, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG,
-                        "radio_mode must be RADIO_MODE_UART_RCP");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
-    ESP_RETURN_ON_FALSE(config->radio_config.radio_mode == RADIO_MODE_SPI_RCP, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG,
-                        "radio_mode must be RADIO_MODE_SPI_RCP");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-    ESP_RETURN_ON_FALSE(config->radio_config.radio_mode == RADIO_MODE_TRANSPORT, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG,
-                        "radio_mode must be RADIO_MODE_TRANSPORT");
-    ESP_RETURN_ON_FALSE(config->radio_config.radio_transport_config.transport_tx != NULL &&
-                        config->radio_config.radio_transport_config.transport_rx != NULL, ESP_ERR_INVALID_ARG, OT_PLAT_LOG_TAG,
-                        "transport callbacks must be non-NULL");
-#endif
 #if CONFIG_OPENTHREAD_RADIO_SPINEL_UART // CONFIG_OPENTHREAD_RADIO_SPINEL_UART
     ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(config->radio_config.radio_uart_config), OT_PLAT_LOG_TAG,
                         "Spinel interface init failed");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI // CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
+#else // CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
     ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(config->radio_config.radio_spi_config), OT_PLAT_LOG_TAG,
                         "Spinel interface init failed");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM // CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-    ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(config->radio_config.radio_transport_config), OT_PLAT_LOG_TAG,
-                        "Spinel custom transport init failed");
-#endif
-#if CONFIG_OPENTHREAD_MULTIPAN_HOST_ENABLE
-    spinel_iid_t iidList[ESP_RADIO_SPINEL_IID_LIST_LEN] = {
-        static_cast<spinel_iid_t>(s_spinel_interface.GetSpinelInterface().GetIid()),
-        static_cast<spinel_iid_t>(SPINEL_HEADER_GET_IID(OPENTHREAD_SPINEL_CONFIG_BROADCAST_IID)),
-    };
-#else
-    spinel_iid_t iidList[ESP_RADIO_SPINEL_IID_LIST_LEN] = {0};
 #endif
     s_spinel_driver.SetCoprocessorResetFailureCallback(ot_spinel_coprocessor_reset_failure_callback, esp_openthread_get_instance());
-    s_spinel_driver.Init(s_spinel_interface.GetSpinelInterface(), true, iidList, ESP_RADIO_SPINEL_IID_LIST_LEN);
+    s_spinel_driver.Init(s_spinel_interface.GetSpinelInterface(), true, iidList, ot::Spinel::kSpinelHeaderMaxNumIid);
     if (strlen(s_internal_rcp_version) > 0) {
         const char *running_rcp_version = s_spinel_driver.GetVersion();
         if (strcmp(s_internal_rcp_version, running_rcp_version) != 0) {
@@ -185,8 +150,7 @@ esp_err_t esp_openthread_rcp_deinit(void)
         ESP_RETURN_ON_FALSE(s_radio.Sleep() == OT_ERROR_NONE, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG, "Radio fails to sleep");
         ESP_RETURN_ON_FALSE(s_radio.Disable() == OT_ERROR_NONE, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG, "Fail to disable radio");
     }
-    ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Disable(), OT_PLAT_LOG_TAG,
-                        "Fail to deinitialize UART");
+    ESP_RETURN_ON_FALSE(s_spinel_interface.GetSpinelInterface().Disable() == OT_ERROR_NONE, ESP_ERR_INVALID_STATE, OT_PLAT_LOG_TAG, "Fail to deinitialize UART");
     esp_openthread_platform_workflow_unregister(radiospinel_workflow);
     return ESP_OK;
 }
@@ -197,13 +161,10 @@ esp_err_t esp_openthread_rcp_init(void)
 #if CONFIG_OPENTHREAD_RADIO_SPINEL_UART
     ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(radio_config->radio_uart_config), OT_PLAT_LOG_TAG,
                         "Spinel interface init failed");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
+#else   // CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
     ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(radio_config->radio_spi_config), OT_PLAT_LOG_TAG,
                         "Spinel interface init failed");
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-    ESP_RETURN_ON_ERROR(s_spinel_interface.GetSpinelInterface().Enable(radio_config->radio_transport_config), OT_PLAT_LOG_TAG,
-                        "Spinel interface init failed");
-#endif
+#endif  // CONFIG_OPENTHREAD_RADIO_SPINEL_UART
 
     ESP_RETURN_ON_FALSE(s_radio.Enable(esp_openthread_get_instance()) == OT_ERROR_NONE, ESP_FAIL, OT_PLAT_LOG_TAG, "Fail to enable radio");
 #if OPENTHREAD_SPINEL_CONFIG_RCP_RESTORATION_MAX_COUNT > 0
@@ -452,11 +413,7 @@ otError otPlatDiagProcess(otInstance *aInstance, uint8_t aArgsLength, char *aArg
     char *end = cmd + sizeof(cmd);
 
     for (int index = 0; index < aArgsLength; index++) {
-        if (end > cur + strlen(aArgs[index])) {
-            cur += snprintf(cur, static_cast<size_t>(end - cur), "%s ", aArgs[index]);
-        } else {
-            return OT_ERROR_INVALID_ARGS;
-        }
+        cur += snprintf(cur, static_cast<size_t>(end - cur), "%s ", aArgs[index]);
     }
 
     return s_radio.PlatDiagProcess(cmd);
@@ -583,8 +540,6 @@ uint32_t otPlatRadioGetBusSpeed(otInstance *aInstance)
     return s_esp_openthread_radio_config->radio_uart_config.uart_config.baud_rate;
 #elif CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
     return s_esp_openthread_radio_config->radio_spi_config.spi_device.clock_speed_hz;
-#elif CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
-    return s_esp_openthread_radio_config->radio_transport_config.bus_speed;
 #else
     return 0;
 #endif
@@ -594,7 +549,7 @@ uint32_t otPlatRadioGetBusLatency(otInstance *aInstance)
 {
     OT_UNUSED_VARIABLE(aInstance);
 
-#if CONFIG_OPENTHREAD_RADIO_SPINEL_UART || CONFIG_OPENTHREAD_RADIO_SPINEL_SPI || CONFIG_OPENTHREAD_RADIO_SPINEL_CUSTOM
+#if CONFIG_OPENTHREAD_RADIO_SPINEL_UART || CONFIG_OPENTHREAD_RADIO_SPINEL_SPI
     return CONFIG_OPENTHREAD_BUS_LATENCY;
 #else
     return 0;

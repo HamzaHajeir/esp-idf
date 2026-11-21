@@ -60,18 +60,16 @@ void BTA_AvEnable(tBTA_SEC sec_mask, tBTA_AV_FEAT features, tBTA_AV_CBACK *p_cba
 {
     tBTA_AV_API_ENABLE  *p_buf;
 
-    if ((p_buf = (tBTA_AV_API_ENABLE *) osi_malloc(sizeof(tBTA_AV_API_ENABLE))) == NULL) {
-        return;
-    }
-
     /* register with BTA system manager */
     bta_sys_register(BTA_ID_AV, &bta_av_reg);
 
-    p_buf->hdr.event = BTA_AV_API_ENABLE_EVT;
-    p_buf->p_cback  = p_cback;
-    p_buf->features = features;
-    p_buf->sec_mask = sec_mask;
-    bta_sys_sendmsg(p_buf);
+    if ((p_buf = (tBTA_AV_API_ENABLE *) osi_malloc(sizeof(tBTA_AV_API_ENABLE))) != NULL) {
+        p_buf->hdr.event = BTA_AV_API_ENABLE_EVT;
+        p_buf->p_cback  = p_cback;
+        p_buf->features = features;
+        p_buf->sec_mask = sec_mask;
+        bta_sys_sendmsg(p_buf);
+    }
 }
 
 /*******************************************************************************
@@ -87,6 +85,7 @@ void BTA_AvDisable(void)
 {
     BT_HDR  *p_buf;
 
+    bta_sys_deregister(BTA_ID_AV);
     if ((p_buf = (BT_HDR *) osi_malloc(sizeof(BT_HDR))) != NULL) {
         p_buf->event = BTA_AV_API_DISABLE_EVT;
         bta_sys_sendmsg(p_buf);
@@ -117,7 +116,7 @@ void BTA_AvRegister(tBTA_AV_CHNL chnl, const char *p_service_name, UINT8 app_id,
         p_buf->hdr.layer_specific   = chnl;
         p_buf->hdr.event = BTA_AV_API_REGISTER_EVT;
         if (p_service_name) {
-            BCM_STRLCPY_S(p_buf->p_service_name, p_service_name, BTA_SERVICE_NAME_LEN + 1);
+            BCM_STRNCPY_S(p_buf->p_service_name, p_service_name, BTA_SERVICE_NAME_LEN);
         } else {
             p_buf->p_service_name[0] = '\0';
         }
@@ -130,14 +129,10 @@ void BTA_AvRegister(tBTA_AV_CHNL chnl, const char *p_service_name, UINT8 app_id,
     }
 }
 
-void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 seid, UINT8 tsep, tBTA_AV_CODEC codec_type,
-                  UINT8 *p_codec_info, tBTA_AV_DATA_CBACK * const *pp_data_cback)
+void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 seid, UINT8 tsep, tBTA_AV_CODEC codec_type, UINT8 *p_codec_info, tBTA_AV_DATA_CBACK *p_data_cback)
 {
     tBTA_AV_API_REG_SEP  *p_buf;
 
-    if (p_codec_info == NULL || pp_data_cback == NULL) {
-        return;
-    }
     if ((p_buf = (tBTA_AV_API_REG_SEP *) osi_malloc(sizeof(tBTA_AV_API_REG_SEP))) != NULL) {
         p_buf->hdr.layer_specific   = chnl;
         p_buf->hdr.event = BTA_AV_API_REG_SEP_EVT;
@@ -146,9 +141,7 @@ void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 seid, UINT8 tsep, tBTA_AV_CODEC codec
         p_buf->tsep = tsep;
         p_buf->codec_type = codec_type;
         memcpy(p_buf->codec_info, p_codec_info, AVDT_CODEC_SIZE);
-        for (int i = 0; i < BTA_AV_NUM_STRS; i++) {
-            p_buf->p_data_cback[i] = pp_data_cback[i];
-        }
+        p_buf->p_data_cback = p_data_cback;
         bta_sys_sendmsg(p_buf);
     }
 }
@@ -243,21 +236,19 @@ void BTA_AvDisconnect(BD_ADDR bd_addr)
 
 /*******************************************************************************
 **
-** Function         BTA_AvStartByHndl
+** Function         BTA_AvStart
 **
-** Description      Start audio/video stream data transfer on a single stream.
-**                  A handle of 0 addresses every registered stream.
+** Description      Start audio/video stream data transfer.
 **
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_AvStartByHndl(tBTA_AV_HNDL hndl)
+void BTA_AvStart(void)
 {
     BT_HDR  *p_buf;
 
     if ((p_buf = (BT_HDR *) osi_malloc(sizeof(BT_HDR))) != NULL) {
         p_buf->event = BTA_AV_API_START_EVT;
-        p_buf->layer_specific = hndl;
         bta_sys_sendmsg(p_buf);
     }
 }
@@ -287,21 +278,21 @@ void BTA_AvEnable_Sink(int enable)
 
 /*******************************************************************************
 **
-** Function         BTA_AvStopByHndl
+** Function         BTA_AvStop
 **
-** Description      Stop audio/video stream data transfer on a single stream.
-**                  A handle of 0 addresses every registered stream.
+** Description      Stop audio/video stream data transfer.
+**                  If suspend is TRUE, this function sends AVDT suspend signal
+**                  to the connected peer(s).
 **
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_AvStopByHndl(tBTA_AV_HNDL hndl, BOOLEAN suspend)
+void BTA_AvStop(BOOLEAN suspend)
 {
     tBTA_AV_API_STOP  *p_buf;
 
     if ((p_buf = (tBTA_AV_API_STOP *) osi_malloc(sizeof(tBTA_AV_API_STOP))) != NULL) {
         p_buf->hdr.event = BTA_AV_API_STOP_EVT;
-        p_buf->hdr.layer_specific = hndl;
         p_buf->flush   = TRUE;
         p_buf->suspend = suspend;
         bta_sys_sendmsg(p_buf);
@@ -353,14 +344,8 @@ void BTA_AvReconfig(tBTA_AV_HNDL hndl, BOOLEAN suspend, UINT8 sep_info_idx,
 void BTA_AvProtectReq(tBTA_AV_HNDL hndl, UINT8 *p_data, UINT16 len)
 {
     tBTA_AV_API_PROTECT_REQ  *p_buf;
-    size_t alloc_size;
 
-    /* Cap allocation size to avoid UINT16 overflow */
-    alloc_size = sizeof(tBTA_AV_API_PROTECT_REQ) + len;
-    if (alloc_size > 0xFFFF) {
-        return;
-    }
-    if ((p_buf = (tBTA_AV_API_PROTECT_REQ *) osi_malloc((UINT16) alloc_size)) != NULL) {
+    if ((p_buf = (tBTA_AV_API_PROTECT_REQ *) osi_malloc((UINT16) (sizeof(tBTA_AV_API_PROTECT_REQ) + len))) != NULL) {
         p_buf->hdr.layer_specific   = hndl;
         p_buf->hdr.event = BTA_AV_API_PROTECT_REQ_EVT;
         p_buf->len       = len;
@@ -389,14 +374,8 @@ void BTA_AvProtectReq(tBTA_AV_HNDL hndl, UINT8 *p_data, UINT16 len)
 void BTA_AvProtectRsp(tBTA_AV_HNDL hndl, UINT8 error_code, UINT8 *p_data, UINT16 len)
 {
     tBTA_AV_API_PROTECT_RSP  *p_buf;
-    size_t alloc_size;
 
-    /* Cap allocation size to avoid UINT16 overflow */
-    alloc_size = sizeof(tBTA_AV_API_PROTECT_RSP) + len;
-    if (alloc_size > UINT16_MAX) {
-        return;
-    }
-    if ((p_buf = (tBTA_AV_API_PROTECT_RSP *) osi_malloc((UINT16) alloc_size)) != NULL) {
+    if ((p_buf = (tBTA_AV_API_PROTECT_RSP *) osi_malloc((UINT16) (sizeof(tBTA_AV_API_PROTECT_RSP) + len))) != NULL) {
         p_buf->hdr.layer_specific   = hndl;
         p_buf->hdr.event    = BTA_AV_API_PROTECT_RSP_EVT;
         p_buf->len          = len;
@@ -426,7 +405,6 @@ void BTA_SetDelayValue(UINT16 delay_value)
 
     if ((p_buf = (tBTA_AV_API_SET_DELAY_VALUE *) osi_malloc(sizeof(tBTA_AV_API_SET_DELAY_VALUE))) != NULL) {
         p_buf->hdr.event = BTA_AV_API_SET_DELAY_VALUE_EVT;
-        p_buf->hdr.layer_specific = 0;  /* address every registered stream */
         p_buf->delay_value = delay_value;
         bta_sys_sendmsg(p_buf);
     }
@@ -491,14 +469,8 @@ void BTA_AvRemoteCmd(UINT8 rc_handle, UINT8 label, tBTA_AV_RC rc_id, tBTA_AV_STA
 void BTA_AvVendorCmd(UINT8 rc_handle, UINT8 label, tBTA_AV_CODE cmd_code, UINT8 *p_data, UINT16 len)
 {
     tBTA_AV_API_VENDOR  *p_buf;
-    size_t alloc_size;
 
-    /* Cap allocation size to avoid UINT16 overflow */
-    alloc_size = sizeof(tBTA_AV_API_VENDOR) + len;
-    if (alloc_size > UINT16_MAX) {
-        return;
-    }
-    if ((p_buf = (tBTA_AV_API_VENDOR *) osi_malloc((UINT16) alloc_size)) != NULL) {
+    if ((p_buf = (tBTA_AV_API_VENDOR *) osi_malloc((UINT16) (sizeof(tBTA_AV_API_VENDOR) + len))) != NULL) {
         p_buf->hdr.event = BTA_AV_API_VENDOR_CMD_EVT;
         p_buf->hdr.layer_specific   = rc_handle;
         p_buf->msg.hdr.ctype = cmd_code;
@@ -532,14 +504,8 @@ void BTA_AvVendorCmd(UINT8 rc_handle, UINT8 label, tBTA_AV_CODE cmd_code, UINT8 
 void BTA_AvVendorRsp(UINT8 rc_handle, UINT8 label, tBTA_AV_CODE rsp_code, UINT8 *p_data, UINT16 len, UINT32 company_id)
 {
     tBTA_AV_API_VENDOR  *p_buf;
-    size_t alloc_size;
 
-    /* Cap allocation size to avoid UINT16 overflow */
-    alloc_size = sizeof(tBTA_AV_API_VENDOR) + len;
-    if (alloc_size > 0xFFFF) {
-        return;
-    }
-    if ((p_buf = (tBTA_AV_API_VENDOR *) osi_malloc((UINT16) alloc_size)) != NULL) {
+    if ((p_buf = (tBTA_AV_API_VENDOR *) osi_malloc((UINT16) (sizeof(tBTA_AV_API_VENDOR) + len))) != NULL) {
         p_buf->hdr.event = BTA_AV_API_VENDOR_RSP_EVT;
         p_buf->hdr.layer_specific   = rc_handle;
         p_buf->msg.hdr.ctype = rsp_code;
@@ -661,8 +627,6 @@ void BTA_AvMetaCmd(UINT8 rc_handle, UINT8 label, tBTA_AV_CMD cmd_code, BT_HDR *p
         p_buf->label = label;
 
         bta_sys_sendmsg(p_buf);
-    } else if (p_pkt) {
-        osi_free(p_pkt);
     }
 }
 
@@ -725,30 +689,14 @@ void BTA_AvCaClose(UINT8 rc_handle)
 void BTA_AvCaGet(UINT8 rc_handle, tBTA_AV_GET_TYPE type, UINT8 *image_handle, UINT8 *image_descriptor, UINT16 image_descriptor_len)
 {
     tBTA_AV_API_CA_GET  *p_buf;
-    size_t alloc_size;
 
-    /* NULL image_handle would cause crash in memcpy; reject early */
-    if (image_handle == NULL) {
-        return;
-    }
-    /* Cap allocation size to avoid overflow */
-    alloc_size = sizeof(tBTA_AV_API_CA_GET) + image_descriptor_len;
-    if (alloc_size > 0xFFFF) {
-        return;
-    }
-    if ((p_buf = (tBTA_AV_API_CA_GET *) osi_malloc((UINT16) alloc_size)) != NULL) {
+    if ((p_buf = (tBTA_AV_API_CA_GET *) osi_malloc(sizeof(tBTA_AV_API_CA_GET))) != NULL) {
         p_buf->hdr.event = BTA_AV_API_CA_GET_EVT;
         p_buf->hdr.layer_specific   = rc_handle;
         p_buf->type = type;
         memcpy(p_buf->image_handle, image_handle, BTA_AV_CA_IMG_HDL_LEN);
+        p_buf->image_descriptor = image_descriptor;
         p_buf->image_descriptor_len = image_descriptor_len;
-        /* Copy image_descriptor into message to avoid use-after-free when message is async */
-        if (image_descriptor != NULL && image_descriptor_len > 0) {
-            p_buf->image_descriptor = (UINT8 *) (p_buf + 1);
-            memcpy(p_buf->image_descriptor, image_descriptor, image_descriptor_len);
-        } else {
-            p_buf->image_descriptor = NULL;
-        }
         bta_sys_sendmsg(p_buf);
     }
 }

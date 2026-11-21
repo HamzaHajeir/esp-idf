@@ -2,8 +2,6 @@
 在 Windows 上通过命令行构建项目
 ********************************************
 
-:link_to_translation:`en:[English]`
-
 本指南将介绍如何使用命令行在 Windows 上创建 {IDF_TARGET_NAME} 项目，构建、烧录和监控设备输出。
 
 
@@ -47,10 +45,10 @@ ESP-IDF 安装完成后，EIM 会在桌面上创建 **快捷方式**，用于启
 
 将 :example:`get-started/hello_world` 项目复制至本地的 ``~/esp`` 目录下：
 
-.. code-block:: powershell
+.. code-block:: batch
 
-    cd $env:USERPROFILE\esp
-    xcopy /e /i $env:IDF_PATH\examples\get-started\hello_world hello_world
+    cd %userprofile%\esp
+    xcopy /e /i %IDF_PATH%\examples\get-started\hello_world hello_world
 
 .. note:: ESP-IDF 的 :idf:`examples` 目录下有一系列示例项目，可以按照上述方法复制并运行其中的任何示例，也可以直接编译示例，无需进行复制。
 
@@ -79,9 +77,9 @@ ESP-IDF 安装完成后，EIM 会在桌面上创建 **快捷方式**，用于启
 Windows
 ~~~~~~~
 
-.. code-block:: powershell
+.. code-block:: batch
 
-    cd $env:USERPROFILE\esp\hello_world
+    cd %userprofile%\esp\hello_world
     idf.py set-target {IDF_TARGET_PATH_NAME}
     idf.py menuconfig
 
@@ -101,7 +99,7 @@ Windows
 
     .. attention::
 
-        如果使用的是 ESP32-DevKitC（板载 ESP32-SOLO-1 模组）或 ESP32-DevKitM-1（板载 ESP32-MINI-1/1U 模组），请在烧写示例程序前，前往 ``menuconfig`` 中使能单核模式（:menuitem:`CONFIG_FREERTOS_UNICORE`）。
+        如果使用的是 ESP32-DevKitC（板载 ESP32-SOLO-1 模组）或 ESP32-DevKitM-1（板载 ESP32-MINI-1/1U 模组），请在烧写示例程序前，前往 ``menuconfig`` 中使能单核模式（:ref:`CONFIG_FREERTOS_UNICORE`）。
 
 .. note::
 

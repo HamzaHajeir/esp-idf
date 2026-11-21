@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <assert.h>
-#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
 #include "esp_crypto_lock.h"
 #include "bignum_impl.h"
 #include "mbedtls/bignum.h"

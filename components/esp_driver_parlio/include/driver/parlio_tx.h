@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,11 +34,8 @@ typedef struct {
     uint16_t valid_stop_delay;  /*!< The clock cycles that the valid signal keeps active after data end */
     size_t trans_queue_depth; /*!< Depth of internal transaction queue */
     size_t max_transfer_size; /*!< Maximum transfer size in one transaction, in bytes. This decides the number of DMA nodes will be used for each transaction */
-    size_t dma_burst_size;    /*!< DMA burst size, in bytes, must be a power of 2. Set to 0 to use the driver default. Set to 1 to disable the data burst. */
-    union {
-        parlio_sample_edge_t sample_edge __attribute__((deprecated("Please use `shift_edge` instead"))); /*!< Parallel IO sample edge */
-        parlio_shift_edge_t shift_edge;         /*!< Parallel IO Tx shift edge */
-    };
+    size_t dma_burst_size;    /*!< DMA burst size, in bytes */
+    parlio_sample_edge_t sample_edge;       /*!< Parallel IO sample edge */
     parlio_bit_pack_order_t bit_pack_order; /*!< Set the order of packing the bits into bytes (only works when `data_width` < 8) */
     /// Extra configuration flags for PARLIO TX unit
     struct extra_parlio_tx_unit_flags {

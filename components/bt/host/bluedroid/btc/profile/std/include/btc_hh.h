@@ -22,18 +22,11 @@
 
 #include <stdint.h>
 #include "bta/bta_hh_api.h"
-#include "bta/bta_hh_co.h"
-#include "stack/bt_types.h"
 #include "btc/btc_task.h"
 #include "osi/alarm.h"
-#include "osi/pkt_queue.h"
-#include "osi/thread.h"
-#include "osi/mutex.h"
 #include "esp_hidh_api.h"
 
-#if (defined BTC_HH_INCLUDED && BTC_HH_INCLUDED == TRUE)
-
-#define BTC_HH_MAX_HID BTA_HH_MAX_DEVICE
+#define BTC_HH_MAX_HID 8
 #define BTC_HH_MAX_ADDED_DEV 32
 
 #define BTC_HH_MAX_KEYSTATES 3
@@ -74,18 +67,15 @@ typedef enum {
 } BTC_HH_STATUS;
 
 typedef struct {
-    uint8_t dev_status; // see esp_hidh_connection_state_t
+    esp_hidh_connection_state_t dev_status;
     uint8_t dev_handle;
-    uint8_t sub_class;
-    uint8_t app_id;
-    bool local_vup; // Indicated locally initiated VUP
     BD_ADDR bd_addr;
     uint16_t attr_mask;
-    uint32_t drop_pkt_cnt;
-    osi_mutex_t lock;
-    struct pkt_queue *data_queue;
-    struct osi_dynamic_event *data_ready;
+    uint8_t sub_class;
+    uint8_t app_id;
+    bool ready_for_data;
     osi_alarm_t *vup_timer;
+    bool local_vup; // Indicated locally initiated VUP
 } btc_hh_device_t;
 
 /* Control block to maintain properties of devices */
@@ -196,14 +186,5 @@ void btc_hh_call_arg_deep_free(btc_msg_t *msg);
 bool btc_hh_add_added_dev(BD_ADDR bd_addr, uint16_t attr_mask);
 
 void btc_hh_get_profile_status(esp_hidh_profile_status_t *param);
-
-btc_hh_device_t *btc_hh_find_connected_dev_by_handle(uint8_t handle);
-bool btc_hh_data_enqueue_pkt(const tBTA_HH_DATA_PKT *pkt_meta);
-bool btc_hh_data_enqueue_linked_pkt(pkt_linked_item_t *linked_pkt);
-pkt_linked_item_t *btc_hh_data_dequeue_reusable_linked_pkt(uint8_t dev_handle);
-void btc_hh_on_pkt_dropped(uint8_t dev_handle);
-void btc_hh_reset_drop_pkt_cnt(uint8_t dev_handle);
-bool btc_hh_data_path_init(uint8_t dev_handle);
-#endif /* (defined BTC_HH_INCLUDED && BTC_HH_INCLUDED == TRUE) */
 
 #endif /* BTC_HH_H */

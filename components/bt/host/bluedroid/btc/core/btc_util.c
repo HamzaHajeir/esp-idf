@@ -297,7 +297,7 @@ void uuid128_be_to_esp_uuid(esp_bt_uuid_t *u, uint8_t* uuid128)
     return;
 }
 
-void uuid_to_string_legacy(const bt_uuid_t *p_uuid, char *str)
+void uuid_to_string_legacy(bt_uuid_t *p_uuid, char *str)
 {
     uint32_t uuid0, uuid4;
     uint16_t uuid1, uuid2, uuid3, uuid5;
@@ -361,9 +361,6 @@ esp_bt_status_t btc_btm_status_to_esp_status(uint8_t btm_status)
             break;
         case BTM_NO_RESOURCES:
             esp_status = ESP_BT_STATUS_NOMEM;
-            break;
-        case BTM_MODE_UNSUPPORTED:
-            esp_status = ESP_BT_STATUS_UNSUPPORTED;
             break;
         case BTM_ILLEGAL_VALUE:
             esp_status = ESP_BT_STATUS_PARM_INVALID;

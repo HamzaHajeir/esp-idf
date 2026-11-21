@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <assert.h>
 #include <string.h>
 #include <inttypes.h>
 #include "esp_err.h"
@@ -190,25 +189,6 @@ static struct wpa2_rx_param * wpa2_rxq_dequeue(void)
     return param;
 }
 
-static bool wpa2_rxq_remove(struct wpa2_rx_param *target)
-{
-    struct wpa2_rx_param *param;
-    bool removed = false;
-
-    DATA_MUTEX_TAKE();
-    STAILQ_FOREACH(param, &s_wpa2_rxq, bqentry) {
-        if (param == target) {
-            STAILQ_REMOVE(&s_wpa2_rxq, param, wpa2_rx_param, bqentry);
-            STAILQ_NEXT(param, bqentry) = NULL;
-            removed = true;
-            break;
-        }
-    }
-    DATA_MUTEX_GIVE();
-
-    return removed;
-}
-
 static void wpa2_rxq_deinit(void)
 {
     struct wpa2_rx_param *param = NULL;
@@ -309,11 +289,6 @@ int wpa2_post(uint32_t sig, uint32_t par)
     evt.sig = sig;
     evt.par = par;
     if (os_queue_send(s_wpa2_queue, &evt, os_task_ms_to_tick(10)) != TRUE) {
-        DATA_MUTEX_TAKE();
-        if (sm->wpa2_sig_cnt[sig]) {
-            sm->wpa2_sig_cnt[sig]--;
-        }
-        DATA_MUTEX_GIVE();
         wpa_printf(MSG_ERROR, "EAP: Q S E");
         return ESP_FAIL;
     }
@@ -375,7 +350,7 @@ int eap_sm_process_request(struct eap_sm *sm, struct wpabuf *reqData)
 
     ehdr = (struct eap_hdr *)wpabuf_head(reqData);
     plen = be_to_host16(ehdr->length);
-    if (plen > wpabuf_len(reqData) || plen < sizeof(*ehdr) + 1) {
+    if (plen > wpabuf_len(reqData)) {
         return ESP_FAIL;
     }
 
@@ -509,12 +484,7 @@ static int eap_sm_rx_eapol(u8 *src_addr, u8 *buf, u32 len, uint8_t *bssid)
         memcpy(param->sa, src_addr, WPA_ADDR_LEN);
 
         wpa2_rxq_enqueue(param);
-        int ret = wpa2_post(SIG_WPA2_RX, 0);
-        if (ret != ESP_OK && wpa2_rxq_remove(param)) {
-            os_free(param->buf);
-            os_free(param);
-        }
-        return ret;
+        return wpa2_post(SIG_WPA2_RX, 0);
     }
 #else
 
@@ -620,24 +590,9 @@ static int eap_sm_rx_eapol_internal(u8 *src_addr, u8 *buf, u32 len, uint8_t *bss
     case EAP_CODE_RESPONSE:
         /*Ignore*/
         break;
-    case EAP_CODE_SUCCESS: {
-        int msk_ok = sm->eapKeyData && sm->eapKeyDataLen >= PMK_LEN;
-
-#ifdef CONFIG_IEEE80211R
-        /* FT-EAP XXKey is the second 256 bits of the MSK. A shorter
-         * buffer must not be copied into the PMK or treated as success. */
-        if (gWpaSm.key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X &&
-                (!sm->eapKeyData || sm->eapKeyDataLen < 2 * PMK_LEN)) {
-            msk_ok = 0;
-        }
-#endif /* CONFIG_IEEE80211R */
-        if (msk_ok) {
+    case EAP_CODE_SUCCESS:
+        if (sm->eapKeyData) {
             wpa_set_pmk(sm->eapKeyData, 0, NULL, false);
-#ifdef CONFIG_IEEE80211R
-            if (gWpaSm.key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X) {
-                wpa_sm_set_xxkey(sm->eapKeyData + PMK_LEN, PMK_LEN);
-            }
-#endif /* CONFIG_IEEE80211R */
             os_free(sm->eapKeyData);
             sm->eapKeyData = NULL;
             wpa_printf(MSG_INFO, ">>>>>EAP FINISH");
@@ -645,20 +600,11 @@ static int eap_sm_rx_eapol_internal(u8 *src_addr, u8 *buf, u32 len, uint8_t *bss
             wpa2_set_eap_state(WPA2_ENT_EAP_STATE_SUCCESS);
             eap_deinit_prev_method(sm, "EAP Success");
         } else {
-            wpa_printf(MSG_INFO, ">>>>>EAP FAILED, EAP-Success MSK unusable (len %u)",
-                       sm->eapKeyData ? (unsigned int) sm->eapKeyDataLen : 0);
-#ifdef CONFIG_IEEE80211R
-            if (gWpaSm.key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X) {
-                wpa_sm_set_xxkey(NULL, 0);
-            }
-#endif /* CONFIG_IEEE80211R */
-            os_free(sm->eapKeyData);
-            sm->eapKeyData = NULL;
+            wpa_printf(MSG_INFO, ">>>>>EAP FAILED, receive EAP_SUCCESS but pmk is empty, potential attack!");
             ret = WPA2_ENT_EAP_STATE_FAIL;
             wpa2_set_eap_state(WPA2_ENT_EAP_STATE_FAIL);
         }
-    }
-    break;
+        break;
     case EAP_CODE_FAILURE:
         wpa_printf(MSG_INFO, ">>>>>EAP FAILED");
         ret = WPA2_ENT_EAP_STATE_FAIL;
@@ -710,18 +656,6 @@ static int wpa2_start_eapol_internal(void)
                    "RSN: PMKSA caching - do not send EAPOL-Start");
         return ESP_OK;
     }
-
-#ifdef CONFIG_IEEE80211R
-    /*
-     * FT reassoc already installed PMK-R1 and the PTK. ft_completed is
-     * cleared when the next FT auth IEs are prepared, so the flag that
-     * is still set when this timer fires is ft_reassoc_completed.
-     */
-    if (wpa_key_mgmt_ft(gWpaSm.key_mgmt) && gWpaSm.ft_reassoc_completed) {
-        wpa_printf("MSG_INFO", "FT: reassociation completed - do not send EAPOL-Start");
-        return ESP_OK;
-    }
-#endif /* CONFIG_IEEE80211R */
 
     ret = esp_wifi_get_assoc_bssid_internal(bssid);
     if (ret != 0) {
@@ -982,7 +916,7 @@ static void eap_globals_reset(void)
     g_wpa_new_password = NULL;
     g_wpa_new_password_len = 0;
 
-    g_eap_phase2_type = NULL;
+    g_wpa_ttls_phase2_type = NULL;
     os_free(g_wpa_phase1_options);
     g_wpa_phase1_options = NULL;
 
@@ -1233,7 +1167,7 @@ esp_err_t esp_eap_client_set_new_password(const unsigned char *new_password, int
     }
 
     os_memcpy(g_wpa_new_password, new_password, len);
-    g_wpa_new_password_len = len;
+    g_wpa_password_len = len;
     eloop_register_timeout(0, 0, config_changed_handler, NULL, NULL);
 
     return ESP_OK;
@@ -1267,46 +1201,30 @@ esp_err_t esp_eap_client_get_disable_time_check(bool *disable)
     return ESP_OK;
 }
 
-esp_err_t esp_eap_client_set_phase2_method(esp_eap_phase2_types type)
+esp_err_t esp_eap_client_set_ttls_phase2_method(esp_eap_ttls_phase2_types type)
 {
     switch (type) {
-    case ESP_EAP_PHASE2_EAP:
-        g_eap_phase2_type = "auth=EAP";
+    case ESP_EAP_TTLS_PHASE2_EAP:
+        g_wpa_ttls_phase2_type = "auth=EAP";
         break;
-    case ESP_EAP_PHASE2_MSCHAPV2:
-        g_eap_phase2_type = "auth=MSCHAPV2";
+    case ESP_EAP_TTLS_PHASE2_MSCHAPV2:
+        g_wpa_ttls_phase2_type = "auth=MSCHAPV2";
         break;
-    case ESP_EAP_PHASE2_MSCHAP:
-        g_eap_phase2_type = "auth=MSCHAP";
+    case ESP_EAP_TTLS_PHASE2_MSCHAP:
+        g_wpa_ttls_phase2_type = "auth=MSCHAP";
         break;
-    case ESP_EAP_PHASE2_PAP:
-        g_eap_phase2_type = "auth=PAP";
+    case ESP_EAP_TTLS_PHASE2_PAP:
+        g_wpa_ttls_phase2_type = "auth=PAP";
         break;
-    case ESP_EAP_PHASE2_CHAP:
-        g_eap_phase2_type = "auth=CHAP";
-        break;
-    case ESP_EAP_PHASE2_GTC:
-        /* PEAP matches the "auth=" prefix. TTLS matches "autheap=" for a tunneled EAP method. */
-        g_eap_phase2_type = "auth=GTC autheap=GTC";
+    case ESP_EAP_TTLS_PHASE2_CHAP:
+        g_wpa_ttls_phase2_type = "auth=CHAP";
         break;
     default:
-        return ESP_ERR_INVALID_ARG;
+        g_wpa_ttls_phase2_type = "auth=MSCHAPV2";
+        break;
     }
     eloop_register_timeout(0, 0, config_changed_handler, NULL, NULL);
     return ESP_OK;
-}
-
-/* The legacy TTLS enum is a separate type; the cast below is valid only while the values match. */
-static_assert((int)ESP_EAP_PHASE2_EAP == (int)ESP_EAP_TTLS_PHASE2_EAP, "phase 2 enum mismatch");
-static_assert((int)ESP_EAP_PHASE2_MSCHAPV2 == (int)ESP_EAP_TTLS_PHASE2_MSCHAPV2, "phase 2 enum mismatch");
-static_assert((int)ESP_EAP_PHASE2_MSCHAP == (int)ESP_EAP_TTLS_PHASE2_MSCHAP, "phase 2 enum mismatch");
-static_assert((int)ESP_EAP_PHASE2_PAP == (int)ESP_EAP_TTLS_PHASE2_PAP, "phase 2 enum mismatch");
-static_assert((int)ESP_EAP_PHASE2_CHAP == (int)ESP_EAP_TTLS_PHASE2_CHAP, "phase 2 enum mismatch");
-static_assert((int)ESP_EAP_PHASE2_GTC == (int)ESP_EAP_TTLS_PHASE2_GTC, "phase 2 enum mismatch");
-
-esp_err_t esp_eap_client_set_ttls_phase2_method(esp_eap_ttls_phase2_types type)
-{
-    return esp_eap_client_set_phase2_method((esp_eap_phase2_types)type);
 }
 
 esp_err_t esp_eap_client_set_suiteb_192bit_certification(bool enable)

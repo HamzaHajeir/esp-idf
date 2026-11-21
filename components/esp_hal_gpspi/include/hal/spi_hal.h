@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -53,7 +53,6 @@ typedef struct {
                                          *   Left 0 if not known.
                                          */
     bool use_gpio;                      ///< True if the GPIO matrix is used, otherwise false
-    bool use_ddr_clk;                   ///< Whether to use DDR mode for clock
 } spi_hal_timing_param_t;
 
 /**
@@ -70,15 +69,12 @@ typedef struct {
     int real_freq;                      ///< Output of the actual frequency
     int timing_dummy;                   ///< Extra dummy needed to compensate the timing
     int timing_miso_delay;              ///< Extra miso delay clocks to compensate the timing
-    int seg_setup_time;                 ///< Number of setup bits required for SCT segments
     spi_sampling_point_t rx_sample_point;///< Sample data follow standard SPI timing in master mode
-    bool use_ddr_clk;                   ///< Whether to use DDR mode for clock
 } spi_hal_timing_conf_t;
 
 /**
  * Transaction configuration structure, this should be assigned by driver each time.
- * All these parameters will be updated to the peripheral every transaction
- * (directly to HW, or into an SCT conf buffer).
+ * All these parameters will be updated to the peripheral every transaction.
  */
 typedef struct {
     uint16_t cmd;                       ///< Command value to be sent
@@ -92,11 +88,6 @@ typedef struct {
     uint8_t *rcv_buffer;                ///< Buffer to hold the receive data.
     spi_line_mode_t line_mode;          ///< SPI line mode of this transaction
     int cs_keep_active;                 ///< Keep CS active after transaction
-    int cs_setup;                       ///< Setup time of CS active edge before the first SPI clock
-    int cs_hold;                        ///< Hold time of CS inactive edge after the last SPI clock
-    /* SCT segment fields (ignored by classic setup_trans) */
-    bool is_seg_trans;                  ///< True: this transaction is a segmented transaction, false: this transaction is a single transaction
-    bool is_seg_end;                    ///< True: this transaction is the end segment of an SCT
 } spi_hal_trans_config_t;
 
 /**
@@ -106,6 +97,8 @@ typedef struct {
     /* Configured by driver at initialization, don't touch */
     spi_dev_t     *hw;                  ///< Beginning address of the peripheral registers.
     bool  dma_enabled;                  ///< Whether the DMA is enabled, do not update after initialization
+    /* Internal parameters, don't touch */
+    spi_hal_trans_config_t trans_config; ///< Transaction configuration
 } spi_hal_context_t;
 
 /**
@@ -134,6 +127,33 @@ typedef struct {
     };//boolean configurations
 } spi_hal_dev_config_t;
 
+#ifdef SOC_SPI_SCT_SUPPORTED
+/**
+ * SCT mode required configurations, per segment
+ */
+typedef struct {
+    /* CONF State */
+    bool seg_end;                       ///< True: this segment is the end; False: this segment isn't the end;
+    uint32_t seg_gap_len;               ///< spi clock length of CS inactive on config phase for sct
+    /* PREP State */
+    int cs_setup;                       ///< Setup time of CS active edge before the first SPI clock
+    /* CMD State */
+    uint16_t cmd;                       ///< Command value to be sent
+    int cmd_bits;                       ///< Length (in bits) of the command phase
+    /* ADDR State */
+    uint64_t addr;                      ///< Address value to be sent
+    int addr_bits;                      ///< Length (in bits) of the address phase
+    /* DUMMY State */
+    int dummy_bits;                     ///< Base length (in bits) of the dummy phase.
+    /* DOUT State */
+    int tx_bitlen;                      ///< TX length, in bits
+    /* DIN State */
+    int rx_bitlen;                      ///< RX length, in bits
+    /* DONE State */
+    int cs_hold;                        ///< Hold time of CS inactive edge after the last SPI clock
+} spi_hal_seg_config_t;
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED
+
 /**
  * Init the peripheral and the context.
  *
@@ -143,12 +163,12 @@ typedef struct {
 void spi_hal_init(spi_hal_context_t *hal, uint32_t host_id);
 
 /**
- * Config default output data IO level when bus idle
+ * Config default output IO level when don't have transaction
  *
  * @param hal Context of the HAL layer.
  * @param level IO level to config
  */
-void spi_hal_set_data_pin_idle_level(spi_hal_context_t *hal, bool level);
+void spi_hal_config_io_default_level(spi_hal_context_t *hal, bool level);
 
 /**
  * Deinit the peripheral (and the context if needed).
@@ -201,9 +221,8 @@ void spi_hal_hw_prepare_tx(spi_dev_t *hw);
  * Trigger start a user-defined transaction.
  *
  * @param hal Context of the HAL layer.
- * @param start_sct True if start as SCT mode, false single transaction mode.
  */
-void spi_hal_user_start(const spi_hal_context_t *hal, const bool start_sct);
+void spi_hal_user_start(const spi_hal_context_t *hal);
 
 /**
  * Check whether the transaction is done (trans_done is set).
@@ -241,10 +260,8 @@ void spi_hal_push_tx_buffer(const spi_hal_context_t *hal, const spi_hal_trans_co
  * Post transaction operations, mainly fetch data from the buffer.
  *
  * @param hal       Context of the HAL layer.
- * @param rx_buffer Buffer to hold the receive data.
- * @param bitlen    Length of the receive data in bits.
  */
-void spi_hal_get_result(const spi_hal_context_t *hal, uint8_t *rx_buffer, size_t bitlen);
+void spi_hal_fetch_result(const spi_hal_context_t *hal);
 
 /*----------------------------------------------------------
  * Utils
@@ -295,7 +312,7 @@ void spi_hal_cal_timing(int source_freq_hz, int eff_clk, bool gpio_is_used, int 
  */
 int spi_hal_get_freq_limit(bool gpio_is_used, int input_delay_ns);
 
-#ifdef SPI_LL_PERIPH_HAS_SCT
+#ifdef SOC_SPI_SCT_SUPPORTED
 /*----------------------------------------------------------
  * Segmented-Configure-Transfer (SCT) Mode
  * ---------------------------------------------------------*/
@@ -311,16 +328,17 @@ void spi_hal_sct_init(spi_hal_context_t *hal);
  *
  * @param hal            Context of the HAL layer.
  */
-void spi_hal_sct_init_conf_buffer(spi_hal_context_t *hal, spi_ll_sct_full_reg_t *conf_buffer);
+void spi_hal_sct_init_conf_buffer(spi_hal_context_t *hal, uint32_t *conf_buffer);
 
 /**
- * Format the conf buffer from a transaction config (same fields as setup_trans, plus SCT segment fields).
+ * Format the conf buffer
+ * According to the `spi_hal_seg_config_t`, update the conf buffer
  *
- * @param sct_hw         SCT device configuration
- * @param devcfg         Device configuration
- * @param config         Transaction / segment configuration
+ * @param hal            Context of the HAL layer.
+ * @param config         Conf buffer configuration, per segment. See `spi_hal_seg_config_t` to know what can be configured
+ * @param conf_buffer    Conf buffer
  */
-void spi_hal_setup_sct_trans(spi_ll_sct_full_reg_t * sct_hw, const spi_hal_dev_config_t *devcfg, const spi_hal_trans_config_t *config);
+void spi_hal_sct_format_conf_buffer(spi_hal_context_t *hal, const spi_hal_seg_config_t *config, const spi_hal_dev_config_t *dev, uint32_t *conf_buffer);
 
 /**
  * Deinit SCT mode related registers and hal states
@@ -336,8 +354,7 @@ void spi_hal_sct_set_conf_bits_len(spi_hal_context_t *hal, uint32_t conf_len);
  * Set conf_bitslen base to HW for sct, only supported on s2.
  */
 #define spi_hal_sct_setup_conf_base(hal, conf_base)     spi_ll_set_conf_base_bitslen((hal)->hw, conf_base)
-
-#endif  //#ifdef SPI_LL_PERIPH_HAS_SCT
+#endif  //#ifdef SOC_SPI_SCT_SUPPORTED
 #endif  //#if SOC_GPSPI_SUPPORTED
 
 #ifdef __cplusplus

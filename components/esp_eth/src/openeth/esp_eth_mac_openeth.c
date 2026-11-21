@@ -28,7 +28,7 @@
 #include "esp_mac.h"
 #include "esp_eth_mac_openeth.h"
 
-ESP_LOG_ATTR_TAG_DRAM(TAG, "opencores.emac");
+static const char *TAG = "opencores.emac";
 
 // Driver state structure
 typedef struct {
@@ -63,7 +63,7 @@ static IRAM_ATTR void emac_opencores_isr_handler(void *args)
     }
 
     if (status & OPENETH_INT_BUSY) {
-        ESP_DRAM_LOGW(TAG, "RX frame dropped (0x%" PRIx32 ")", status);
+        ESP_EARLY_LOGW(TAG, "%s: RX frame dropped (0x%" PRIx32 ")", __func__, status);
     }
 
     // Clear interrupt

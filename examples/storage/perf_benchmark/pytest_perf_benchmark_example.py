@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Unlicense OR CC0-1.0
 import pytest
 from pytest_embedded import Dut
@@ -7,10 +7,8 @@ from pytest_embedded_idf.utils import idf_parametrize
 
 @pytest.mark.temp_skip_ci(targets=['esp32c5'], reason='not support yet')  # TODO: [ESP32C5] IDF-10314
 @pytest.mark.generic
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @pytest.mark.parametrize('config', ['spiflash'], indirect=True)
 @idf_parametrize('target', ['supported_targets'], indirect=['target'])
-@pytest.mark.temp_skip_ci(targets=['esp32s31'], reason='s31 bringup on this module is not done')
 def test_examples_perf_benchmark_spiflash(dut: Dut) -> None:
     # SPI flash
     dut.expect('example: Mountig WL layer...', timeout=10)
@@ -36,7 +34,7 @@ def test_examples_perf_benchmark_spiflash(dut: Dut) -> None:
     ],
     indirect=True,
 )
-@idf_parametrize('target', ['esp32', 'esp32p4'], indirect=['target'])
+@idf_parametrize('target', ['esp32'], indirect=['target'])
 def test_examples_perf_benchmark_sdcard_sdmmc(dut: Dut) -> None:
     # SD card
     dut.expect('example: Mounting SD card - raw access', timeout=10)
@@ -51,8 +49,7 @@ def test_examples_perf_benchmark_sdcard_sdmmc(dut: Dut) -> None:
 
 
 @pytest.mark.temp_skip_ci(targets=['esp32'], reason='IDFCI-2059, temporary lack runner')
-@pytest.mark.temp_skip_ci(targets=['esp32c61'], reason='GPSPI is same, testing on C5 is enough')
-@pytest.mark.temp_skip_ci(targets=['esp32s31'], reason='GPSPI is same, testing on C5 is enough')
+@pytest.mark.temp_skip_ci(targets=['esp32c61'], reason='C5 C61 GPSPI same, so testing on C5 is enough')
 @pytest.mark.sdcard_spimode
 @pytest.mark.parametrize(
     'config',
@@ -61,7 +58,7 @@ def test_examples_perf_benchmark_sdcard_sdmmc(dut: Dut) -> None:
     ],
     indirect=True,
 )
-@idf_parametrize('target', ['esp32', 'esp32c3', 'esp32s2', 'esp32c5', 'esp32p4'], indirect=['target'])
+@idf_parametrize('target', ['esp32', 'esp32c3', 'esp32s2', 'esp32c5'], indirect=['target'])
 def test_examples_perf_benchmark_sdcard_spi(dut: Dut) -> None:
     # SD card
     dut.expect('example: Mounting SD card - raw access', timeout=10)

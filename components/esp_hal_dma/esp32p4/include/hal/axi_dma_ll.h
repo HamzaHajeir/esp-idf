@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +12,7 @@
 #include "hal/misc.h"
 #include "hal/hal_utils.h"
 #include "hal/gdma_types.h"
-#include "hal/config.h"
+#include "hal/gdma_ll.h"
 #include "soc/axi_dma_struct.h"
 #include "soc/axi_dma_reg.h"
 
@@ -21,27 +21,10 @@ extern "C" {
 #endif
 
 #define AXI_DMA_LL_GET_HW(id) (((id) == 0) ? (&AXI_DMA) : NULL)
-#define AXI_DMA_LL_SUPPORT(_feat) AXI_DMA_LL_SUPPORT_ ## _feat
-
-#define AXI_DMA_LL_SUPPORTED_BURST_SIZE_MASK (GDMA_BURST_SIZE_SUPPORT_8 | \
-                                              GDMA_BURST_SIZE_SUPPORT_16 | \
-                                              GDMA_BURST_SIZE_SUPPORT_32 | \
-                                              GDMA_BURST_SIZE_SUPPORT_64 | \
-                                              GDMA_BURST_SIZE_SUPPORT_128)
 
 // any "dummy" peripheral ID can be used for M2M mode
 #define AXI_DMA_LL_M2M_FREE_PERIPH_ID_MASK (0xFFC0)
-#define AXI_DMA_LL_RX_EVENT_MASK (0x1F)
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-#define AXI_DMA_LL_SUPPORT_TX_LINK_SWITCH 1
-#define AXI_DMA_LL_TX_EVENT_MASK (0x40F)
-#else
-#define AXI_DMA_LL_SUPPORT_TX_LINK_SWITCH 0
-#define AXI_DMA_LL_TX_EVENT_MASK (0x0F)
-#endif
-
-// Default value of weighted arbitration timeout, in AXI bus clock cycles
-#define AXI_DMA_LL_DEFAULT_WEIGHTED_ARBITRATION_TIMEOUT (2000)
+#define AXI_DMA_LL_INVALID_PERIPH_ID       (0x3F)
 
 ///////////////////////////////////// Common /////////////////////////////////////////
 /**
@@ -284,25 +267,16 @@ static inline void axi_dma_ll_rx_set_priority(axi_dma_dev_t *dev, uint32_t chann
 /**
  * @brief Connect DMA RX channel to a given peripheral
  */
-static inline void axi_dma_ll_rx_connect_to_periph(axi_dma_dev_t *dev, uint32_t channel, int periph_id)
+static inline void axi_dma_ll_rx_connect_to_periph(axi_dma_dev_t *dev, uint32_t channel, gdma_trigger_peripheral_t periph, int periph_id)
 {
     dev->in[channel].conf.in_peri_sel.peri_in_sel_chn = periph_id;
-    dev->in[channel].conf.in_conf0.mem_trans_en_chn = false;
+    dev->in[channel].conf.in_conf0.mem_trans_en_chn = (periph == GDMA_TRIG_PERIPH_M2M);
 }
 
 /**
- * @brief Connect DMA RX channel to memory (M2M mode)
+ * @brief Disconnect DMA RX channel from peripheral
  */
-static inline void axi_dma_ll_rx_connect_to_mem(axi_dma_dev_t *dev, uint32_t channel, int dummy_id)
-{
-    dev->in[channel].conf.in_peri_sel.peri_in_sel_chn = dummy_id;
-    dev->in[channel].conf.in_conf0.mem_trans_en_chn = true;
-}
-
-/**
- * @brief Disconnect DMA RX channel from all peripherals
- */
-static inline void axi_dma_ll_rx_disconnect_all(axi_dma_dev_t *dev, uint32_t channel)
+static inline void axi_dma_ll_rx_disconnect_from_periph(axi_dma_dev_t *dev, uint32_t channel)
 {
     dev->in[channel].conf.in_peri_sel.peri_in_sel_chn = 0x3F;
     dev->in[channel].conf.in_conf0.mem_trans_en_chn = false;
@@ -320,9 +294,6 @@ static inline void axi_dma_ll_rx_enable_etm_task(axi_dma_dev_t *dev, uint32_t ch
 
 /**
  * @brief Whether to enable access to ecc or aes memory
- *
- * @note This function is not used for AXI-GDMA because it will affect the alignment requirement for internal memory.
- *       We have ensured that the AXI-GDMA can access the encrypted memory by 16-bytes alignment in software.
  */
 static inline void axi_dma_ll_rx_enable_ext_mem_ecc_aes_access(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
@@ -494,42 +465,6 @@ static inline void axi_dma_ll_tx_restart(axi_dma_dev_t *dev, uint32_t channel)
     dev->out[channel].conf.out_link1.outlink_restart_chn = 1;
 }
 
-#if AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-/**
- * @brief Request link switch done indication for TX channel
- */
-static inline void axi_dma_ll_tx_request_link_switch_event(axi_dma_dev_t *dev, uint32_t channel)
-{
-    switch (channel) {
-    case 0:
-        dev->link_switch_state.link_switch_state_ch0 = 1;
-        break;
-    case 1:
-        dev->link_switch_state.link_switch_state_ch1 = 1;
-        break;
-    case 2:
-        dev->link_switch_state.link_switch_state_ch2 = 1;
-        break;
-    default:
-        break;
-    }
-}
-#endif
-
-/**
- * @brief Check if TX link switch done indication is supported
- */
-__attribute__((always_inline))
-static inline bool axi_dma_ll_tx_is_link_switch_event_supported(axi_dma_dev_t *dev)
-{
-    (void)dev;
-#if AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-    return true;
-#else
-    return false;
-#endif
-}
-
 /**
  * @brief Check if DMA TX descriptor FSM is in IDLE state
  */
@@ -567,23 +502,16 @@ static inline void axi_dma_ll_tx_set_priority(axi_dma_dev_t *dev, uint32_t chann
 /**
  * @brief Connect DMA TX channel to a given peripheral
  */
-static inline void axi_dma_ll_tx_connect_to_periph(axi_dma_dev_t *dev, uint32_t channel, int periph_id)
+static inline void axi_dma_ll_tx_connect_to_periph(axi_dma_dev_t *dev, uint32_t channel, gdma_trigger_peripheral_t periph, int periph_id)
 {
+    (void)periph;
     dev->out[channel].conf.out_peri_sel.peri_out_sel_chn = periph_id;
 }
 
 /**
- * @brief Connect DMA TX channel to memory (M2M mode)
+ * @brief Disconnect DMA TX channel from peripheral
  */
-static inline void axi_dma_ll_tx_connect_to_mem(axi_dma_dev_t *dev, uint32_t channel, int dummy_id)
-{
-    dev->out[channel].conf.out_peri_sel.peri_out_sel_chn = dummy_id;
-}
-
-/**
- * @brief Disconnect DMA TX channel from all peripherals
- */
-static inline void axi_dma_ll_tx_disconnect_all(axi_dma_dev_t *dev, uint32_t channel)
+static inline void axi_dma_ll_tx_disconnect_from_periph(axi_dma_dev_t *dev, uint32_t channel)
 {
     dev->out[channel].conf.out_peri_sel.peri_out_sel_chn = 0x3F;
 }
@@ -600,9 +528,6 @@ static inline void axi_dma_ll_tx_enable_etm_task(axi_dma_dev_t *dev, uint32_t ch
 
 /**
  * @brief Whether to enable access to ecc or aes memory
- *
- * @note This function is not used for AXI-GDMA because it will affect the alignment requirement for internal memory.
- *       We have ensured that the AXI-GDMA can access the encrypted memory by 16-bytes alignment in software.
  */
 static inline void axi_dma_ll_tx_enable_ext_mem_ecc_aes_access(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
@@ -739,127 +664,6 @@ static inline void axi_dma_ll_rx_crc_set_lfsr_data_mask(axi_dma_dev_t *dev, uint
     }
     HAL_FORCE_MODIFY_U32_REG_FIELD(dev->in[channel].crc.rx_crc_data_en_wr_data, rx_crc_data_en_wr_data_chn, data_mask);
 }
-
-/**********************************************************************************************************************/
-/************************ The following functions behave differently based on the chip revision ***********************/
-/**********************************************************************************************************************/
-
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-/**
- * @brief Check if the weighted arbitration is supported
- */
-static inline bool axi_dma_ll_is_weighted_arb_supported(axi_dma_dev_t *dev)
-{
-    (void)dev;
-    return true;
-}
-
-/**
- * @brief Enable the weighted arbitration for AXI-DMA
- */
-static inline void axi_dma_ll_enable_weighted_arb(axi_dma_dev_t *dev, bool enable)
-{
-    dev->weight_en.weight_en_tx = enable;
-    dev->weight_en.weight_en_rx = enable;
-}
-
-/**
- * @brief Set the weighted arbitration timeout for AXI-DMA
- *
- * @param timeout AHB bus clock cycle
- */
-static inline void axi_dma_ll_set_weighted_arb_timeout(axi_dma_dev_t *dev, uint32_t timeout)
-{
-    HAL_ASSERT(timeout != 0 && timeout <= 65535);
-    dev->arb_timeout.arb_timeout_tx = timeout;
-    dev->arb_timeout.arb_timeout_rx = timeout;
-}
-
-/**
- * @brief Enable the weighted arbitration optimize for AXI-DMA RX channel
- */
-static inline void axi_dma_ll_rx_enable_weighted_arb_opt(axi_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    dev->in[channel].conf.in_pri.rx_arb_weigh_opt_dir_chn = !enable;
-}
-
-/**
- * @brief Set the weight for AXI-DMA RX channel
- */
-static inline void axi_dma_ll_rx_set_weight(axi_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    dev->in[channel].conf.in_pri.rx_ch_arb_weigh_chn = weight;
-}
-
-/**
- * @brief Enable the weighted arbitration optimize for AXI-DMA TX channel
- */
-static inline void axi_dma_ll_tx_enable_weighted_arb_opt(axi_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    dev->out[channel].conf.out_pri.tx_arb_weigh_opt_dir_chn = !enable;
-}
-
-/**
- * @brief Set the weight for AXI-DMA TX channel
- */
-static inline void axi_dma_ll_tx_set_weight(axi_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    dev->out[channel].conf.out_pri.tx_ch_arb_weigh_chn = weight;
-}
-#else
-static inline bool axi_dma_ll_is_weighted_arb_supported(axi_dma_dev_t *dev)
-{
-    // not supported
-    (void)dev;
-    return false;
-}
-
-static inline void axi_dma_ll_enable_weighted_arb(axi_dma_dev_t *dev, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)enable;
-}
-
-static inline void axi_dma_ll_set_weighted_arb_timeout(axi_dma_dev_t *dev, uint32_t timeout)
-{
-    // not supported
-    (void)dev;
-    (void)timeout;
-}
-
-static inline void axi_dma_ll_rx_enable_weighted_arb_opt(axi_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)enable;
-}
-
-static inline void axi_dma_ll_rx_set_weight(axi_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)weight;
-}
-
-static inline void axi_dma_ll_tx_enable_weighted_arb_opt(axi_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)enable;
-}
-
-static inline void axi_dma_ll_tx_set_weight(axi_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)weight;
-}
-#endif
 
 #ifdef __cplusplus
 }

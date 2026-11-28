@@ -3,7 +3,7 @@ comment "Read the help text of the option below for explanation"
 
 config ESP32H21_SELECTS_REV_MP
     bool "Select ESP32-H21 MP version"
-    default y
+    default n
     help
         Enable this option to select ESP32-H21 MP revision.
         MP revisions have some hardware differences with Beta revision.
@@ -36,7 +36,7 @@ config ESP_REV_MIN_FULL
     # MAX Revision
     #
 
-comment "Maximum Supported ESP32-H21 Revision (Rev v0.99)"
+    comment "Maximum Supported ESP32-H21 Revision (Rev v0.99)"
     # Maximum revision that IDF supports.
     # It can not be changed by user.
     # Only Espressif can change it when a new version will be supported in IDF.
@@ -60,10 +60,10 @@ config ESP_EFUSE_BLOCK_REV_MIN_FULL
         So that to avoid running an incompatible image on a SoC that contains breaking change in the eFuse Block.
         If you want to update this value to run the image that not compatible with the current eFuse Block revision,
         please contact to Espressif's business team for details:
-        https://www.espressif.com/en/contact-us/sales-questions
+        https://www.espressif.com.cn/en/contact-us/sales-questions
 
 config ESP_EFUSE_BLOCK_REV_MAX_FULL
     int
     default 99
-comment "Maximum Supported ESP32-H21 eFuse Block Revision (eFuse Block Rev v0.99)"
+    comment "Maximum Supported ESP32-H21 eFuse Block Revision (eFuse Block Rev v0.99)"
     # The revision in the comment must correspond to the default value of ESP_EFUSE_BLOCK_REV_MAX_FULL

@@ -173,16 +173,21 @@ static void tee_ota_task(void *pvParameter)
         task_fatal_error();
     }
 
-    /* NOTE: esp_tee_ota_end() does not return on success - the TEE restarts the device.
-     * The semaphore is released only on failure */
+    err = esp_tee_ota_end();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
+        http_cleanup(client);
+        xSemaphoreGive(s_ota_mgmt);
+        task_fatal_error();
+    }
+    ESP_LOGI(TAG, "esp_tee_ota_end succeeded");
+
+    /* Ending connection, freeing the semaphore */
     http_cleanup(client);
+    xSemaphoreGive(s_ota_mgmt);
 
     ESP_LOGI(TAG, "Prepare to restart system!");
-
-    err = esp_tee_ota_end();
-    ESP_LOGE(TAG, "esp_tee_ota_end failed (%s)!", esp_err_to_name(err));
-    xSemaphoreGive(s_ota_mgmt);
-    task_fatal_error();
+    esp_restart();
     return;
 }
 
@@ -225,7 +230,7 @@ static void init_ota_sem(void)
 static int create_ota_task(const char *url, const char *task_name, void (*ota_task)(void *))
 {
     init_ota_sem();
-    if (xTaskCreate(ota_task, task_name, configMINIMAL_STACK_SIZE * 4, (void *)url, 5, NULL) != pdPASS) {
+    if (xTaskCreate(ota_task, task_name, configMINIMAL_STACK_SIZE * 3, (void *)url, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Task creation failed for %s", task_name);
         return ESP_FAIL;
     }

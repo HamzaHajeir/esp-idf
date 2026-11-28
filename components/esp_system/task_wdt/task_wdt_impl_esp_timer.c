@@ -8,10 +8,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "sdkconfig.h"
+#include "hal/wdt_hal.h"
 #include "esp_err.h"
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_debug_helpers.h"
 #include "esp_timer.h"
 #include "esp_private/esp_task_wdt_impl.h"
 
@@ -124,7 +126,7 @@ esp_err_t esp_task_wdt_impl_timer_stop(twdt_ctx_t obj)
         ret = ESP_ERR_INVALID_STATE;
     }
 
-    if (ret == ESP_OK && esp_timer_is_active(ctx->sw_timer)) {
+    if (ret == ESP_OK) {
         ret = esp_timer_stop(ctx->sw_timer);
     }
 

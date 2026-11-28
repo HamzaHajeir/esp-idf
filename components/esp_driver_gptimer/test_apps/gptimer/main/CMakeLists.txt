@@ -5,7 +5,7 @@ if(CONFIG_GPTIMER_ISR_CACHE_SAFE)
     list(APPEND srcs "test_gptimer_iram.c")
 endif()
 
-if(CONFIG_SOC_TIMER_SUPPORT_ETM AND CONFIG_SOC_ETM_SUPPORTED)
+if(CONFIG_SOC_TIMER_SUPPORT_ETM)
     list(APPEND srcs "test_gptimer_etm.c")
 endif()
 

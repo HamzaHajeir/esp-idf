@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,9 +10,7 @@
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_clk.h"
 #include "bootloader_clock.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 
 #include "esp_private/spi_share_hw_ctrl.h"
 
@@ -76,13 +74,6 @@ static void select_rtc_slow_clk(slow_clk_sel_t slow_clk)
              */
             ESP_EARLY_LOGD(TAG, "waiting for 32k oscillator to start up");
             if (slow_clk == SLOW_CLK_32K_XTAL) {
-                /* 1、The bootloader should already have it enabled.
-                 * 2、Because 32kHz crystal oscillators have a slow startup time, if they are not enabled beforehand,
-                 *  there is a high probability that they will not be detected if enabled here.
-                 */
-                if (!rtc_clk_32k_enabled()) {
-                    ESP_EARLY_LOGW(TAG, "32 kHz XTAL not enabled in advance");
-                }
                 rtc_clk_32k_enable(true);
             } else if (slow_clk == SLOW_CLK_32K_EXT_OSC) {
                 rtc_clk_32k_enable_external();
@@ -149,7 +140,7 @@ __attribute__((weak)) void esp_clk_init(void)
     rtc_clk_8m_enable(true, rc_fast_d256_is_enabled);
     rtc_clk_fast_src_set(SOC_RTC_FAST_CLK_SRC_RC_FAST);
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
     // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
@@ -174,7 +165,7 @@ __attribute__((weak)) void esp_clk_init(void)
     select_rtc_slow_clk(SLOW_CLK_150K);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // After changing a frequency WDT timeout needs to be set for new frequency.
     stage_timeout_ticks = (uint32_t)((uint64_t)CONFIG_BOOTLOADER_WDT_TIME_MS * rtc_clk_slow_freq_get_hz() / 1000);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -218,13 +209,25 @@ __attribute__((weak)) void esp_perip_clk_init(void)
     uint32_t hwcrypto_perip_clk;
     uint32_t wifi_bt_sdio_clk;
 
-    /* Shared peripherals follow CPU0; ignore CPU1 (may hold a stale CPU-only cause). */
-    const soc_reset_reason_t rst_reas0 = esp_rom_get_reset_reason(0);
+#if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    soc_reset_reason_t rst_reas[1];
+#else
+    soc_reset_reason_t rst_reas[2];
+#endif
+
+    rst_reas[0] = esp_rom_get_reset_reason(0);
+#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    rst_reas[1] = esp_rom_get_reset_reason(1);
+#endif
 
     /* For reason that only reset CPU, do not disable the clocks
      * that have been enabled before reset.
      */
-    if (soc_reset_get_level(rst_reas0) == SOC_RESET_LEVEL_CPU) {
+    if ((rst_reas[0] == RESET_REASON_CPU0_MWDT0 || rst_reas[0] == RESET_REASON_CPU0_SW || rst_reas[0] == RESET_REASON_CPU0_RTC_WDT)
+#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+            || (rst_reas[1] == RESET_REASON_CPU1_MWDT1 || rst_reas[1] == RESET_REASON_CPU1_SW || rst_reas[1] == RESET_REASON_CPU1_RTC_WDT)
+#endif
+       ) {
         common_perip_clk = ~DPORT_READ_PERI_REG(DPORT_PERIP_CLK_EN_REG);
         hwcrypto_perip_clk = ~DPORT_READ_PERI_REG(DPORT_PERI_CLK_EN_REG);
         wifi_bt_sdio_clk = ~DPORT_READ_PERI_REG(DPORT_WIFI_CLK_EN_REG);

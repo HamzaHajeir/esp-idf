@@ -17,7 +17,7 @@
 #include "example_service.h"
 
 #define EXAMPLE_BUF_SZ        (32)
-#define AES256_GCM_TAG_LEN    (16)
+#define AES256_GCM_TAG_LEN    (12)
 #define AES256_GCM_AAD_LEN    (16)
 
 static const char *TAG = "example_tee_basic";
@@ -45,7 +45,7 @@ void app_main(void)
     uint8_t aad_buf[AES256_GCM_AAD_LEN];
 
     /* Generate random plaintext and AAD */
-    esp_fill_random(plain_text, sizeof(plain_text));
+    esp_fill_random(plain_text, sizeof(EXAMPLE_BUF_SZ));
     esp_fill_random(aad_buf, AES256_GCM_AAD_LEN);
 
     /* Encryption operation */

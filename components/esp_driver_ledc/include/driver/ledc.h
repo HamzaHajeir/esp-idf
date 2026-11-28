@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -475,7 +475,7 @@ esp_err_t ledc_set_fade_with_time(ledc_mode_t speed_mode, ledc_channel_t channel
  *     - ESP_OK Success
  *     - ESP_ERR_INVALID_ARG Intr flag error
  *     - ESP_ERR_NOT_FOUND Failed to find available interrupt source
- *     - ESP_ERR_INVALID_STATE Fade function already installed / LEDC not initialized
+ *     - ESP_ERR_INVALID_STATE Fade function already installed
  */
 esp_err_t ledc_fade_func_install(int intr_alloc_flags);
 
@@ -526,9 +526,8 @@ esp_err_t ledc_fade_stop(ledc_mode_t speed_mode, ledc_channel_t channel);
 #endif //SOC_LEDC_SUPPORT_FADE_STOP
 
 /**
- * @brief A thread-safe API to set duty for LEDC channel and update it.
+ * @brief A thread-safe API to set duty for LEDC channel and return when duty updated.
  *
- * @note  The new duty takes effect from the next PWM cycle, see ledc_update_duty().
  * @note  For ESP32, hardware does not support any duty change while a fade operation is running in progress on that channel.
  *        Other duty operations will have to wait until the fade operation has finished.
  *
@@ -728,9 +727,7 @@ esp_err_t ledc_set_multi_fade_and_start(ledc_mode_t speed_mode, ledc_channel_t c
  * @param[in] channel LEDC channel index (0 - LEDC_CHANNEL_MAX-1), select from ledc_channel_t
  * @param[in] start_duty Duty cycle [0, (2**duty_resolution)] where the multi-fade begins with. This value should be a non-gamma-corrected duty cycle.
  * @param[in] end_duty Duty cycle [0, (2**duty_resolution)] where the multi-fade ends with. This value should be a non-gamma-corrected duty cycle.
- * @param[in] linear_phase_num Number of linear fades to simulate a gamma curved fade (1 - SOC_LEDC_GAMMA_CURVE_FADE_RANGE_MAX).
- *                             Better to keep this smaller than fade_params_list_size to leave extra room, since leftover
- *                             duty may take one extra range, or one linear phase may be split into multiple hardware fade ranges.
+ * @param[in] linear_phase_num Number of linear fades to simulate a gamma curved fade (1 - SOC_LEDC_GAMMA_CURVE_FADE_RANGE_MAX)
  * @param[in] max_fade_time_ms The maximum time of the fading ( ms ).
  * @param[in] gamma_correction_operator User provided gamma correction function. The function argument should be able to
  *                                      take any value within [0, (2**duty_resolution)]. And returns the gamma-corrected duty cycle.

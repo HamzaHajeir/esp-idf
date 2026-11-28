@@ -1,17 +1,13 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <inttypes.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "unity.h"
 #include "unity_test_utils.h"
-#include "hal/dac_ll.h"
 #include "driver/dac_oneshot.h"
 #include "driver/dac_cosine.h"
 #include "driver/dac_continuous.h"
@@ -19,21 +15,19 @@
 #include "esp_private/gpio.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_err.h"
-#include "dac_test_utils.h"
-
-#if SOC_IS(ESP32)
+#if CONFIG_IDF_TARGET_ESP32
 #include "esp_private/i2s_platform.h"
 // Following headers are used to test the conversion frequency
 #include "hal/i2s_periph.h"
 #include "driver/pulse_cnt.h"
-#elif SOC_IS(ESP32S2)
+#elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp_private/spi_common_internal.h"
 #endif
 
-#if SOC_IS(ESP32)
+#if CONFIG_IDF_TARGET_ESP32
 #define ADC_TEST_CHANNEL_NUM   ADC_CHANNEL_8   // GPIO25, same as DAC channel 0
 #define ADC_TEST_WIDTH         ADC_BITWIDTH_12
-#elif SOC_IS(ESP32S2)
+#elif CONFIG_IDF_TARGET_ESP32S2
 #define ADC_TEST_CHANNEL_NUM   ADC_CHANNEL_6   // GPIO17, same as DAC channel 0
 #define ADC_TEST_WIDTH         ADC_BITWIDTH_13
 #endif
@@ -47,14 +41,13 @@ TEST_CASE("DAC_API_basic_logic_test", "[dac]")
     TEST_ESP_OK(dac_oneshot_new_channel(&(dac_oneshot_config_t) {
         .chan_id = DAC_CHAN_0
     }, &oneshot_chan0_handle));
-    TEST_ESP_OK(dac_oneshot_output_code(oneshot_chan0_handle, 128));
+    TEST_ESP_OK(dac_oneshot_output_voltage(oneshot_chan0_handle, 128));
     TEST_ESP_OK(dac_oneshot_del_channel(oneshot_chan0_handle));
     dac_oneshot_handle_t oneshot_chan1_handle;
     TEST_ESP_OK(dac_oneshot_new_channel(&(dac_oneshot_config_t) {
         .chan_id = DAC_CHAN_1
     }, &oneshot_chan1_handle));
-    TEST_ESP_OK(dac_oneshot_output_code(oneshot_chan1_handle, 100));
-    TEST_ASSERT(dac_oneshot_output_code(oneshot_chan1_handle, (1U << dac_oneshot_get_bitwidth(oneshot_chan1_handle))) == ESP_ERR_INVALID_ARG);
+    TEST_ESP_OK(dac_oneshot_output_voltage(oneshot_chan1_handle, 100));
     TEST_ESP_OK(dac_oneshot_del_channel(oneshot_chan1_handle));
 
     /* Cosine wave API test */
@@ -63,6 +56,8 @@ TEST_CASE("DAC_API_basic_logic_test", "[dac]")
     dac_cosine_config_t cos0_cfg = {
         .chan_id = DAC_CHAN_0,
         .freq_hz = 1000, // It will be covered by 8000 in the latter configuration
+        .clk_src = DAC_COSINE_CLK_SRC_DEFAULT,
+        .offset = 0,
         .phase = DAC_COSINE_PHASE_0,
         .atten = DAC_COSINE_ATTEN_DEFAULT,
         .flags.force_set_freq = false,
@@ -70,6 +65,8 @@ TEST_CASE("DAC_API_basic_logic_test", "[dac]")
     dac_cosine_config_t cos1_cfg = {
         .chan_id = DAC_CHAN_1,
         .freq_hz = 8000,
+        .clk_src = DAC_COSINE_CLK_SRC_DEFAULT,
+        .offset = 0,
         .phase = DAC_COSINE_PHASE_180,
         .atten = DAC_COSINE_ATTEN_DB_6,
         .flags.force_set_freq = false,
@@ -96,22 +93,24 @@ TEST_CASE("DAC_API_basic_logic_test", "[dac]")
         .desc_num = 8,
         .buf_size = 2048,
         .freq_hz = 48000,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
     /* DMA peripheral availability test */
-#if SOC_IS(ESP32)
+#if CONFIG_IDF_TARGET_ESP32
     TEST_ESP_OK(i2s_platform_acquire_occupation(I2S_CTLR_HP, 0, "dac_test"));
-    TEST_ASSERT(dac_continuous_new_channels(&cont_cfg, &cont_handle) == ESP_ERR_NOT_FOUND);
-    TEST_ESP_OK(i2s_platform_release_occupation(I2S_CTLR_HP, 0));
-#elif SOC_IS(ESP32S2)
+#elif CONFIG_IDF_TARGET_ESP32S2
     TEST_ASSERT(spicommon_periph_claim(SPI3_HOST, "dac_test"));
+#endif
     TEST_ASSERT(dac_continuous_new_channels(&cont_cfg, &cont_handle) == ESP_ERR_NOT_FOUND);
+#if CONFIG_IDF_TARGET_ESP32
+    TEST_ESP_OK(i2s_platform_release_occupation(I2S_CTLR_HP, 0));
+#elif CONFIG_IDF_TARGET_ESP32S2
     TEST_ASSERT(spicommon_periph_free(SPI3_HOST));
 #endif
 
     TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
-    dac_continuous_handle_t duplicate_handle;
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, dac_continuous_new_channels(&cont_cfg, &duplicate_handle));
     TEST_ASSERT(dac_continuous_disable(cont_handle) == ESP_ERR_INVALID_STATE);
     TEST_ESP_OK(dac_continuous_enable(cont_handle));
     TEST_ASSERT(dac_continuous_del_channels(cont_handle) == ESP_ERR_INVALID_STATE);
@@ -119,71 +118,46 @@ TEST_CASE("DAC_API_basic_logic_test", "[dac]")
     TEST_ESP_OK(dac_continuous_del_channels(cont_handle));
 }
 
-#if SOC_DAC_HS_RESOLUTION && SOC_DAC_SUPPORT_BUFFER_CFG
-TEST_CASE("DAC_channel_configuration_test", "[dac]")
+TEST_CASE("DAC_memory_leak_test", "[dac]")
 {
-    const dac_channel_config_t configs[] = {
-        {.output_mode = DAC_CHANNEL_OUTPUT_VOLTAGE, .buffer_mode = DAC_CHANNEL_BUFFER_FULL_SWING},
-        {.output_mode = DAC_CHANNEL_OUTPUT_VOLTAGE, .buffer_mode = DAC_CHANNEL_BUFFER_REDUCED_SWING},
-        {.output_mode = DAC_CHANNEL_OUTPUT_VOLTAGE, .buffer_mode = DAC_CHANNEL_BUFFER_BYPASS},
-        {.output_mode = DAC_CHANNEL_OUTPUT_CURRENT},
+    dac_continuous_handle_t cont_handle;
+    dac_continuous_config_t cont_cfg = {
+        .chan_mask = DAC_CHANNEL_MASK_ALL,
+        .desc_num = 8,
+        .buf_size = 2048,
+        .freq_hz = 48000,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
+        .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
-    for (size_t i = 0; i < sizeof(configs) / sizeof(configs[0]); i++) {
-        dac_oneshot_config_t cfg = {.chan_id = DAC_CHAN_0, .chan_cfg = configs[i]};
-        dac_oneshot_handle_t handle;
-        TEST_ESP_OK(dac_oneshot_new_channel(&cfg, &handle));
-        uint8_t bitwidth = configs[i].output_mode == DAC_CHANNEL_OUTPUT_CURRENT ? SOC_DAC_HS_RESOLUTION : SOC_DAC_RESOLUTION;
-        TEST_ASSERT_EQUAL(bitwidth, dac_oneshot_get_bitwidth(handle));
-        TEST_ESP_OK(dac_oneshot_output_code(handle, (1U << bitwidth) - 1));
-        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, dac_oneshot_output_code(handle, 1U << bitwidth));
-        TEST_ESP_OK(dac_oneshot_del_channel(handle));
+    size_t len = 1024;
+    uint8_t buf[len];
+    for (int i = 0; i < len; i++) {
+        buf[i] = i % 256;
     }
-}
-#endif // SOC_DAC_HS_RESOLUTION && SOC_DAC_SUPPORT_BUFFER_CFG
 
-#if DAC_LL_DC_VIA_SINTX
-TEST_CASE("DAC_SINTX_mode_conflict_test", "[dac]")
-{
-    const dac_oneshot_config_t oneshot_cfg = {.chan_id = DAC_CHAN_0};
-    const dac_cosine_config_t cosine_cfg = {
-        .chan_id = DAC_CHAN_1,
-        .freq_hz = 1000,
-        .phase = DAC_COSINE_PHASE_0,
-    };
-    dac_oneshot_handle_t oneshot;
-    dac_cosine_handle_t cosine;
+    TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
+    TEST_ESP_OK(dac_continuous_enable(cont_handle));
+    TEST_ESP_OK(dac_continuous_write_cyclically(cont_handle, buf, len, NULL));
+    TEST_ESP_OK(dac_continuous_disable(cont_handle));
+    TEST_ESP_OK(dac_continuous_del_channels(cont_handle));
 
-    // oneshot blocks cosine
-    TEST_ESP_OK(dac_oneshot_new_channel(&oneshot_cfg, &oneshot));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, dac_cosine_new_channel(&cosine_cfg, &cosine));
-    TEST_ESP_OK(dac_oneshot_del_channel(oneshot));
-
-    // cosine blocks oneshot
-    TEST_ESP_OK(dac_cosine_new_channel(&cosine_cfg, &cosine));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, dac_oneshot_new_channel(&oneshot_cfg, &oneshot));
-    TEST_ESP_OK(dac_cosine_del_channel(cosine));
-}
-#endif // DAC_LL_DC_VIA_SINTX
-
-#if DAC_LL_SHARED_HS_LS_CLK
-TEST_CASE("DAC_clock_source_conflict_test", "[dac]")
-{
-    const dac_oneshot_clk_src_t sources[] = {DAC_ONESHOT_CLK_SRC_XTAL, DAC_ONESHOT_CLK_SRC_RTC_FAST};
-    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        dac_oneshot_config_t cfg0 = {.chan_id = DAC_CHAN_0, .clk_src = sources[i]};
-        dac_oneshot_config_t cfg1 = {.chan_id = DAC_CHAN_1, .clk_src = sources[1 - i]};
-        dac_oneshot_handle_t handle0, handle1;
-        TEST_ESP_OK(dac_oneshot_new_channel(&cfg0, &handle0));
-        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, dac_oneshot_new_channel(&cfg1, &handle1));
-        cfg1.clk_src = sources[i];
-        TEST_ESP_OK(dac_oneshot_new_channel(&cfg1, &handle1));
-        TEST_ESP_OK(dac_oneshot_del_channel(handle0));
-        TEST_ESP_OK(dac_oneshot_del_channel(handle1));
+    uint32_t initial_size = esp_get_free_heap_size();
+    printf("Initial free heap size: %"PRIu32"\n", initial_size);
+    for (int i = 0; i < 20; i++) {
+        printf("# %d: ---------------------------------\n", i + 1);
+        TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
+        TEST_ESP_OK(dac_continuous_enable(cont_handle));
+        TEST_ESP_OK(dac_continuous_write_cyclically(cont_handle, buf, len, NULL));
+        TEST_ESP_OK(dac_continuous_disable(cont_handle));
+        TEST_ESP_OK(dac_continuous_del_channels(cont_handle));
+        printf("current heap size: %"PRIu32"\n", esp_get_free_heap_size());
+        TEST_ASSERT(initial_size == esp_get_free_heap_size());
     }
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    TEST_ASSERT(initial_size == esp_get_free_heap_size());
 }
-#endif // DAC_LL_SHARED_HS_LS_CLK
 
-#if !SOC_IS(ESP32S31)   // No shared pins between DAC and ADC on ESP32-S31
 TEST_CASE("DAC_set_voltage_test", "[dac]")
 {
     dac_oneshot_handle_t oneshot_chan0_handle;
@@ -208,7 +182,7 @@ TEST_CASE("DAC_set_voltage_test", "[dac]")
     int curr_adc = 0;
     int last_adc = 0;
     for (uint8_t i = 0; i <= 200; i += 20) {
-        TEST_ESP_OK(dac_oneshot_output_code(oneshot_chan0_handle, i));
+        TEST_ESP_OK(dac_oneshot_output_voltage(oneshot_chan0_handle, i));
         vTaskDelay(pdMS_TO_TICKS(20));
         TEST_ESP_OK(adc_oneshot_read(adc2_handle, ADC_TEST_CHANNEL_NUM, &curr_adc));
         printf("DAC: %d - ADC: %d\n", i, curr_adc);
@@ -220,7 +194,6 @@ TEST_CASE("DAC_set_voltage_test", "[dac]")
     TEST_ESP_OK(dac_oneshot_del_channel(oneshot_chan0_handle));
     TEST_ESP_OK(adc_oneshot_del_unit(adc2_handle));
 }
-#endif // !SOC_IS(ESP32S31)
 
 TEST_CASE("DAC_dma_write_test", "[dac]")
 {
@@ -230,10 +203,12 @@ TEST_CASE("DAC_dma_write_test", "[dac]")
         .desc_num = 8,
         .buf_size = 1024,
         .freq_hz = 48000,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
     size_t len = 520; // To test if the driver can work correctly with uncommon length
-    dac_test_sample_t buf[len];
+    uint8_t buf[len];
     for (int i = 0; i < len; i++) {
         buf[i] = i % 104;
     }
@@ -251,55 +226,10 @@ TEST_CASE("DAC_dma_write_test", "[dac]")
     TEST_ESP_OK(dac_continuous_del_channels(cont_handle));
 }
 
-/* This test targets the synchronous writing "resume after the DMA has fully stopped" path.
- * With small DMA buffers and a deliberate long delay between writes, the DMA drains all of
- * its descriptors and stops (raises TEOF) before the next write happens. Every write except
- * the first one therefore has to re-link a descriptor and resume the transfer through
- * dac_priv_dma_trans_append(). If that resume path is broken, the descriptors are never
- * recycled, so dac_continuous_write() will return ESP_ERR_TIMEOUT, and dac_continuous_disable()
- * (which waits for the ongoing synchronous transfer to stop) will block forever. */
-TEST_CASE("DAC_dma_sync_write_resume_test", "[dac]")
-{
-    dac_continuous_handle_t cont_handle;
-    dac_continuous_config_t cont_cfg = {
-        .chan_mask = DAC_CHANNEL_MASK_ALL,
-        .desc_num = 4,
-        .buf_size = 256,
-        .freq_hz = 48000,
-        .chan_mode = DAC_CHANNEL_MODE_SIMUL,
-    };
-
-    /* Queue five descriptors so the write must recycle descriptors. */
-#if SOC_DAC_DMA_16BIT_ALIGN && CONFIG_DAC_DMA_AUTO_16BIT_ALIGN
-    size_t len = cont_cfg.buf_size / 2 * 5;
-#else
-    size_t len = cont_cfg.buf_size / sizeof(dac_test_sample_t) * 5;
-#endif
-    dac_test_sample_t buf[len];
-    for (int i = 0; i < len; i++) {
-        buf[i] = i % 256;
-    }
-
-    TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
-    TEST_ESP_OK(dac_continuous_enable(cont_handle));
-
-    /* Waiting 100 ms between writes guarantees the DMA has fully drained and stopped,
-     * forcing every subsequent write through the resume path. */
-    for (int i = 0; i < 10; i++) {
-        size_t loaded_cnt = 0;
-        TEST_ESP_OK(dac_continuous_write(cont_handle, buf, len, &loaded_cnt, 1000));
-        TEST_ASSERT_EQUAL(len, loaded_cnt);
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    /* disable() internally waits for the ongoing synchronous transfer to stop; it must not hang. */
-    TEST_ESP_OK(dac_continuous_disable(cont_handle));
-    TEST_ESP_OK(dac_continuous_del_channels(cont_handle));
-}
-
 /* Test the conversion frequency by counting the pulse of WS signal
- * The frequency test is currently only supported on ESP32 */
-#if SOC_IS(ESP32)
+ * The frequency test is currently only supported on ESP32
+ * because there is no such signal to monitor on ESP32-S2 */
+#if CONFIG_IDF_TARGET_ESP32
 TEST_CASE("DAC_dma_convert_frequency_test", "[dac]")
 {
     /* Prepare configuration for the PCNT unit */
@@ -339,6 +269,8 @@ TEST_CASE("DAC_dma_convert_frequency_test", "[dac]")
         .desc_num = 8,
         .buf_size = 2048,
         .freq_hz = 20000,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
     TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
@@ -394,6 +326,8 @@ TEST_CASE("DAC_cosine_wave_test", "[dac]")
     dac_cosine_config_t cos0_cfg = {
         .chan_id = DAC_CHAN_0,
         .freq_hz = 1000, // It will be covered by 8000 in the latter configuration
+        .clk_src = DAC_COSINE_CLK_SRC_DEFAULT,
+        .offset = 0,
         .phase = DAC_COSINE_PHASE_0,
         .atten = DAC_COSINE_ATTEN_DEFAULT,
         .flags.force_set_freq = false,
@@ -401,6 +335,8 @@ TEST_CASE("DAC_cosine_wave_test", "[dac]")
     dac_cosine_config_t cos1_cfg = {
         .chan_id = DAC_CHAN_1,
         .freq_hz = 1000,
+        .clk_src = DAC_COSINE_CLK_SRC_DEFAULT,
+        .offset = 0,
         .phase = DAC_COSINE_PHASE_180,
         .atten = DAC_COSINE_ATTEN_DB_6,
         .flags.force_set_freq = false,
@@ -419,45 +355,37 @@ TEST_CASE("DAC_cosine_wave_test", "[dac]")
     TEST_ESP_OK(dac_cosine_del_channel(cos_chan1_handle));
 }
 
-typedef struct {
-    dac_continuous_handle_t handle;
-    volatile bool stop;
-    TaskHandle_t notify_task;   /* Task to notify before self-deletion */
-} dac_concurrency_test_ctx_t;
-
 static void dac_cyclically_write_task(void *arg)
 {
-    dac_concurrency_test_ctx_t *ctx = arg;
+    dac_continuous_handle_t dac_handle = (dac_continuous_handle_t)arg;
     size_t len = 1000;
-    dac_test_sample_t buf[len];
+    uint8_t buf[len];
     uint8_t max_val = 50;
-    while (!ctx->stop) {
+    while (1) {
         max_val += 50;
         for (int i = 0; i < len; i++) {
             buf[i] = i % max_val;
         }
         printf("Write cyclically\n");
-        TEST_ESP_OK(dac_continuous_write_cyclically(ctx->handle, buf, len, NULL));
+        TEST_ESP_OK(dac_continuous_write_cyclically(dac_handle, buf, len, NULL));
         vTaskDelay(pdMS_TO_TICKS(200));
     }
-    xTaskNotifyGive(ctx->notify_task);
     vTaskDelete(NULL);
 }
 
 static void dac_continuously_write_task(void *arg)
 {
-    dac_concurrency_test_ctx_t *ctx = arg;
+    dac_continuous_handle_t dac_handle = (dac_continuous_handle_t)arg;
     size_t len = 2048;
-    dac_test_sample_t buf[len];
+    uint8_t buf[len];
     for (int i = 0; i < len; i++) {
         buf[i] = i % 256;
     }
-    while (!ctx->stop) {
+    while (1) {
         printf("Write continuously\n");
-        TEST_ESP_OK(dac_continuous_write(ctx->handle, buf, len, NULL, 100));
+        TEST_ESP_OK(dac_continuous_write(dac_handle, buf, len, NULL, 100));
         vTaskDelay(pdMS_TO_TICKS(300));
     }
-    xTaskNotifyGive(ctx->notify_task);
     vTaskDelete(NULL);
 }
 
@@ -469,33 +397,23 @@ TEST_CASE("DAC_continuous_mode_concurrency_test", "[dac]")
         .desc_num = 8,
         .buf_size = 1024,
         .freq_hz = 48000,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
 
     TEST_ESP_OK(dac_continuous_new_channels(&cont_cfg, &cont_handle));
     TEST_ESP_OK(dac_continuous_enable(cont_handle));
 
-    dac_concurrency_test_ctx_t ctx = {
-        .handle = cont_handle,
-        .stop = false,
-        .notify_task = xTaskGetCurrentTaskHandle(),
-    };
-
     TaskHandle_t cyc_task;
     TaskHandle_t con_task;
-    xTaskCreate(dac_cyclically_write_task, "dac_cyclically_write_task", 8192, &ctx, 5, &cyc_task);
-    xTaskCreate(dac_continuously_write_task, "dac_continuously_write_task", 8192, &ctx, 5, &con_task);
+    xTaskCreate(dac_cyclically_write_task, "dac_cyclically_write_task", 4096, cont_handle, 5, &cyc_task);
+    xTaskCreate(dac_continuously_write_task, "dac_continuously_write_task", 4096, cont_handle, 5, &con_task);
 
     vTaskDelay(pdMS_TO_TICKS(5000));
 
-    ctx.stop = true;
-
-    TEST_ASSERT_NOT_EQUAL(0, ulTaskNotifyTake(pdFALSE, pdMS_TO_TICKS(2000)));
-    TEST_ASSERT_NOT_EQUAL(0, ulTaskNotifyTake(pdFALSE, pdMS_TO_TICKS(2000)));
-
-    /* vTaskDelete(NULL) defers freeing task TCB and stack to the idle task.
-     * Yield here so idle task(s) can reclaim that memory before tearDown() checks for leaks. */
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelete(cyc_task);
+    vTaskDelete(con_task);
 
     TEST_ESP_OK(dac_continuous_disable(cont_handle));
     TEST_ESP_OK(dac_continuous_del_channels(cont_handle));

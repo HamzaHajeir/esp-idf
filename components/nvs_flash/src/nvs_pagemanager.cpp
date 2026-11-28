@@ -1,58 +1,30 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "nvs_pagemanager.hpp"
-#include <new>
 
 using namespace std;
 
 namespace nvs
 {
-esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t sectorCount, bool allowRepair, bool *pagesReplaced)
+esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t sectorCount)
 {
-    if (pagesReplaced != nullptr) {
-        *pagesReplaced = false;
-    }
     if (partition == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // A matching array is rebuilt in place. A second Page[] is allocated only when the
-    // sector count changes, and only after that allocation succeeds is the live image dropped.
-    // The old array is released before pages are reloaded, so hash lists are not held twice.
-    const bool reuseExisting = mPages && (mPageCount == sectorCount);
-    if (!reuseExisting) {
-        std::unique_ptr<Page[]> newPages(new (nothrow) Page[sectorCount]);
-        if (!newPages) {
-            return ESP_ERR_NO_MEM;
-        }
-        if (pagesReplaced != nullptr) {
-            *pagesReplaced = true;
-        }
-        mPageList.clear();
-        mFreePageList.clear();
-        mPages.swap(newPages);
-    } else {
-        // In-place reconstruction drops the loaded page state. pagesReplaced reports that
-        // to init(), same as after a size-changing swap.
-        if (pagesReplaced != nullptr) {
-            *pagesReplaced = true;
-        }
-        mPageList.clear();
-        mFreePageList.clear();
-        for (uint32_t i = 0; i < sectorCount; ++i) {
-            mPages[i].~Page();
-            new (&mPages[i]) Page();
-        }
-    }
-
     mBaseSector = baseSector;
     mPageCount = sectorCount;
+    mPageList.clear();
+    mFreePageList.clear();
+    mPages.reset(new (nothrow) Page[sectorCount]);
+
+    if (!mPages) return ESP_ERR_NO_MEM;
 
     for (uint32_t i = 0; i < sectorCount; ++i) {
-        auto err = mPages[i].load(partition, baseSector + i, allowRepair);
+        auto err = mPages[i].load(partition, baseSector + i);
         if (err != ESP_OK) {
             return err;
         }
@@ -74,7 +46,7 @@ esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t 
 
     if (mPageList.empty()) {
         mSeqNumber = 0;
-        return allowRepair ? activatePage() : ESP_OK;
+        return activatePage();
     } else {
         uint32_t lastSeqNo;
         auto err = mPageList.back().getSeqNumber(lastSeqNo);
@@ -86,13 +58,12 @@ esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t 
 
     // if power went out after a new item for the given key was written,
     // but before the old one was erased, we end up with a duplicate item
-    {
+    if (!partition->get_readonly()) {
         Page& lastPage = back();
         size_t lastItemIndex = SIZE_MAX;
         Item item;
         size_t itemIndex = 0;
-        while (lastPage.findItem(Page::NS_ANY, ItemType::ANY, nullptr, itemIndex, item,
-                Page::CHUNK_ANY, VerOffset::VER_ANY, allowRepair) == ESP_OK) {
+        while (lastPage.findItem(Page::NS_ANY, ItemType::ANY, nullptr, itemIndex, item) == ESP_OK) {
             itemIndex += item.span;
             lastItemIndex = itemIndex;
         }
@@ -104,9 +75,7 @@ esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t 
             for (it = begin(); it != last; ++it) {
 
                 if ((it->state() != Page::PageState::FREEING) &&
-                        (it->eraseItem(item.nsIndex, item.datatype, item.key,
-                                Page::DEFAULT_PURGE_AFTER_ERASE, item.chunkIndex,
-                                VerOffset::VER_ANY, allowRepair) == ESP_OK)) {
+                        (it->eraseItem(item.nsIndex, item.datatype, item.key, item.chunkIndex) == ESP_OK)) {
                     break;
                 }
             }
@@ -116,20 +85,14 @@ esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t 
                 for (it = begin(); it != last; ++it) {
 
                     if ((it->state() != Page::PageState::FREEING) &&
-                            (it->eraseItem(item.nsIndex, ItemType::BLOB, item.key,
-                                    Page::DEFAULT_PURGE_AFTER_ERASE, item.chunkIndex,
-                                    VerOffset::VER_ANY, allowRepair) == ESP_OK)) {
+                            (it->eraseItem(item.nsIndex, ItemType::BLOB, item.key, item.chunkIndex) == ESP_OK)) {
                         break;
                     }
                 }
             }
         }
-    }
 
-    if (!partition->get_readonly()) {
-        // Power loss during GC leaves a FREEING page and a partial copy on the new
-        // active page. Finish that recovery during init, including when other repairs
-        // are deferred. Otherwise stats and iterators observe both copies.
+        // check if power went out while page was being freed
         for (auto it = begin(); it!= end(); ++it) {
             if (it->state() == Page::PageState::FREEING) {
                 Page* newPage = &mPageList.back();
@@ -164,8 +127,7 @@ esp_err_t PageManager::load(Partition *partition, uint32_t baseSector, uint32_t 
             }
         }
 
-        // A writable partition needs a spare page. Recovering a FREEING page supplies one.
-        // A physically read-only partition does not require a spare page.
+        // partition should have at least one free page if it is not read-only
         if (mFreePageList.empty()) {
             return ESP_ERR_NVS_NO_FREE_PAGES;
         }
@@ -201,25 +163,22 @@ esp_err_t PageManager::requestNewPage()
         return ESP_ERR_NVS_NOT_ENOUGH_SPACE;
     }
 
-    Page* erasedPage = maxUnusedItemsPageIt;
-
-#ifndef NDEBUG
-    size_t usedEntries = erasedPage->getUsedEntryCount();
-#endif
-    esp_err_t err = erasedPage->markFreeing();
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    // Activating a new page first when markFreeing is done. The data recovery from power loss will be
-    // driven by the existence of the (transitional) FREEING state of a page.
-    err = activatePage();
+    esp_err_t err = activatePage();
     if (err != ESP_OK) {
         return err;
     }
 
     Page* newPage = &mPageList.back();
 
+    Page* erasedPage = maxUnusedItemsPageIt;
+
+#ifndef NDEBUG
+    size_t usedEntries = erasedPage->getUsedEntryCount();
+#endif
+    err = erasedPage->markFreeing();
+    if (err != ESP_OK) {
+        return err;
+    }
     err = erasedPage->copyItems(*newPage);
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
         return err;

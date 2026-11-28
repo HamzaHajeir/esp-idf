@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -59,7 +59,7 @@ static void test_parlio_bitscrambler(void)
         .trans_queue_depth = 8,
         .max_transfer_size = 128,
         .bit_pack_order = PARLIO_BIT_PACK_ORDER_LSB,
-        .shift_edge = PARLIO_SHIFT_EDGE_NEG,
+        .sample_edge = PARLIO_SAMPLE_EDGE_POS,
     };
 
     parlio_rx_unit_handle_t rx_unit = NULL;
@@ -95,8 +95,7 @@ static void test_parlio_bitscrambler(void)
         .idle_value = 0x00,
         .bitscrambler_program = bitscrambler_program_test_tx_LSB_to_MSB,
     };
-    uint8_t *tx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE);
-    TEST_ASSERT_NOT_NULL(tx_payload);
+    uint8_t tx_payload[TEST_PAYLOAD_SIZE] = {0};
     for (int i = 0; i < TEST_PAYLOAD_SIZE; i++) {
         tx_payload[i] = i;
     }
@@ -126,8 +125,7 @@ static void test_parlio_bitscrambler(void)
         .delimiter = deli,
         .flags.partial_rx_en = false,
     };
-    uint8_t *rx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE);
-    TEST_ASSERT_NOT_NULL(rx_payload);
+    __attribute__((aligned(TEST_PAYLOAD_SIZE))) uint8_t rx_payload[TEST_PAYLOAD_SIZE] = {0};
 
     // Tx in LSB mode
     // Tx Bitscrambler turn LSB to MSB
@@ -197,8 +195,6 @@ static void test_parlio_bitscrambler(void)
     TEST_ESP_OK(parlio_rx_unit_disable(rx_unit));
     TEST_ESP_OK(parlio_del_rx_delimiter(deli));
     TEST_ESP_OK(parlio_del_rx_unit(rx_unit));
-    free(tx_payload);
-    free(rx_payload);
 }
 
 TEST_CASE("parlio_tx_bitscrambler_test", "[parlio_bitscrambler]")
@@ -289,14 +285,12 @@ static void test_parlio_bitscrambler_different_input_output_sizes(void)
         .flags.partial_rx_en = false,
     };
 
-    uint8_t *tx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE * 4);
-    TEST_ASSERT_NOT_NULL(tx_payload);
+    uint8_t tx_payload[TEST_PAYLOAD_SIZE * 4] = {0};
     for (int i = 0; i < TEST_PAYLOAD_SIZE * 4; i++) {
         tx_payload[i] = i;
     }
 
-    uint8_t *rx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE);
-    TEST_ASSERT_NOT_NULL(rx_payload);
+    __attribute__((aligned(TEST_PAYLOAD_SIZE))) uint8_t rx_payload[TEST_PAYLOAD_SIZE] = {0};
     TEST_ESP_OK(parlio_tx_unit_enable(tx_unit));
     TEST_ESP_OK(parlio_rx_unit_enable(rx_unit, true));
 
@@ -353,8 +347,6 @@ static void test_parlio_bitscrambler_different_input_output_sizes(void)
     TEST_ESP_OK(parlio_rx_unit_disable(rx_unit));
     TEST_ESP_OK(parlio_del_rx_delimiter(deli));
     TEST_ESP_OK(parlio_del_rx_unit(rx_unit));
-    free(tx_payload);
-    free(rx_payload);
 }
 
 TEST_CASE("parlio_tx_bitscrambler_different_input_output_sizes_test", "[parlio_bitscrambler]")

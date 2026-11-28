@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,16 +17,8 @@
 TEST_CASE("Create volume, open file, write and read back data", "[fatfs]")
 {
     BYTE pdrv;
-    FATFS fs = {};
-#if FF_USE_DYN_BUFFER
-    static BYTE win[FF_MAX_SS];
-    fs.win = win;
-#endif
-    FIL file = {};
-#if !FF_FS_TINY && FF_USE_DYN_BUFFER
-    static BYTE file_buf[FF_MAX_SS];
-    file.buf = file_buf;
-#endif
+    FATFS fs;
+    FIL file;
     UINT bw;
 
     const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
@@ -136,21 +128,13 @@ TEST_CASE("Test mounting 2 volumes, writing data and formatting the 2nd one, rea
     const char* partition_label0 = "storage";
     const esp_partition_t *partition0 = NULL;
     BYTE pdrv0 = UINT8_MAX;
-    FATFS fs0 = {};
-#if FF_USE_DYN_BUFFER
-    static BYTE win0[FF_MAX_SS];
-    fs0.win = win0;
-#endif
+    FATFS fs0;
     wl_handle_t wl_handle0 = WL_INVALID_HANDLE;
 
     const char* partition_label1 = "storage2";
     const esp_partition_t *partition1 = NULL;
     BYTE pdrv1 = UINT8_MAX;
-    FATFS fs1 = {};
-#if FF_USE_DYN_BUFFER
-    static BYTE win1[FF_MAX_SS];
-    fs1.win = win1;
-#endif
+    FATFS fs1;
     wl_handle_t wl_handle1 = WL_INVALID_HANDLE;
 
     size_t data_size = 10;
@@ -165,11 +149,7 @@ TEST_CASE("Test mounting 2 volumes, writing data and formatting the 2nd one, rea
     REQUIRE(f_mount(&fs0, drv0, 0) == FR_OK);
 
     // Open file and write data
-    FIL file0 = {};
-#if !FF_FS_TINY && FF_USE_DYN_BUFFER
-    static BYTE file0_buf[FF_MAX_SS];
-    file0.buf = file0_buf;
-#endif
+    FIL file0;
     UINT bw0;
     REQUIRE(f_open(&file0, "0:/test0.txt", FA_OPEN_ALWAYS | FA_WRITE) == FR_OK);
     // Write data
@@ -193,11 +173,7 @@ TEST_CASE("Test mounting 2 volumes, writing data and formatting the 2nd one, rea
     REQUIRE(f_mount(&fs1, drv1, 0) == FR_OK);
 
     // Open file and write data
-    FIL file1 = {};
-#if !FF_FS_TINY && FF_USE_DYN_BUFFER
-    static BYTE file1_buf[FF_MAX_SS];
-    file1.buf = file1_buf;
-#endif
+    FIL file1;
     UINT bw1;
     REQUIRE(f_open(&file1, "1:/test1.txt", FA_OPEN_ALWAYS | FA_WRITE) == FR_OK);
     // Write data

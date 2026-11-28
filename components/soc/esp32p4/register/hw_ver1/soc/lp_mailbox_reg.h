@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
@@ -13,7 +14,7 @@ extern "C" {
 /** MB_MESSAGE_0_REG register
  *  need_des
  */
-#define MB_MESSAGE_0_REG (DR_REG_LP_MB_BASE + 0x0)
+#define MB_MESSAGE_0_REG (DR_REG_MB_BASE + 0x0)
 /** MB_MESSAGE_0 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -25,7 +26,7 @@ extern "C" {
 /** MB_MESSAGE_1_REG register
  *  need_des
  */
-#define MB_MESSAGE_1_REG (DR_REG_LP_MB_BASE + 0x4)
+#define MB_MESSAGE_1_REG (DR_REG_MB_BASE + 0x4)
 /** MB_MESSAGE_1 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -37,7 +38,7 @@ extern "C" {
 /** MB_MESSAGE_2_REG register
  *  need_des
  */
-#define MB_MESSAGE_2_REG (DR_REG_LP_MB_BASE + 0x8)
+#define MB_MESSAGE_2_REG (DR_REG_MB_BASE + 0x8)
 /** MB_MESSAGE_2 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -49,7 +50,7 @@ extern "C" {
 /** MB_MESSAGE_3_REG register
  *  need_des
  */
-#define MB_MESSAGE_3_REG (DR_REG_LP_MB_BASE + 0xc)
+#define MB_MESSAGE_3_REG (DR_REG_MB_BASE + 0xc)
 /** MB_MESSAGE_3 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -61,7 +62,7 @@ extern "C" {
 /** MB_MESSAGE_4_REG register
  *  need_des
  */
-#define MB_MESSAGE_4_REG (DR_REG_LP_MB_BASE + 0x10)
+#define MB_MESSAGE_4_REG (DR_REG_MB_BASE + 0x10)
 /** MB_MESSAGE_4 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -73,7 +74,7 @@ extern "C" {
 /** MB_MESSAGE_5_REG register
  *  need_des
  */
-#define MB_MESSAGE_5_REG (DR_REG_LP_MB_BASE + 0x14)
+#define MB_MESSAGE_5_REG (DR_REG_MB_BASE + 0x14)
 /** MB_MESSAGE_5 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -85,7 +86,7 @@ extern "C" {
 /** MB_MESSAGE_6_REG register
  *  need_des
  */
-#define MB_MESSAGE_6_REG (DR_REG_LP_MB_BASE + 0x18)
+#define MB_MESSAGE_6_REG (DR_REG_MB_BASE + 0x18)
 /** MB_MESSAGE_6 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -97,7 +98,7 @@ extern "C" {
 /** MB_MESSAGE_7_REG register
  *  need_des
  */
-#define MB_MESSAGE_7_REG (DR_REG_LP_MB_BASE + 0x1c)
+#define MB_MESSAGE_7_REG (DR_REG_MB_BASE + 0x1c)
 /** MB_MESSAGE_7 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -109,7 +110,7 @@ extern "C" {
 /** MB_MESSAGE_8_REG register
  *  need_des
  */
-#define MB_MESSAGE_8_REG (DR_REG_LP_MB_BASE + 0x20)
+#define MB_MESSAGE_8_REG (DR_REG_MB_BASE + 0x20)
 /** MB_MESSAGE_8 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -121,7 +122,7 @@ extern "C" {
 /** MB_MESSAGE_9_REG register
  *  need_des
  */
-#define MB_MESSAGE_9_REG (DR_REG_LP_MB_BASE + 0x24)
+#define MB_MESSAGE_9_REG (DR_REG_MB_BASE + 0x24)
 /** MB_MESSAGE_9 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -133,7 +134,7 @@ extern "C" {
 /** MB_MESSAGE_10_REG register
  *  need_des
  */
-#define MB_MESSAGE_10_REG (DR_REG_LP_MB_BASE + 0x28)
+#define MB_MESSAGE_10_REG (DR_REG_MB_BASE + 0x28)
 /** MB_MESSAGE_10 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -145,7 +146,7 @@ extern "C" {
 /** MB_MESSAGE_11_REG register
  *  need_des
  */
-#define MB_MESSAGE_11_REG (DR_REG_LP_MB_BASE + 0x2c)
+#define MB_MESSAGE_11_REG (DR_REG_MB_BASE + 0x2c)
 /** MB_MESSAGE_11 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -157,7 +158,7 @@ extern "C" {
 /** MB_MESSAGE_12_REG register
  *  need_des
  */
-#define MB_MESSAGE_12_REG (DR_REG_LP_MB_BASE + 0x30)
+#define MB_MESSAGE_12_REG (DR_REG_MB_BASE + 0x30)
 /** MB_MESSAGE_12 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -169,7 +170,7 @@ extern "C" {
 /** MB_MESSAGE_13_REG register
  *  need_des
  */
-#define MB_MESSAGE_13_REG (DR_REG_LP_MB_BASE + 0x34)
+#define MB_MESSAGE_13_REG (DR_REG_MB_BASE + 0x34)
 /** MB_MESSAGE_13 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -181,7 +182,7 @@ extern "C" {
 /** MB_MESSAGE_14_REG register
  *  need_des
  */
-#define MB_MESSAGE_14_REG (DR_REG_LP_MB_BASE + 0x38)
+#define MB_MESSAGE_14_REG (DR_REG_MB_BASE + 0x38)
 /** MB_MESSAGE_14 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -193,7 +194,7 @@ extern "C" {
 /** MB_MESSAGE_15_REG register
  *  need_des
  */
-#define MB_MESSAGE_15_REG (DR_REG_LP_MB_BASE + 0x3c)
+#define MB_MESSAGE_15_REG (DR_REG_MB_BASE + 0x3c)
 /** MB_MESSAGE_15 : R/W; bitpos: [31:0]; default: 0;
  *  need_des
  */
@@ -205,7 +206,7 @@ extern "C" {
 /** MB_LP_INT_RAW_REG register
  *  need_des
  */
-#define MB_LP_INT_RAW_REG (DR_REG_LP_MB_BASE + 0x40)
+#define MB_LP_INT_RAW_REG (DR_REG_MB_BASE + 0x40)
 /** MB_LP_0_INT_RAW : RO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -322,7 +323,7 @@ extern "C" {
 /** MB_LP_INT_ST_REG register
  *  need_des
  */
-#define MB_LP_INT_ST_REG (DR_REG_LP_MB_BASE + 0x44)
+#define MB_LP_INT_ST_REG (DR_REG_MB_BASE + 0x44)
 /** MB_LP_0_INT_ST : RO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -439,7 +440,7 @@ extern "C" {
 /** MB_LP_INT_ENA_REG register
  *  need_des
  */
-#define MB_LP_INT_ENA_REG (DR_REG_LP_MB_BASE + 0x48)
+#define MB_LP_INT_ENA_REG (DR_REG_MB_BASE + 0x48)
 /** MB_LP_0_INT_ENA : R/W; bitpos: [0]; default: 1;
  *  need_des
  */
@@ -556,7 +557,7 @@ extern "C" {
 /** MB_LP_INT_CLR_REG register
  *  need_des
  */
-#define MB_LP_INT_CLR_REG (DR_REG_LP_MB_BASE + 0x4c)
+#define MB_LP_INT_CLR_REG (DR_REG_MB_BASE + 0x4c)
 /** MB_LP_0_INT_CLR : WO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -673,7 +674,7 @@ extern "C" {
 /** MB_HP_INT_RAW_REG register
  *  need_des
  */
-#define MB_HP_INT_RAW_REG (DR_REG_LP_MB_BASE + 0x50)
+#define MB_HP_INT_RAW_REG (DR_REG_MB_BASE + 0x50)
 /** MB_HP_0_INT_RAW : RO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -790,7 +791,7 @@ extern "C" {
 /** MB_HP_INT_ST_REG register
  *  need_des
  */
-#define MB_HP_INT_ST_REG (DR_REG_LP_MB_BASE + 0x54)
+#define MB_HP_INT_ST_REG (DR_REG_MB_BASE + 0x54)
 /** MB_HP_0_INT_ST : RO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -907,7 +908,7 @@ extern "C" {
 /** MB_HP_INT_ENA_REG register
  *  need_des
  */
-#define MB_HP_INT_ENA_REG (DR_REG_LP_MB_BASE + 0x58)
+#define MB_HP_INT_ENA_REG (DR_REG_MB_BASE + 0x58)
 /** MB_HP_0_INT_ENA : R/W; bitpos: [0]; default: 1;
  *  need_des
  */
@@ -1024,7 +1025,7 @@ extern "C" {
 /** MB_HP_INT_CLR_REG register
  *  need_des
  */
-#define MB_HP_INT_CLR_REG (DR_REG_LP_MB_BASE + 0x5c)
+#define MB_HP_INT_CLR_REG (DR_REG_MB_BASE + 0x5c)
 /** MB_HP_0_INT_CLR : WO; bitpos: [0]; default: 0;
  *  need_des
  */
@@ -1141,7 +1142,7 @@ extern "C" {
 /** MB_REG_CLK_EN_REG register
  *  need_des
  */
-#define MB_REG_CLK_EN_REG (DR_REG_LP_MB_BASE + 0x60)
+#define MB_REG_CLK_EN_REG (DR_REG_MB_BASE + 0x60)
 /** MB_REG_CLK_EN : R/W; bitpos: [0]; default: 0;
  *  need_des
  */

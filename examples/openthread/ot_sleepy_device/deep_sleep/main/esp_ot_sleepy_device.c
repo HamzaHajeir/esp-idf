@@ -23,7 +23,6 @@
 #include "esp_sleep.h"
 #include "esp_timer.h"
 #include "esp_openthread.h"
-#include "esp_openthread_lock.h"
 #include "esp_openthread_netif_glue.h"
 #include "esp_ot_sleepy_device_config.h"
 #include "esp_vfs_eventfd.h"
@@ -56,11 +55,7 @@ static void create_config_network(otInstance *instance)
         ESP_LOGE(TAG, "Failed to set OpenThread linkmode.");
         abort();
     }
-    otOperationalDatasetTlvs dataset;
-    esp_openthread_lock_acquire(portMAX_DELAY);
-    otError error = otDatasetGetActiveTlvs(esp_openthread_get_instance(), &dataset);
-    esp_openthread_lock_release();
-    ESP_ERROR_CHECK(esp_openthread_auto_start((error == OT_ERROR_NONE) ? &dataset : NULL));
+    ESP_ERROR_CHECK(esp_openthread_auto_start(NULL));
 }
 
 static void ot_state_change_callback(otChangedFlags changed_flags, void* ctx)

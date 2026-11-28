@@ -27,7 +27,7 @@
 #define DRAM_ORG    (RAM_DRAM_START + CONFIG_ESP32S2_INSTRUCTION_CACHE_SIZE \
                                     + CONFIG_ESP32S2_DATA_CACHE_SIZE)
 
-#define I_D_RAM_SIZE   (DATA_RAM_END - DRAM_ORG)
+#define I_D_RAM_SIZE   DATA_RAM_END - DRAM_ORG
 
 #if CONFIG_ESP32S2_USE_FIXED_STATIC_RAM_SIZE
 ASSERT((CONFIG_ESP32S2_FIXED_STATIC_RAM_SIZE <= I_D_RAM_SIZE), "Fixed static ram data does not fit.")
@@ -164,6 +164,8 @@ _heap_start = _heap_low_start;
 #endif
 
 _heap_end = 0x40000000;
+
+_data_seg_org = ORIGIN(rtc_data_seg);
 
 /* The lines below define location alias for .rtc.data section based on Kconfig option.
    When the option is not defined then use slow memory segment

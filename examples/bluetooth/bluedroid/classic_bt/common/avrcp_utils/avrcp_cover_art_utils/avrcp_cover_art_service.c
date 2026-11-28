@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -63,6 +63,7 @@ typedef struct {
     uint8_t image_hdl_old[7];                /* Previous image handle, used to detect image changes */
     uint32_t image_size;                     /* Size of the image data in bytes */
     uint8_t *image_data;                     /* Pointer to the image data buffer */
+    bool image_final;                        /* Indicate whether the image reception has been completed */
     uint16_t *pixels;                        /* Pointer to decoded pixel data */
     esp_lcd_panel_io_handle_t io_handle;     /* LCD panel IO handle */
     esp_lcd_panel_handle_t panel_handle;     /* LCD panel handle */
@@ -180,11 +181,6 @@ static void avrc_cover_art_srv_init_display(void)
 
 static void avrc_cover_art_srv_deinit_display(void)
 {
-    /* Check if initialized by looking at handles */
-    if (s_avrc_cover_art_srv_cb.panel_handle == NULL && s_avrc_cover_art_srv_cb.io_handle == NULL) {
-        return;
-    }
-
     /* Turn off backlight first */
     ESP_ERROR_CHECK(gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL));
 
@@ -294,7 +290,8 @@ void avrc_cover_art_srv_connect(uint16_t mtu)
 
 void avrc_cover_art_srv_set_image_final(bool final)
 {
-    if (final) {
+    s_avrc_cover_art_srv_cb.image_final = final;
+    if (s_avrc_cover_art_srv_cb.image_final) {
         ESP_LOGI(RC_CA_SRV_TAG, "Cover Art Client final data event, image size: %lu bytes", s_avrc_cover_art_srv_cb.image_size);
 
         /* decode and display the image */
@@ -317,17 +314,12 @@ void avrc_cover_art_srv_ca_req(void)
     if (s_avrc_cover_art_srv_cb.connected) {
         uint8_t attr_mask = ESP_AVRC_MD_ATTR_COVER_ART;
 
-        esp_avrc_ct_send_metadata_cmd_by_handle(bt_avrc_common_ct_get_conn_hdl(), bt_avrc_common_alloc_tl(), attr_mask);
+        esp_avrc_ct_send_metadata_cmd(bt_avrc_common_alloc_tl(), attr_mask);
     }
 }
 
 void avrc_cover_art_srv_save_image_data(uint8_t *p_data, uint16_t data_len)
 {
-    if (s_avrc_cover_art_srv_cb.image_size > UINT32_MAX - data_len) {
-        ESP_LOGE(RC_CA_SRV_TAG, "Image size overflow");
-        avrc_cover_art_srv_free_image_data();
-        return;
-    }
     s_avrc_cover_art_srv_cb.image_size += data_len;
 
     uint8_t *p_buf = (uint8_t *)realloc(s_avrc_cover_art_srv_cb.image_data, s_avrc_cover_art_srv_cb.image_size * sizeof(uint8_t));

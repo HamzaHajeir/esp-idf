@@ -5,17 +5,16 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define DR_REG_UHCI_BASE(i)                        (DR_REG_UHCI0_BASE)
-
 /** UHCI_CONF0_REG register
  *  a
  */
-#define UHCI_CONF0_REG(i) (DR_REG_UHCI_BASE(i) + 0x0)
+#define UHCI_CONF0_REG (DR_REG_UHCI_BASE + 0x0)
 /** UHCI_TX_RST : R/W; bitpos: [0]; default: 0;
  *  Write 1 then write 0 to this bit to reset decode state machine.
  */
@@ -112,7 +111,7 @@ extern "C" {
 /** UHCI_INT_RAW_REG register
  *  a
  */
-#define UHCI_INT_RAW_REG(i) (DR_REG_UHCI_BASE(i) + 0x4)
+#define UHCI_INT_RAW_REG (DR_REG_UHCI_BASE + 0x4)
 /** UHCI_RX_START_INT_RAW : R/WTC/SS; bitpos: [0]; default: 0;
  *  a
  */
@@ -180,7 +179,7 @@ extern "C" {
 /** UHCI_INT_ST_REG register
  *  a
  */
-#define UHCI_INT_ST_REG(i) (DR_REG_UHCI_BASE(i) + 0x8)
+#define UHCI_INT_ST_REG (DR_REG_UHCI_BASE + 0x8)
 /** UHCI_RX_START_INT_ST : RO; bitpos: [0]; default: 0;
  *  a
  */
@@ -248,7 +247,7 @@ extern "C" {
 /** UHCI_INT_ENA_REG register
  *  a
  */
-#define UHCI_INT_ENA_REG(i) (DR_REG_UHCI_BASE(i) + 0xc)
+#define UHCI_INT_ENA_REG (DR_REG_UHCI_BASE + 0xc)
 /** UHCI_RX_START_INT_ENA : R/W; bitpos: [0]; default: 0;
  *  a
  */
@@ -316,7 +315,7 @@ extern "C" {
 /** UHCI_INT_CLR_REG register
  *  a
  */
-#define UHCI_INT_CLR_REG(i) (DR_REG_UHCI_BASE(i) + 0x10)
+#define UHCI_INT_CLR_REG (DR_REG_UHCI_BASE + 0x10)
 /** UHCI_RX_START_INT_CLR : WT; bitpos: [0]; default: 0;
  *  a
  */
@@ -384,7 +383,7 @@ extern "C" {
 /** UHCI_CONF1_REG register
  *  a
  */
-#define UHCI_CONF1_REG(i) (DR_REG_UHCI_BASE(i) + 0x14)
+#define UHCI_CONF1_REG (DR_REG_UHCI_BASE + 0x14)
 /** UHCI_CHECK_SUM_EN : R/W; bitpos: [0]; default: 1;
  *  a
  */
@@ -445,7 +444,7 @@ extern "C" {
 /** UHCI_STATE0_REG register
  *  a
  */
-#define UHCI_STATE0_REG(i) (DR_REG_UHCI_BASE(i) + 0x18)
+#define UHCI_STATE0_REG (DR_REG_UHCI_BASE + 0x18)
 /** UHCI_RX_ERR_CAUSE : RO; bitpos: [2:0]; default: 0;
  *  a
  */
@@ -464,7 +463,7 @@ extern "C" {
 /** UHCI_STATE1_REG register
  *  a
  */
-#define UHCI_STATE1_REG(i) (DR_REG_UHCI_BASE(i) + 0x1c)
+#define UHCI_STATE1_REG (DR_REG_UHCI_BASE + 0x1c)
 /** UHCI_ENCODE_STATE : RO; bitpos: [2:0]; default: 0;
  *  a
  */
@@ -476,7 +475,7 @@ extern "C" {
 /** UHCI_ESCAPE_CONF_REG register
  *  a
  */
-#define UHCI_ESCAPE_CONF_REG(i) (DR_REG_UHCI_BASE(i) + 0x20)
+#define UHCI_ESCAPE_CONF_REG (DR_REG_UHCI_BASE + 0x20)
 /** UHCI_TX_C0_ESC_EN : R/W; bitpos: [0]; default: 1;
  *  a
  */
@@ -537,7 +536,7 @@ extern "C" {
 /** UHCI_HUNG_CONF_REG register
  *  a
  */
-#define UHCI_HUNG_CONF_REG(i) (DR_REG_UHCI_BASE(i) + 0x24)
+#define UHCI_HUNG_CONF_REG (DR_REG_UHCI_BASE + 0x24)
 /** UHCI_TXFIFO_TIMEOUT : R/W; bitpos: [7:0]; default: 16;
  *  a
  */
@@ -584,7 +583,7 @@ extern "C" {
 /** UHCI_ACK_NUM_REG register
  *  a
  */
-#define UHCI_ACK_NUM_REG(i) (DR_REG_UHCI_BASE(i) + 0x28)
+#define UHCI_ACK_NUM_REG (DR_REG_UHCI_BASE + 0x28)
 /** UHCI_ACK_NUM : R/W; bitpos: [2:0]; default: 0;
  *  a
  */
@@ -603,7 +602,7 @@ extern "C" {
 /** UHCI_RX_HEAD_REG register
  *  a
  */
-#define UHCI_RX_HEAD_REG(i) (DR_REG_UHCI_BASE(i) + 0x2c)
+#define UHCI_RX_HEAD_REG (DR_REG_UHCI_BASE + 0x2c)
 /** UHCI_RX_HEAD : RO; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -615,7 +614,7 @@ extern "C" {
 /** UHCI_QUICK_SENT_REG register
  *  a
  */
-#define UHCI_QUICK_SENT_REG(i) (DR_REG_UHCI_BASE(i) + 0x30)
+#define UHCI_QUICK_SENT_REG (DR_REG_UHCI_BASE + 0x30)
 /** UHCI_SINGLE_SEND_NUM : R/W; bitpos: [2:0]; default: 0;
  *  a
  */
@@ -648,7 +647,7 @@ extern "C" {
 /** UHCI_REG_Q0_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q0_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x34)
+#define UHCI_REG_Q0_WORD0_REG (DR_REG_UHCI_BASE + 0x34)
 /** UHCI_SEND_Q0_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -660,7 +659,7 @@ extern "C" {
 /** UHCI_REG_Q0_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q0_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x38)
+#define UHCI_REG_Q0_WORD1_REG (DR_REG_UHCI_BASE + 0x38)
 /** UHCI_SEND_Q0_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -672,7 +671,7 @@ extern "C" {
 /** UHCI_REG_Q1_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q1_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x3c)
+#define UHCI_REG_Q1_WORD0_REG (DR_REG_UHCI_BASE + 0x3c)
 /** UHCI_SEND_Q1_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -684,7 +683,7 @@ extern "C" {
 /** UHCI_REG_Q1_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q1_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x40)
+#define UHCI_REG_Q1_WORD1_REG (DR_REG_UHCI_BASE + 0x40)
 /** UHCI_SEND_Q1_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -696,7 +695,7 @@ extern "C" {
 /** UHCI_REG_Q2_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q2_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x44)
+#define UHCI_REG_Q2_WORD0_REG (DR_REG_UHCI_BASE + 0x44)
 /** UHCI_SEND_Q2_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -708,7 +707,7 @@ extern "C" {
 /** UHCI_REG_Q2_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q2_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x48)
+#define UHCI_REG_Q2_WORD1_REG (DR_REG_UHCI_BASE + 0x48)
 /** UHCI_SEND_Q2_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -720,7 +719,7 @@ extern "C" {
 /** UHCI_REG_Q3_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q3_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x4c)
+#define UHCI_REG_Q3_WORD0_REG (DR_REG_UHCI_BASE + 0x4c)
 /** UHCI_SEND_Q3_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -732,7 +731,7 @@ extern "C" {
 /** UHCI_REG_Q3_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q3_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x50)
+#define UHCI_REG_Q3_WORD1_REG (DR_REG_UHCI_BASE + 0x50)
 /** UHCI_SEND_Q3_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -744,7 +743,7 @@ extern "C" {
 /** UHCI_REG_Q4_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q4_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x54)
+#define UHCI_REG_Q4_WORD0_REG (DR_REG_UHCI_BASE + 0x54)
 /** UHCI_SEND_Q4_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -756,7 +755,7 @@ extern "C" {
 /** UHCI_REG_Q4_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q4_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x58)
+#define UHCI_REG_Q4_WORD1_REG (DR_REG_UHCI_BASE + 0x58)
 /** UHCI_SEND_Q4_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -768,7 +767,7 @@ extern "C" {
 /** UHCI_REG_Q5_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q5_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x5c)
+#define UHCI_REG_Q5_WORD0_REG (DR_REG_UHCI_BASE + 0x5c)
 /** UHCI_SEND_Q5_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -780,7 +779,7 @@ extern "C" {
 /** UHCI_REG_Q5_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q5_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x60)
+#define UHCI_REG_Q5_WORD1_REG (DR_REG_UHCI_BASE + 0x60)
 /** UHCI_SEND_Q5_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -792,7 +791,7 @@ extern "C" {
 /** UHCI_REG_Q6_WORD0_REG register
  *  a
  */
-#define UHCI_REG_Q6_WORD0_REG(i) (DR_REG_UHCI_BASE(i) + 0x64)
+#define UHCI_REG_Q6_WORD0_REG (DR_REG_UHCI_BASE + 0x64)
 /** UHCI_SEND_Q6_WORD0 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -804,7 +803,7 @@ extern "C" {
 /** UHCI_REG_Q6_WORD1_REG register
  *  a
  */
-#define UHCI_REG_Q6_WORD1_REG(i) (DR_REG_UHCI_BASE(i) + 0x68)
+#define UHCI_REG_Q6_WORD1_REG (DR_REG_UHCI_BASE + 0x68)
 /** UHCI_SEND_Q6_WORD1 : R/W; bitpos: [31:0]; default: 0;
  *  a
  */
@@ -816,7 +815,7 @@ extern "C" {
 /** UHCI_ESC_CONF0_REG register
  *  a
  */
-#define UHCI_ESC_CONF0_REG(i) (DR_REG_UHCI_BASE(i) + 0x6c)
+#define UHCI_ESC_CONF0_REG (DR_REG_UHCI_BASE + 0x6c)
 /** UHCI_SEPER_CHAR : R/W; bitpos: [7:0]; default: 192;
  *  a
  */
@@ -842,7 +841,7 @@ extern "C" {
 /** UHCI_ESC_CONF1_REG register
  *  a
  */
-#define UHCI_ESC_CONF1_REG(i) (DR_REG_UHCI_BASE(i) + 0x70)
+#define UHCI_ESC_CONF1_REG (DR_REG_UHCI_BASE + 0x70)
 /** UHCI_ESC_SEQ0 : R/W; bitpos: [7:0]; default: 219;
  *  a
  */
@@ -868,7 +867,7 @@ extern "C" {
 /** UHCI_ESC_CONF2_REG register
  *  a
  */
-#define UHCI_ESC_CONF2_REG(i) (DR_REG_UHCI_BASE(i) + 0x74)
+#define UHCI_ESC_CONF2_REG (DR_REG_UHCI_BASE + 0x74)
 /** UHCI_ESC_SEQ1 : R/W; bitpos: [7:0]; default: 17;
  *  a
  */
@@ -894,7 +893,7 @@ extern "C" {
 /** UHCI_ESC_CONF3_REG register
  *  a
  */
-#define UHCI_ESC_CONF3_REG(i) (DR_REG_UHCI_BASE(i) + 0x78)
+#define UHCI_ESC_CONF3_REG (DR_REG_UHCI_BASE + 0x78)
 /** UHCI_ESC_SEQ2 : R/W; bitpos: [7:0]; default: 19;
  *  a
  */
@@ -920,7 +919,7 @@ extern "C" {
 /** UHCI_PKT_THRES_REG register
  *  a
  */
-#define UHCI_PKT_THRES_REG(i) (DR_REG_UHCI_BASE(i) + 0x7c)
+#define UHCI_PKT_THRES_REG (DR_REG_UHCI_BASE + 0x7c)
 /** UHCI_PKT_THRS : R/W; bitpos: [12:0]; default: 128;
  *  a
  */
@@ -932,7 +931,7 @@ extern "C" {
 /** UHCI_DATE_REG register
  *  a
  */
-#define UHCI_DATE_REG(i) (DR_REG_UHCI_BASE(i) + 0x80)
+#define UHCI_DATE_REG (DR_REG_UHCI_BASE + 0x80)
 /** UHCI_DATE : R/W; bitpos: [31:0]; default: 35655936;
  *  a
  */

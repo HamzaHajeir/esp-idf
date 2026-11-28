@@ -50,42 +50,34 @@ typedef enum {
 #endif
 } btc_avrc_act_t;
 
-/* conn_hdl selects the AVRCP session. ESP_AVRC_INVALID_CONN_HDL means the
- * currently active one, so the deprecated APIs keep working. */
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl; /* transaction label */
     uint8_t key_code;
     uint8_t key_state;
 } pt_cmd_t;
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
     uint8_t attr_mask;
 } md_cmd_t;
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
     uint8_t event_id;
     uint32_t event_parameter;
 } rn_cmd_t;
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
     uint8_t attr_id;
     uint8_t value_id;
 } ps_cmd_t;
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
 } get_caps_cmd_t;
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
 } get_play_status_cmd_t;
 
@@ -93,7 +85,6 @@ typedef struct {
 #define BTC_AVRC_MAX_VOLUME 0x7f
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     uint8_t tl;
     uint8_t volume;
 } set_abs_vol_cmd_t;
@@ -160,19 +151,9 @@ typedef enum {
         BTC_TRACE_DEBUG("## %s ##", __FUNCTION__); \
         if (btc_rc_cb.rc_connected == FALSE) { \
             BTC_TRACE_WARNING("Function %s() called when RC is not connected", __FUNCTION__); \
-            return BT_STATUS_FAIL; \
+        return ESP_ERR_INVALID_STATE; \
         } \
     } while (0)
-
-/* Number of AVRCP sessions that can be handled at the same time, one per A2DP
- * connection. */
-#ifndef BTC_RC_MAX_CONN
-#if BTC_AV_SINK_INCLUDED
-#define BTC_RC_MAX_CONN                 BTA_AV_NUM_SNK_CONN
-#else
-#define BTC_RC_MAX_CONN                 1
-#endif
-#endif
 
 /*****************************************************************************
 **  Local type definitions
@@ -193,11 +174,6 @@ typedef struct {
     UINT16                      rc_tg_features;
     BD_ADDR                     rc_addr;
     btc_rc_reg_ntf_t            rc_ntf[MAX_RC_NOTIFICATIONS];
-    /* Non-zero while a stack Play/Pause pair (labels 14/15) is outstanding.
-     * Boot time in ms of the send; 0 means none. */
-    UINT32                      stack_pt_ms;
-    /* stable user-facing handle for this control block slot. */
-    esp_avrc_conn_hdl_t         avrc_conn_hdl;
 } btc_rc_cb_t;
 
 /*****************************************************************************
@@ -205,10 +181,10 @@ typedef struct {
 ******************************************************************************/
 #if AVRC_DYNAMIC_MEMORY == TRUE
 extern btc_rc_cb_t *btc_rc_cb_ptr;
+#define btc_rc_cb (*btc_rc_cb_ptr)
 #endif ///AVRC_DYNAMIC_MEMORY == FALSE
 
 typedef struct {
-    esp_avrc_conn_hdl_t conn_hdl;
     esp_avrc_rn_event_ids_t event_id;
     esp_avrc_rn_rsp_t rsp;
     esp_avrc_rn_param_t param;
@@ -224,73 +200,6 @@ typedef union {
 void btc_rc_handler(tBTA_AV_EVT event, tBTA_AV *p_data);
 
 BOOLEAN btc_rc_get_connected_peer(BD_ADDR peer_addr);
-
-/*******************************************************************************
-**
-** Function         btc_rc_get_peer_by_handle
-**
-** Description      Get the address of the peer an AVRCP handle belongs to. Used
-**                  to attribute an AVRCP message to an A2DP connection.
-**
-** Returns          TRUE when the handle belongs to a connected peer
-**
-*******************************************************************************/
-BOOLEAN btc_rc_get_peer_by_handle(UINT8 rc_handle, BD_ADDR peer_addr);
-
-/*******************************************************************************
-**
-** Function         btc_rc_stack_pt_busy_peer
-**
-** Description      TRUE when a stack Play/Pause pair (labels 14/15) is still
-**                  outstanding for this peer. FALSE when AVRCP CT is absent,
-**                  the peer has no target role, the pair has completed, or the
-**                  outstanding window has elapsed. A FALSE result is not a
-**                  reason to reject a set-active request.
-**
-** Returns          BOOLEAN
-**
-*******************************************************************************/
-BOOLEAN btc_rc_stack_pt_busy_peer(const BD_ADDR peer_addr);
-
-/*******************************************************************************
-**
-** Function         btc_rc_pause_peer
-**
-** Description      Ask a connected AVRCP target (typically a phone acting as
-**                  player) to pause playback. Used when another A2DP source
-**                  takes over the rendered stream. No-op when CT is disabled or
-**                  the peer has no AVRCP CT session.
-**
-** Returns          TRUE when the passthrough commands were sent
-**
-*******************************************************************************/
-BOOLEAN btc_rc_pause_peer(const BD_ADDR peer_addr);
-
-/*******************************************************************************
-**
-** Function         btc_rc_play_peer
-**
-** Description      Ask a connected AVRCP target to start playback. Used when
-**                  the application selects a connected but idle A2DP source as
-**                  the rendered device. No-op when CT is disabled or the peer
-**                  has no AVRCP CT session.
-**
-** Returns          TRUE when the passthrough commands were sent
-**
-*******************************************************************************/
-BOOLEAN btc_rc_play_peer(const BD_ADDR peer_addr);
-
-/*******************************************************************************
-**
-** Function         btc_rc_close_peer
-**
-** Description      Close the AVRCP session of a peer. BTA_AvCloseRc takes the
-**                  RCB index, not the A2DP stream handle.
-**
-** Returns          TRUE when a close was issued
-**
-*******************************************************************************/
-BOOLEAN btc_rc_close_peer(const BD_ADDR peer_addr);
 
 /*******************************************************************************
 **  BTC AVRC API

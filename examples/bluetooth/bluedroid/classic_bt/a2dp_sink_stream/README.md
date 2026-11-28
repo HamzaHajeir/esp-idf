@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-S31 |
-| ----------------- | ----- | --------- |
+| Supported Targets | ESP32 |
+| ----------------- | ----- |
 
 A2DP-SINK-STREAM EXAMPLE
 ======================
@@ -17,15 +17,12 @@ This example involves the use of Bluetooth legacy profile A2DP for audio stream 
 - [a2dp_sink_common_utils](../common/a2dp_utils/a2dp_sink_common_utils)
 - [a2dp_sink_int_codec_utils](../common/a2dp_utils/a2dp_sink_int_codec_utils)
 - [a2dp_sink_ext_codec_utils](../common/a2dp_utils/a2dp_sink_ext_codec_utils)
-- [avrcp_common_utils](../common/avrcp_utils/avrcp_common_utils)
 
 ```
 +-------------------------+-------------------------+---------------------+
 |a2dp_sink_int_codec_utils|a2dp_sink_ext_codec_utils|                     |
 +-------------------------+-------------------------+                     |
-|               a2dp_sink_common_utils              |                     |
-+---------------------------------------------------+                     |
-|               avrcp_common_utils                  |  bt_app_core_utils  |
+|               a2dp_sink_common_utils              |  bt_app_core_utils  |
 +---------------------------------------------------+                     |
 |               bredr_app_common_utils              |                     |
 +---------------------------------------------------+---------------------+
@@ -36,8 +33,6 @@ Detailed information can be viewed through the [../common/README.md](../common/R
 ## How to use this example
 
 ### Hardware Required
-
-#### ESP32
 
 To play the sound, there is a need of loudspeaker and possibly an external I2S codec. Otherwise the example will only show a count of audio data packets received silently. Internal DAC can be selected and in this case external I2S codec may not be needed.
 
@@ -51,18 +46,6 @@ For the I2S codec, pick whatever chip or board works for you; this code was writ
 
 If the internal DAC is selected, analog audio will be available on GPIO25 and GPIO26. The output resolution on these pins will always be limited to 8 bit because of the internal structure of the DACs.
 
-#### ESP32-S31
-
-The default output is I2S. If I2S is used, it can be configured through menuconfig. The default I2S connections are shown below:
-
-| ESP pin   | I2S signal   |
-| :-------- | :----------- |
-| GPIO3     | LRCK         |
-| GPIO4     | DATA         |
-| GPIO2     | BCK          |
-
-Currently, DAC is not supported.
-
 ### Configure the project
 
 ```
@@ -70,7 +53,6 @@ idf.py menuconfig
 ```
 
 * Choose external I2S codec or internal DAC for audio output, and configure the output PINs under A2DP Sink Internal Codec Example Configuration.
-* `CONFIG_BT_A2DP_SINK_MAX_CONN` defaults to 1, so one A2DP source can connect. Set `Component config` → `Bluetooth` → `Bluedroid Options` → `Maximum number of simultaneous A2DP sink connections` to 2 to keep two sources connected. `CONFIG_BT_ACL_CONNECTIONS` and the controller BR/EDR ACL connection count must be at least 2; the ESP32 and ESP32-S31 defaults already are.
 
 ### Build and Flash
 
@@ -102,14 +84,8 @@ I (126697) BT_AV: Audio packet count 300
 I (128697) BT_AV: Audio packet count 400
 ```
 
-Also, the sound will be heard if a loudspeaker is connected and possible external I2S codec is correctly configured. For [A2DP source example](../a2dp_source), the sound is noise as the audio source generates the samples with a random sequence.
-
-With `CONFIG_BT_A2DP_SINK_MAX_CONN=2`, a second phone can connect while the first is playing. Starting music on the second phone switches rendering to that phone and suspends the first. The first stays connected, and starting playback on it later takes over without reconnecting. The log names the source being rendered:
-
-```
-I (140000) BT_AV: A2DP rendering [aa:bb:cc:dd:ee:ff], other sources suspended
-```
+Also, the sound will be heard if a loudspeaker is connected and possible external I2S codec is correctly configured. For ESP32 A2DP source example, the sound is noise as the audio source generates the samples with a random sequence.
 
 ## Troubleshooting
-* At the current stage, the supported audio codecs are SBC and AAC. If the internal A2DP codec is used, only SBC is supported; if the external A2DP codec is used, both SBC and AAC are supported, which can be achieved by registering Stream Endpoints (SEPs). Additionally, both internal and external codec options can be reconfigured via API calls.
-* A2DP sink cannot be used together with A2DP source at the same time, but with `CONFIG_BT_A2DP_SINK_MAX_CONN=2`, two sources stay connected and only the one that started playback most recently is rendered. Media from the other source is discarded.
+* For current stage, the supported audio codec in ESP32 A2DP is SBC. SBC data stream is transmitted to A2DP sink and then decoded into PCM samples as output. The PCM data format is normally of 44.1kHz sampling rate, two-channel 16-bit sample stream. Other SBC configurations in ESP32 A2DP sink is supported but need additional modifications of protocol stack settings.
+* As a usage limitation, ESP32 A2DP sink can support at most one connection with remote A2DP source devices. Also, A2DP sink cannot be used together with A2DP source at the same time, but can be used with other profiles such as SPP and HFP.

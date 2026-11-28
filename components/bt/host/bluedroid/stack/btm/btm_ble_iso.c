@@ -9,12 +9,7 @@
 #include "osi/allocator.h"
 #include "device/controller.h"
 #include <string.h>
-#include <inttypes.h>
 #include "l2c_int.h"
-
-/* HCI command buffer OOM (HCI_ERR_MEMORY_FULL from HCIC_BLE_CMD_CREATED_U8) is an
- * unrecoverable host condition; != HCI_SUCCESS checks below are not required to
- * special-case memory exhaustion — see btm_ble_int.h memory policy. */
 
 tBTM_BLE_ISO_CBACK ble_iso_cb;
 
@@ -29,40 +24,9 @@ void BTM_BleIsoRegisterCallback(tBTM_BLE_ISO_CBACK cb)
     }
 }
 
-static BOOLEAN btm_ble_iso_evt_is_success(tBTM_BLE_ISO_EVENT event, tBTM_BLE_ISO_CB_PARAMS *params)
+void BTM_IsoBleCallbackTrigger(tBTM_BLE_5_GAP_EVENT event, tBTM_BLE_ISO_CB_PARAMS *params)
 {
-    if (!params) {
-        return FALSE;
-    }
-
-    switch (event) {
-    case BTM_BLE_ISO_READ_TX_SYNC_EVT:
-        return (params->btm_read_tx_sync.status == HCI_SUCCESS);
-    case BTM_BLE_ISO_READ_LINK_QUALITY_EVT:
-        return (params->btm_read_link_quality.status == HCI_SUCCESS);
-#if (BLE_FEAT_ISO_CIG_CENTRAL_EN == TRUE)
-    case BTM_BLE_ISO_SET_CIG_PARAMS_EVT:
-        return (params->btm_set_cig_params.status == HCI_SUCCESS);
-    case BTM_BLE_ISO_REMOVE_CIG_EVT:
-        return (params->btm_remove_cig.status == HCI_SUCCESS);
-#endif
-    case BTM_BLE_ISO_DATA_PATH_UPDATE_EVT:
-        return (params->btm_data_path_update.status == HCI_SUCCESS);
-    case BTM_BLE_ISO_CIS_REQUEST_EVT:
-    case BTM_BLE_ISO_CIS_DISCONNECTED_EVT:
-#if (BLE_FEAT_ISO_BIG_SYNCER_EN == TRUE)
-    case BTM_BLE_ISO_BIG_SYNC_LOST_EVT:
-    case BTM_BLE_ISO_BIGINFO_ADV_REPORT_EVT:
-#endif
-        return TRUE;
-    default:
-        return (params->status == HCI_SUCCESS || params->status == BTM_SUCCESS);
-    }
-}
-
-void BTM_IsoBleCallbackTrigger(tBTM_BLE_ISO_EVENT event, tBTM_BLE_ISO_CB_PARAMS *params)
-{
-    if (btm_ble_iso_evt_is_success(event, params)) {
+    if(params && params->status == BTM_SUCCESS) {
         btm_ble_inter_set(true);
     }
     if (ble_iso_cb) {
@@ -70,76 +34,46 @@ void BTM_IsoBleCallbackTrigger(tBTM_BLE_ISO_EVENT event, tBTM_BLE_ISO_CB_PARAMS 
     }
 }
 
-void btm_ble_iso_read_iso_tx_sync_complete(UINT8 *p, UINT16 evt_len)
+void btm_ble_iso_read_iso_tx_sync_complete(UINT8 *p)
 {
     tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-
-    BTM_BLE_HCI_EVT_CHECK_STATUS("iso_read_tx_sync", evt_len);
-
     STREAM_TO_UINT8(cb_params.btm_read_tx_sync.status, p);
-    evt_len--;
-
-    /* Connection_Handle follows Status even on error (Vol 4 Part E 4.5.1). */
-    if (evt_len >= 2) {
-        STREAM_TO_UINT16(cb_params.btm_read_tx_sync.conn_hdl, p);
-        evt_len -= 2;
-    }
-
-    if (cb_params.btm_read_tx_sync.status == HCI_SUCCESS) {
-        BTM_BLE_HCI_EVT_MARK_BAD_PAYLOAD("iso_read_tx_sync", evt_len, 9, cb_params.btm_read_tx_sync.status);
-        if (cb_params.btm_read_tx_sync.status == HCI_SUCCESS) {
-            STREAM_TO_UINT16(cb_params.btm_read_tx_sync.pkt_seq_num, p);
-            STREAM_TO_UINT32(cb_params.btm_read_tx_sync.tx_time_stamp, p);
-            STREAM_TO_UINT24(cb_params.btm_read_tx_sync.time_offset, p);
-        }
-    }
+    STREAM_TO_UINT16(cb_params.btm_read_tx_sync.conn_hdl, p);
+    STREAM_TO_UINT16(cb_params.btm_read_tx_sync.pkt_seq_num, p);
+    STREAM_TO_UINT32(cb_params.btm_read_tx_sync.tx_time_stamp, p);
+    STREAM_TO_UINT24(cb_params.btm_read_tx_sync.time_offset, p);
 
     if (cb_params.btm_read_tx_sync.status != HCI_SUCCESS) {
         cb_params.btm_read_tx_sync.status = (BTM_HCI_ERROR | cb_params.btm_read_tx_sync.status);
     }
-    cb_params.btm_read_tx_sync.conn_hdl = (cb_params.btm_read_tx_sync.conn_hdl & 0x0FFF);
-    cb_params.btm_read_tx_sync.time_offset &= 0xFFFFFF;
-    BTM_TRACE_DEBUG("read tx sync cmpl, status 0x%x conn_hdl 0x%x pkt_seq_num %u tx_time_stamp %" PRIu32 " time_offset %" PRIu32 "\n",
+    cb_params.btm_read_tx_sync.conn_hdl = (cb_params.btm_read_tx_sync.conn_hdl & 0xEFF);
+    cb_params.btm_read_tx_sync.time_offset = (cb_params.btm_read_tx_sync.time_offset & 0xFFFFFF);
+    BTM_TRACE_DEBUG("read tx sync cmpl, status 0x%x conn_hdl 0x%x pkt_seq_num %d tx_time_stamp %ld time_offset %ld\n",
                     cb_params.btm_read_tx_sync.status, cb_params.btm_read_tx_sync.conn_hdl, cb_params.btm_read_tx_sync.pkt_seq_num,
                     cb_params.btm_read_tx_sync.tx_time_stamp, cb_params.btm_read_tx_sync.time_offset);
 
     BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_READ_TX_SYNC_EVT, &cb_params);
 }
 
-void btm_ble_iso_read_iso_link_quality_complete(UINT8 *p, UINT16 evt_len)
+void btm_ble_iso_read_iso_link_quality_complete(UINT8 *p)
 {
     tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-
-    BTM_BLE_HCI_EVT_CHECK_STATUS("iso_read_link_quality", evt_len);
-
     STREAM_TO_UINT8(cb_params.btm_read_link_quality.status, p);
-    evt_len--;
-
-    /* Connection_Handle follows Status even on error (Vol 4 Part E 4.5.1). */
-    if (evt_len >= 2) {
-        STREAM_TO_UINT16(cb_params.btm_read_link_quality.conn_hdl, p);
-        evt_len -= 2;
-    }
-
-    if (cb_params.btm_read_link_quality.status == HCI_SUCCESS) {
-        BTM_BLE_HCI_EVT_MARK_BAD_PAYLOAD("iso_read_link_quality", evt_len, 28, cb_params.btm_read_link_quality.status);
-        if (cb_params.btm_read_link_quality.status == HCI_SUCCESS) {
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_unacked_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_flushed_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_last_subevt_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.retransmitted_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.crc_error_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.rx_unreceived_pkts, p);
-            STREAM_TO_UINT32(cb_params.btm_read_link_quality.duplicate_pkts, p);
-        }
-    }
+    STREAM_TO_UINT16(cb_params.btm_read_link_quality.conn_hdl, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_unacked_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_flushed_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.tx_last_subevt_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.retransmitted_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.crc_error_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.rx_unreceived_pkts, p);
+    STREAM_TO_UINT32(cb_params.btm_read_link_quality.duplicate_pkts, p);
 
     if (cb_params.btm_read_link_quality.status != HCI_SUCCESS) {
         cb_params.btm_read_link_quality.status = (BTM_HCI_ERROR | cb_params.btm_read_link_quality.status);
     }
 
-    BTM_TRACE_DEBUG("read link quality cmpl, status 0x%x conn_hdl 0x%x tx_unacked_pkts %" PRIu32 " tx_flushed_pkts %" PRIu32 " tx_last_subevt_pkts %" PRIu32 " retransmitted_pkts %" PRIu32 "\
-                    crc_error_pkts %" PRIu32 " rx_unreceived_pkts %" PRIu32 " duplicate_pkts %" PRIu32 "\n",
+    BTM_TRACE_DEBUG("read link quality cmpl, status 0x%x conn_hdl 0x%x tx_unacked_pkts %d tx_flushed_pkts %ld tx_last_subevt_pkts %ld retransmitted_pkts %d\
+                    crc_error_pkts %d rx_unreceived_pkts %d duplicate_pkts %d\n",
                     cb_params.btm_read_link_quality.status, cb_params.btm_read_link_quality.conn_hdl, cb_params.btm_read_link_quality.tx_unacked_pkts,
                     cb_params.btm_read_link_quality.tx_flushed_pkts, cb_params.btm_read_link_quality.tx_last_subevt_pkts, cb_params.btm_read_link_quality.retransmitted_pkts,
                     cb_params.btm_read_link_quality.crc_error_pkts, cb_params.btm_read_link_quality.rx_unreceived_pkts, cb_params.btm_read_link_quality.duplicate_pkts);
@@ -148,44 +82,17 @@ void btm_ble_iso_read_iso_link_quality_complete(UINT8 *p, UINT16 evt_len)
 }
 
 #if (BLE_FEAT_ISO_CIG_CENTRAL_EN == TRUE)
-void btm_ble_iso_set_cig_params_complete(UINT8 *p, UINT16 evt_len)
+void btm_ble_iso_set_cig_params_complete(UINT8 *p)
 {
     tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-    UINT8 cis_count;
-
-    BTM_BLE_HCI_EVT_CHECK_STATUS("iso_set_cig_params", evt_len);
 
     STREAM_TO_UINT8(cb_params.btm_set_cig_params.status, p);
-    evt_len--;
-
-    /* CIG_ID follows Status even on error. */
-    if (evt_len >= 1) {
-        STREAM_TO_UINT8(cb_params.btm_set_cig_params.cig_id, p);
-        evt_len--;
-    }
-
-    if (cb_params.btm_set_cig_params.status == HCI_SUCCESS) {
-        BTM_BLE_HCI_EVT_MARK_BAD_PAYLOAD("iso_set_cig_params", evt_len, 1, cb_params.btm_set_cig_params.status);
-        if (cb_params.btm_set_cig_params.status == HCI_SUCCESS) {
-            STREAM_TO_UINT8(cis_count, p);
-            evt_len--;
-
-            if (cis_count > BLE_ISO_CIS_MAX_COUNT) {
-                BTM_TRACE_ERROR("cis_count %d > max %d", cis_count, BLE_ISO_CIS_MAX_COUNT);
-                cis_count = BLE_ISO_CIS_MAX_COUNT;
-            }
-            if (evt_len < (UINT16)(cis_count * 2)) {
-                BTM_TRACE_ERROR("iso_set_cig_params: bad cis len %d", evt_len);
-                cb_params.btm_set_cig_params.status = (BTM_HCI_ERROR | HCI_ERR_UNSPECIFIED);
-                cis_count = 0;
-            }
-            cb_params.btm_set_cig_params.cis_count = cis_count;
-
-            for (uint8_t i = 0; i < cis_count; i++) {
-                STREAM_TO_UINT16(cb_params.btm_set_cig_params.conn_hdl[i], p);
-                BTM_TRACE_DEBUG("i = %d, conn_hdl = %d", i, cb_params.btm_set_cig_params.conn_hdl[i]);
-            }
-        }
+    STREAM_TO_UINT8(cb_params.btm_set_cig_params.cig_id, p);
+    STREAM_TO_UINT8(cb_params.btm_set_cig_params.cis_count, p);
+    for (uint8_t i = 0; i < cb_params.btm_set_cig_params.cis_count; i++)
+    {
+        STREAM_TO_UINT16(cb_params.btm_set_cig_params.conn_hdl[i], p);
+        BTM_TRACE_DEBUG("i = %d, conn_hdl = %d", i, cb_params.btm_set_cig_params.conn_hdl[i]);
     }
 
     if (cb_params.btm_set_cig_params.status != HCI_SUCCESS) {
@@ -246,13 +153,11 @@ void btm_ble_cis_request_evt(tBTM_BLE_CIS_REQUEST_CMPL *params)
 }
 #endif // #if (BLE_FEAT_ISO_CIG_PERIPHERAL_EN == TRUE)
 
-#if (BLE_FEAT_ISO_BIG_BROADCASTER_EN == TRUE)
+#if (BLE_FEAT_ISO_BIG_BROCASTER_EN == TRUE)
 void btm_ble_big_create_cmpl_evt(tBTM_BLE_BIG_CREATE_CMPL *params)
 {
     BTM_TRACE_DEBUG("%s", __func__);
     tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-    UINT8 num_bis;
-
     if (!params) {
         BTM_TRACE_ERROR("%s, Invalid params.", __func__);
         return;
@@ -260,13 +165,6 @@ void btm_ble_big_create_cmpl_evt(tBTM_BLE_BIG_CREATE_CMPL *params)
 
     if (params->status != HCI_SUCCESS) {
         params->status = (params->status | BTM_HCI_ERROR);
-    }
-
-    // Validate num_bis to prevent buffer overflow
-    num_bis = params->num_bis;
-    if (num_bis > BLE_ISO_BIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, num_bis %d exceeds BLE_ISO_BIS_MAX_COUNT %d", __func__, num_bis, BLE_ISO_BIS_MAX_COUNT);
-        num_bis = BLE_ISO_BIS_MAX_COUNT;
     }
 
     cb_params.btm_big_cmpl.status = params->status;
@@ -280,12 +178,14 @@ void btm_ble_big_create_cmpl_evt(tBTM_BLE_BIG_CREATE_CMPL *params)
     cb_params.btm_big_cmpl.irc = params->irc;
     cb_params.btm_big_cmpl.max_pdu = params->max_pdu;
     cb_params.btm_big_cmpl.iso_interval = params->iso_interval;
-    cb_params.btm_big_cmpl.num_bis = num_bis;
+    cb_params.btm_big_cmpl.num_bis = params->num_bis;
+    // for (uint8_t i = 0; i < params->num_bis; i++)
+    // {
+    //     cb_params.btm_big_cmpl.bis_handle[i] = params->bis_handle[i];
+    // }
+    memcpy(&cb_params.btm_big_cmpl.bis_handle[0], &params->bis_handle[0], params->num_bis * 2);
 
-    // Copy bis_handle array with bounds checking
-    if (num_bis > 0) {
-        memcpy(&cb_params.btm_big_cmpl.bis_handle[0], &params->bis_handle[0], num_bis * sizeof(UINT16));
-    }
+    //memcpy(&cb_params.btm_big_cmpl, params, sizeof(tBTM_BLE_BIG_CREATE_CMPL));
 
     BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_BIG_CREATE_COMPLETE_EVT, &cb_params);
 }
@@ -301,14 +201,12 @@ void btm_ble_big_terminate_cmpl_evt(tBTM_BLE_BIG_TERMINATE_CMPL *params)
 
     BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_BIG_TERMINATE_COMPLETE_EVT, &cb_params);
 }
-#endif // #if (BLE_FEAT_ISO_BIG_BROADCASTER_EN == TRUE)
+#endif // #if (BLE_FEAT_ISO_BIG_BROCASTER_EN == TRUE)
 
 #if (BLE_FEAT_ISO_BIG_SYNCER_EN == TRUE)
 void btm_ble_big_sync_estab_evt(tBTM_BLE_BIG_SYNC_ESTAB_CMPL *params)
 {
     tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-    UINT8 num_bis;
-
     if (!params) {
         BTM_TRACE_ERROR("%s, Invalid params.", __func__);
         return;
@@ -318,28 +216,7 @@ void btm_ble_big_sync_estab_evt(tBTM_BLE_BIG_SYNC_ESTAB_CMPL *params)
         params->status = (params->status | BTM_HCI_ERROR);
     }
 
-    // Validate num_bis to prevent buffer overflow
-    num_bis = params->num_bis;
-    if (num_bis > BLE_ISO_BIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, num_bis %d exceeds BLE_ISO_BIS_MAX_COUNT %d", __func__, num_bis, BLE_ISO_BIS_MAX_COUNT);
-        num_bis = BLE_ISO_BIS_MAX_COUNT;
-    }
-
-    cb_params.btm_big_sync_estab.status = params->status;
-    cb_params.btm_big_sync_estab.big_handle = params->big_handle;
-    cb_params.btm_big_sync_estab.transport_latency_big = params->transport_latency_big;
-    cb_params.btm_big_sync_estab.nse = params->nse;
-    cb_params.btm_big_sync_estab.bn = params->bn;
-    cb_params.btm_big_sync_estab.pto = params->pto;
-    cb_params.btm_big_sync_estab.irc = params->irc;
-    cb_params.btm_big_sync_estab.max_pdu = params->max_pdu;
-    cb_params.btm_big_sync_estab.iso_interval = params->iso_interval;
-    cb_params.btm_big_sync_estab.num_bis = num_bis;
-
-    // Copy bis_handle array with bounds checking
-    if (num_bis > 0) {
-        memcpy(&cb_params.btm_big_sync_estab.bis_handle[0], &params->bis_handle[0], num_bis * sizeof(uint16_t));
-    }
+    memcpy(&cb_params.btm_big_sync_estab, params, sizeof(tBTM_BLE_BIG_SYNC_ESTAB_CMPL));
 
     BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_BIG_SYNC_ESTABLISHED_EVT, &cb_params);
 }
@@ -396,23 +273,18 @@ void btm_ble_iso_data_path_update_complete(UINT16 opcode, UINT8 hci_status, UINT
     cb_params.btm_data_path_update.op_type = ((opcode == HCI_BLE_ISO_SET_DATA_PATH) ? BTM_BLE_ISO_DATA_PATH_SETUP : BTM_BLE_ISO_DATA_PATH_REMOVE);
     cb_params.btm_data_path_update.conn_hdl = conn_handle;
 
-    BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_DATA_PATH_UPDATE_EVT, &cb_params);
+    BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_DATA_PATH_UPFATE_EVT, &cb_params);
 }
 
-#if (BLE_FEAT_ISO_BIG_BROADCASTER_EN == TRUE)
+#if (BLE_FEAT_ISO_BIG_BROCASTER_EN == TRUE)
 tBTM_STATUS BTM_BleBigCreate(uint8_t big_handle, uint8_t adv_handle, uint8_t num_bis,
                             uint32_t sdu_interval, uint16_t max_sdu, uint16_t max_transport_latency,
                             uint8_t rtn, uint8_t phy, uint8_t packing, uint8_t framing,
                             uint8_t encryption, uint8_t *broadcast_code)
 {
     BTM_TRACE_API("big_handle %d adv_handle %d num_bis %d sdu_interval %d max_sdu %d max_transport_latency %d \
-    rtn %d phy %d packing %d framing %d encryption %d broadcast_code %p", big_handle, adv_handle, num_bis, sdu_interval, max_sdu, max_transport_latency,\
+    rtn %d phy %d packing %d framing %d encryption %d broadcast_code %d", big_handle, adv_handle, num_bis, sdu_interval, max_sdu, max_transport_latency,\
     rtn, phy, packing, framing, encryption, broadcast_code);
-
-    if (num_bis > BLE_ISO_BIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, num_bis %d exceeds BLE_ISO_BIS_MAX_COUNT %d", __func__, num_bis, BLE_ISO_BIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
 
     btsnd_hcic_ble_big_create(big_handle, adv_handle, num_bis, sdu_interval, max_sdu, max_transport_latency,
                               rtn, phy, packing, framing, encryption, broadcast_code);
@@ -427,11 +299,6 @@ tBTM_STATUS BTM_BleBigCreateTest(uint8_t big_handle, uint8_t adv_handle, uint8_t
                                 uint8_t packing, uint8_t framing, uint8_t bn, uint8_t irc,
                                 uint8_t pto, uint8_t encryption, uint8_t *broadcast_code)
 {
-    if (num_bis > BLE_ISO_BIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, num_bis %d exceeds BLE_ISO_BIS_MAX_COUNT %d", __func__, num_bis, BLE_ISO_BIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
-
     btsnd_hcic_ble_big_create_test(big_handle, adv_handle, num_bis, sdu_interval, iso_interval, nse,
                                     max_sdu, max_pdu, phy, packing, framing, bn, irc, pto, encryption,
                                     broadcast_code);
@@ -440,13 +307,23 @@ tBTM_STATUS BTM_BleBigCreateTest(uint8_t big_handle, uint8_t adv_handle, uint8_t
 
 tBTM_STATUS BTM_BleBigTerminate(UINT8 big_handle, UINT8 reason)
 {
-    /* Async: result via command status / complete. Return is BOOLEAN,
-     * not tHCI_STATUS — do not compare with HCI_SUCCESS. */
-    BTM_TRACE_API("big_terminate handle %d reason %d", big_handle, reason);
-    btsnd_hcic_ble_big_terminate(big_handle, reason);
-    return BTM_SUCCESS;
+    tHCI_STATUS err = HCI_SUCCESS;
+    tBTM_STATUS status = BTM_SUCCESS;
+    tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
+
+    if ((err = btsnd_hcic_ble_big_terminate(big_handle, reason)) != TRUE) {
+        BTM_TRACE_ERROR("LE PA SyncCancel, cmd err=0x%x", err);
+        status = BTM_HCI_ERROR | err;
+    }
+
+    if (status != BTM_SUCCESS) {
+        cb_params.status = status;
+        BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_BIG_TERMINATE_COMPLETE_EVT, &cb_params);
+    }
+
+    return status;
 }
-#endif // #if (BLE_FEAT_ISO_BIG_BROADCASTER_EN == TRUE)
+#endif // #if (BLE_FEAT_ISO_BIG_BROCASTER_EN == TRUE)
 
 #if (BLE_FEAT_ISO_BIG_SYNCER_EN == TRUE)
 tBTM_STATUS BTM_BleBigSyncCreate(uint8_t big_handle, uint16_t sync_handle,
@@ -454,13 +331,6 @@ tBTM_STATUS BTM_BleBigSyncCreate(uint8_t big_handle, uint16_t sync_handle,
                                 uint8_t mse, uint16_t big_sync_timeout,
                                 uint8_t num_bis, uint8_t *bis)
 {
-    BTM_TRACE_API("big_sync_create handle %d sync %d num_bis %d", big_handle, sync_handle, num_bis);
-
-    if (num_bis == 0 || num_bis > BLE_ISO_BIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("invalid num_bis %d (max %d)", num_bis, BLE_ISO_BIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
-
     btsnd_hcic_ble_big_sync_create(big_handle, sync_handle, encryption, bc_code,
                                     mse, big_sync_timeout, num_bis, bis);
     return BTM_SUCCESS;
@@ -470,8 +340,6 @@ tBTM_STATUS BTM_BleBigSyncTerminate(uint8_t big_handle)
 {
     tHCI_STATUS err = HCI_SUCCESS;
     tBTM_STATUS status = BTM_SUCCESS;
-
-    BTM_TRACE_API("big_sync_terminate handle %d", big_handle);
 
     if ((err = btsnd_hcic_ble_big_sync_terminate(big_handle)) != HCI_SUCCESS) {
         BTM_TRACE_ERROR("LE big sync terminate, cmd err=0x%x", err);
@@ -496,24 +364,12 @@ tBTM_STATUS BTM_BleIsoSetDataPath(uint16_t conn_handle, uint8_t data_path_dir, u
         cb_params.status = status;
         cb_params.btm_data_path_update.conn_hdl = conn_handle;
         BTM_TRACE_ERROR("codec_cfg is NULL, set data path error");
-        BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_DATA_PATH_UPDATE_EVT, &cb_params);
-        return status;
-    }
-
-    if (codec_len > 242) {
-        tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-        BTM_TRACE_ERROR("codec_len %d > 242", codec_len);
-        status = BTM_ILLEGAL_VALUE;
-        cb_params.btm_data_path_update.op_type = BTM_BLE_ISO_DATA_PATH_SETUP;
-        cb_params.status = status;
-        cb_params.btm_data_path_update.conn_hdl = conn_handle;
-        BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_DATA_PATH_UPDATE_EVT, &cb_params);
+        BTM_IsoBleCallbackTrigger(BTM_BLE_ISO_DATA_PATH_UPFATE_EVT, &cb_params);
         return status;
     }
 
     BTM_TRACE_DEBUG("BTM_BleIsoSetDataPath conn_handle %d data_path_dir %d\n", conn_handle, data_path_dir);
 
-    /* HCI result via Command Complete (btm_ble_iso_data_path_update_complete); no immediate callback here. */
     if ((err = btsnd_hcic_ble_iso_set_data_path(conn_handle, data_path_dir, data_path_id, coding_fmt, company_id, vs_codec_id,
                                                 controller_delay, codec_len, codec_cfg)) != HCI_SUCCESS) {
         BTM_TRACE_ERROR("iso data path update, cmd err=0x%x", err);
@@ -525,11 +381,10 @@ tBTM_STATUS BTM_BleIsoSetDataPath(uint16_t conn_handle, uint8_t data_path_dir, u
 
 tBTM_STATUS BTM_BleIsoRemoveDataPath(uint16_t conn_handle, uint8_t data_path_dir)
 {
-    tHCI_STATUS err;
+    tHCI_STATUS err = HCI_SUCCESS;
 
     BTM_TRACE_DEBUG("BTM_BleIsoRemoveDataPath conn_handle %d data_path_dir %d\n", conn_handle, data_path_dir);
 
-    /* HCI result via Command Complete (btm_ble_iso_data_path_update_complete); no immediate callback here. */
     if ((err = btsnd_hcic_ble_iso_remove_data_path(conn_handle, data_path_dir)) != HCI_SUCCESS) {
         BTM_TRACE_ERROR("iso data path remove, cmd err=0x%x", err);
         return BTM_HCI_ERROR | err;
@@ -575,16 +430,6 @@ tBTM_STATUS BTM_BleSetCigParams(uint8_t cig_id, uint32_t sdu_int_c_to_p, uint32_
     tHCI_STATUS err = HCI_SUCCESS;
     tBTM_STATUS status = BTM_SUCCESS;
 
-    if (cis_cnt > BLE_ISO_CIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, cis_cnt %d exceeds BLE_ISO_CIS_MAX_COUNT %d", __func__, cis_cnt, BLE_ISO_CIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
-    // HCI_LE_Set_CIG_Parameters param length = 15 + 9*cis_cnt (UINT8). Max 255 => cis_cnt <= 26.
-    if (cis_cnt > 26) {
-        BTM_TRACE_ERROR("%s, cis_cnt %d exceeds HCI transport limit", __func__, cis_cnt);
-        return BTM_ILLEGAL_VALUE;
-    }
-
     if ((err = btsnd_hcic_ble_iso_set_cig_params(cig_id, sdu_int_c_to_p, sdu_int_p_to_c, worse_case_SCA, packing,
                                             framing, mtl_c_to_p, mtl_p_to_c, cis_cnt, (struct ble_hci_le_cis_params *)cis_params)) != HCI_SUCCESS) {
         BTM_TRACE_ERROR("iso set cig params, cmd err=0x%x", err);
@@ -599,16 +444,6 @@ tBTM_STATUS BTM_BleSetCigParamsTest(uint8_t cig_id, uint32_t sdu_int_c_to_p, uin
 {
     tHCI_STATUS err = HCI_SUCCESS;
     tBTM_STATUS status = BTM_SUCCESS;
-
-    if (cis_cnt > BLE_ISO_CIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("%s, cis_cnt %d exceeds BLE_ISO_CIS_MAX_COUNT %d", __func__, cis_cnt, BLE_ISO_CIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
-    // HCI_LE_Set_CIG_Parameters_Test param length = 15 + 14*cis_cnt (UINT8). Max 255 => cis_cnt <= 17.
-    if (cis_cnt > 17) {
-        BTM_TRACE_ERROR("%s, cis_cnt %d exceeds HCI transport limit", __func__, cis_cnt);
-        return BTM_ILLEGAL_VALUE;
-    }
 
     if ((err = btsnd_hcic_ble_iso_set_cig_params_test(cig_id, sdu_int_c_to_p, sdu_int_p_to_c,ft_c_to_p, ft_p_to_c, iso_interval,
                                                         worse_case_SCA, packing, framing, cis_cnt, (struct ble_hci_le_cis_params_test *)cis_params)) != HCI_SUCCESS) {
@@ -626,11 +461,6 @@ void btm_ble_create_cis_cmd_status(tBTM_BLE_ISO_CB_PARAMS *cb_params)
 
 tBTM_STATUS BTM_BleCreateCis(uint8_t cis_count, uint8_t *cis_hdls)
 {
-    if (cis_count > BLE_ISO_CIS_MAX_COUNT) {
-        BTM_TRACE_ERROR("cis_count %d > max %d", cis_count, BLE_ISO_CIS_MAX_COUNT);
-        return BTM_ILLEGAL_VALUE;
-    }
-
     btsnd_hcic_ble_iso_create_cis(cis_count, (struct ble_hci_cis_hdls *)cis_hdls);
 
     return BTM_SUCCESS;
@@ -663,14 +493,8 @@ void btm_ble_accept_cis_req_cmd_status(tBTM_BLE_ISO_CB_PARAMS *cb_params)
 
 tBTM_STATUS BTM_BleAcceptCisReq(uint16_t cis_handle)
 {
-    if (btsnd_hcic_ble_iso_accept_cis_req(cis_handle)) {
-      return BTM_SUCCESS;
-    }
-    // failed to send command
-    tBTM_BLE_ISO_CB_PARAMS cb_params = {0};
-    cb_params.status = BTM_NO_RESOURCES;
-    btm_ble_accept_cis_req_cmd_status(&cb_params);
-    return BTM_NO_RESOURCES;
+    btsnd_hcic_ble_iso_accept_cis_req(cis_handle);
+    return BTM_SUCCESS;
 }
 
 tBTM_STATUS BTM_BleRejectCisReq(uint16_t cis_handle, uint8_t reason)

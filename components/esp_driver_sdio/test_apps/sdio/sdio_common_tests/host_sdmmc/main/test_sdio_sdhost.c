@@ -22,7 +22,7 @@
 #include "soc/soc_caps.h"
 
 #include "test_utils.h"
-#include "sdio_performance.h"
+#include "idf_performance.h"
 #include "test_dualboard_utils.h"
 #include "../../sdio_common_test.h"
 
@@ -114,7 +114,9 @@ static void s_master_init(test_sdio_param_t *host_param, essl_handle_t *out_hand
 
 static void s_master_deinit(void)
 {
-    sdmmc_card_deinit(&s_card);
+    free(s_card.host.dma_aligned_buffer);
+    s_card.host.dma_aligned_buffer = 0;
+
     sdmmc_host_deinit();
 }
 

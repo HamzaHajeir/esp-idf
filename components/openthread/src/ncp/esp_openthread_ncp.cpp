@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,7 @@
 #include "esp_coex_i154.h"
 #endif
 
-#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG || CONFIG_OPENTHREAD_RCP_CUSTOM)
+#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG)
 #include "utils/uart.h"
 #endif
 
@@ -36,7 +36,7 @@ struct ConsoleCmdMsg
 };
 #endif // CONFIG_OPENTHREAD_RCP_SPINEL_CONSOLE
 
-#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG || CONFIG_OPENTHREAD_RCP_CUSTOM)
+#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG)
 extern "C" {
     static int NcpSend(const uint8_t *aBuf, uint16_t aBufLength)
     {
@@ -92,8 +92,15 @@ static esp_err_t init_console_command_worker()
 }
 #endif // CONFIG_OPENTHREAD_RCP_SPINEL_CONSOLE
 
-static void ncp_init_console(void)
+extern "C" void otAppNcpInit(otInstance *aInstance)
 {
+#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG)
+    IgnoreError(otPlatUartEnable());
+    otNcpHdlcInit(aInstance, NcpSend);
+#else
+    otNcpSpiInit(aInstance);
+#endif
+
 #if CONFIG_OPENTHREAD_RCP_SPINEL_CONSOLE
     esp_err_t err = esp_console_redirect_to_otlog();
     if (err != ESP_OK) {
@@ -101,34 +108,8 @@ static void ncp_init_console(void)
     }
 
     init_console_command_worker();
-#endif
+#endif // CONFIG_OPENTHREAD_RCP_SPINEL_CONSOLE
 }
-
-#if CONFIG_OPENTHREAD_MULTIPAN_RCP_ENABLE
-extern "C" void otAppNcpInitMulti(otInstance **aInstances, uint8_t aCount)
-{
-#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG || CONFIG_OPENTHREAD_RCP_CUSTOM)
-    IgnoreError(otPlatUartEnable());
-    otNcpHdlcInitMulti(aInstances, aCount, NcpSend);
-#else
-#error "Multiple instances based on SPI are not supported yet"
-#endif
-
-    ncp_init_console();
-}
-#else
-extern "C" void otAppNcpInit(otInstance *aInstance)
-{
-#if (CONFIG_OPENTHREAD_RCP_UART || CONFIG_OPENTHREAD_RCP_USB_SERIAL_JTAG || CONFIG_OPENTHREAD_RCP_CUSTOM)
-    IgnoreError(otPlatUartEnable());
-    otNcpHdlcInit(aInstance, NcpSend);
-#else
-    otNcpSpiInit(aInstance);
-#endif
-
-    ncp_init_console();
-}
-#endif
 
 namespace ot {
 namespace Ncp {
@@ -198,10 +179,6 @@ otError NcpBase::VendorSetPropertyHandler(spinel_prop_key_t aPropKey)
 
         int32_t pending_mode = 0;
         mDecoder.ReadInt32(pending_mode);
-        if (pending_mode < ESP_IEEE802154_AUTO_PENDING_DISABLE || pending_mode > ESP_IEEE802154_AUTO_PENDING_ZIGBEE) {
-            error = OT_ERROR_INVALID_ARGS;
-            break;
-        }
         esp_ieee802154_set_pending_mode(static_cast<esp_ieee802154_pending_mode_t>(pending_mode));
         break;
     }

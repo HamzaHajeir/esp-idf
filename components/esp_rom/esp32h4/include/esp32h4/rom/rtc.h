@@ -50,8 +50,8 @@ extern "C" {
   *     LP_AON_STORE5_REG       FAST_RTC_MEMORY_LENGTH
   *     LP_AON_STORE6_REG       FAST_RTC_MEMORY_ENTRY
   *     LP_AON_STORE7_REG       RTC fix us, low 32 bits
-  *     LP_AON_STORE8_REG       Store light sleep wake stub addr (mask bit[1:0])
-  *     LP_AON_STORE8_REG       Store the sleep mode at bit[0]  (0:light sleep 1:deep sleep)
+  *     LP_AON_STORE8_REG       Store light sleep wake stub addr
+  *     LP_AON_STORE9_REG       Store the sleep mode at bit[0]  (0:light sleep 1:deep sleep)
   *************************************************************************************
   *
   * Since esp32h4 does not support RTC mem, so use LP_AON store regs to record rtc time:
@@ -70,7 +70,7 @@ extern "C" {
 #define RTC_RESET_CAUSE_REG                 LP_AON_STORE6_REG
 #define RTC_FIX_US_LOW_REG                  LP_AON_STORE7_REG
 #define RTC_SLEEP_WAKE_STUB_ADDR_REG        LP_AON_STORE8_REG
-#define RTC_SLEEP_MODE_REG                  LP_AON_STORE8_REG
+#define RTC_SLEEP_MODE_REG                  LP_AON_STORE9_REG
 
 #define RTC_DISABLE_ROM_LOG ((1 << 0) | (1 << 16)) //!< Disable logging from the ROM code.
 
@@ -118,12 +118,11 @@ ESP_STATIC_ASSERT((soc_reset_reason_t)RTCWDT_BROWN_OUT_RESET == RESET_REASON_SYS
 ESP_STATIC_ASSERT((soc_reset_reason_t)RTCWDT_RTC_RESET == RESET_REASON_SYS_RTC_WDT, "RTCWDT_RTC_RESET != RESET_REASON_SYS_RTC_WDT");
 ESP_STATIC_ASSERT((soc_reset_reason_t)TG1WDT_CPU_RESET == RESET_REASON_CPU0_MWDT1, "TG1WDT_CPU_RESET != RESET_REASON_CPU0_MWDT1");
 ESP_STATIC_ASSERT((soc_reset_reason_t)SUPER_WDT_RESET == RESET_REASON_SYS_SUPER_WDT, "SUPER_WDT_RESET != RESET_REASON_SYS_SUPER_WDT");
-ESP_STATIC_ASSERT((soc_reset_reason_t)GLITCH_RTC_RESET == RESET_REASON_SYS_PWR_GLITCH, "GLITCH_RTC_RESET != RESET_REASON_SYS_PWR_GLITCH");
+ESP_STATIC_ASSERT((soc_reset_reason_t)GLITCH_RTC_RESET == RESET_REASON_CORE_PWR_GLITCH, "GLITCH_RTC_RESET != RESET_REASON_CORE_PWR_GLITCH");
 ESP_STATIC_ASSERT((soc_reset_reason_t)EFUSE_RESET == RESET_REASON_CORE_EFUSE_CRC, "EFUSE_RESET != RESET_REASON_CORE_EFUSE_CRC");
 ESP_STATIC_ASSERT((soc_reset_reason_t)USB_UART_CHIP_RESET == RESET_REASON_CORE_USB_UART, "USB_UART_CHIP_RESET != RESET_REASON_CORE_USB_UART");
 ESP_STATIC_ASSERT((soc_reset_reason_t)USB_JTAG_CHIP_RESET == RESET_REASON_CORE_USB_JTAG, "USB_JTAG_CHIP_RESET != RESET_REASON_CORE_USB_JTAG");
 ESP_STATIC_ASSERT((soc_reset_reason_t)JTAG_RESET == RESET_REASON_CPU0_JTAG, "JTAG_RESET != RESET_REASON_CPU0_JTAG");
-ESP_STATIC_ASSERT((soc_reset_reason_t)RTC_PWR_GLITCH_RESET == RESET_REASON_SYS_RTC_PWR_GLITCH, "RTC_PWR_GLITCH_RESET != RESET_REASON_SYS_RTC_PWR_GLITCH");
 ESP_STATIC_ASSERT((soc_reset_reason_t)CPU_LOCKUP_RESET == RESET_REASON_CPU_LOCKUP, "CPU_LOCKUP_RESET != RESET_REASON_CPU_LOCKUP");
 
 typedef enum {

@@ -1,13 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef __ESP_BLUFI_H__
 #define __ESP_BLUFI_H__
-
-#include <stdbool.h>
 
 #include "esp_blufi_api.h"
 #include "esp_err.h"
@@ -20,7 +18,6 @@
 
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
 #include "esp_gap_ble_api.h"
-#include "esp_gatt_defs.h"
 #endif
 
 #ifdef __cplusplus
@@ -48,20 +45,7 @@ void esp_blufi_gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *a
 /* Initialise gatt server */
 int esp_blufi_gatt_svr_init(void);
 int esp_blufi_gatt_svr_deinit(void);
-
-/**
- * @brief Initialize the BTC task used by NimBLE BluFi.
- *
- * On failure the BTC task is not left running. The caller can retry or
- * report the error.
- *
- * @return
- *     - ESP_OK on success
- *     - ESP_ERR_NO_MEM if BTC could not allocate its task or memory
- *     - ESP_FAIL if btc_init() returns a future status other than
- *       BT_STATUS_NOMEM. btc_init() has no such status today.
- */
-esp_err_t esp_blufi_btc_init(void);
+void esp_blufi_btc_init(void);
 void esp_blufi_btc_deinit(void);
 #endif
 
@@ -77,7 +61,7 @@ void esp_blufi_btc_deinit(void);
  *                  - other  : failed
  *
  */
-esp_err_t esp_blufi_close(esp_gatt_if_t gatts_if, uint16_t conn_id);
+esp_err_t esp_blufi_close(uint8_t gatts_if, uint16_t conn_id);
 void esp_blufi_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
 #endif
 
@@ -104,8 +88,7 @@ void esp_blufi_adv_start(void);
 /* Start advertisement with specified name. if the name is NULL just start advertisement */
 void esp_blufi_adv_start_with_name(const char *name);
 
-bool esp_blufi_can_send(void);
-bool esp_blufi_send_encap(void *arg);
+void esp_blufi_send_encap(void *arg);
 
 /*
  * @brief Initiate BLE security request with the connected peer device.

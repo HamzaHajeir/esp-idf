@@ -1,2 +1,0 @@
-# Default configuration (dual core, 1000 Hz tick) from sdkconfig.defaults.
-CONFIG_FREERTOS_UNICORE=n

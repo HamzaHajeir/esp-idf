@@ -68,9 +68,7 @@ tHID_STATUS HID_HostGetSDPRecord ( BD_ADDR addr, tSDP_DISCOVERY_DB *p_db, UINT32
     uuid_list.uu.uuid16 = UUID_SERVCLASS_HUMAN_INTERFACE;
 
     hh_cb.p_sdp_db = p_db;
-    if (!SDP_InitDiscoveryDb (p_db, db_len, 1, &uuid_list, 0, NULL)) {
-        return HID_ERR_NO_RESOURCES;
-    }
+    SDP_InitDiscoveryDb (p_db, db_len, 1, &uuid_list, 0, NULL);
 
     if (SDP_ServiceSearchRequest (addr, p_db, hidh_search_callback)) {
         hh_cb.sdp_cback = sdp_cback ;
@@ -86,8 +84,7 @@ void hidh_get_str_attr( tSDP_DISC_REC *p_rec, UINT16 attr_id, UINT16 max_len, ch
     tSDP_DISC_ATTR          *p_attr;
     UINT16                  name_len;
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, attr_id)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, attr_id)) != NULL) {
         if ((name_len = SDP_DISC_ATTR_LEN(p_attr->attr_len_type)) < max_len ) {
             memcpy( str, (char *) p_attr->attr_value.v.array, name_len );
             str[name_len] = '\0';
@@ -561,10 +558,11 @@ tHID_STATUS HID_HostCloseDev( UINT8 dev_handle )
         return HID_ERR_NO_CONNECTION;
     }
 
+    hh_cb.devices[dev_handle].conn_tries = HID_HOST_MAX_CONN_RETRY + 1;
     return hidh_conn_disconnect( dev_handle );
 }
 
-tHID_STATUS HID_HostSetSecurityLevel( const char *serv_name, UINT8 sec_lvl )
+tHID_STATUS HID_HostSetSecurityLevel( char serv_name[], UINT8 sec_lvl )
 {
     if (!BTM_SetSecurityLevel (FALSE, serv_name, BTM_SEC_SERVICE_HIDH_SEC_CTRL,
                                sec_lvl, HID_PSM_CONTROL, BTM_SEC_PROTO_HID, HID_SEC_CHN)) {
@@ -658,11 +656,6 @@ BOOLEAN HID_HostConnectOrig(UINT8 dev_handle)
     BOOLEAN ret = FALSE;
 
     do {
-#if (HID_DYNAMIC_MEMORY)
-        if (!hidh_cb_ptr) {
-            break;
-        }
-#endif
         if (!hh_cb.reg_flag) {
             break;
         }

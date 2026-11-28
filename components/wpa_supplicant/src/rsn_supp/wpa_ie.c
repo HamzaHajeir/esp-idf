@@ -37,7 +37,7 @@ int  wpa_parse_wpa_ie(const u8 *wpa_ie, size_t wpa_ie_len,
         return wpa_parse_wpa_ie_rsn(wpa_ie, wpa_ie_len, data);
     } else if (wpa_ie_len >=1 && wpa_ie[0] == WLAN_EID_RSNX){
         return wpa_parse_wpa_ie_rsnxe(wpa_ie, wpa_ie_len, data);
-    } else if (wpa_ie_len >= 1 && wpa_ie[0] == WLAN_EID_WAPI) {
+    } else if (wpa_ie[0] == WLAN_EID_WAPI) {
         return 0;
 #ifdef CONFIG_WPA3_COMPAT
     } else if (wpa_ie_len >= 6 && wpa_ie[0] == WLAN_EID_VENDOR_SPECIFIC &&
@@ -49,38 +49,6 @@ int  wpa_parse_wpa_ie(const u8 *wpa_ie, size_t wpa_ie_len,
                WPA_GET_BE32(&wpa_ie[2]) == RSNXE_OVERRIDE_IE_VENDOR_TYPE) {
         return wpa_parse_wpa_ie_rsnxe(wpa_ie, wpa_ie_len, data);
 #endif
-    }
-
-    return wpa_parse_wpa_ie_wpa(wpa_ie, wpa_ie_len, data);
-}
-
-/**
- * wpa_parse_wpa_ie_scan_only - Parse WPA/RSN IE for scan result display
- * @wpa_ie: Pointer to WPA or RSN IE
- * @wpa_ie_len: Length of the WPA/RSN IE
- * @data: Pointer to data area for parsing results
- * Returns: 0 on success, -1 on failure
- *
- * Parse WPA/RSN IE without build-time feature restrictions so scan results
- * can report all advertised ciphers and AKMs.
- */
-int wpa_parse_wpa_ie_scan_only(const u8 *wpa_ie, size_t wpa_ie_len,
-			       struct wpa_ie_data *data)
-{
-    if (wpa_ie_len >= 1 && wpa_ie[0] == WLAN_EID_RSN) {
-        return wpa_parse_wpa_ie_rsn_scan_only(wpa_ie, wpa_ie_len, data);
-    } else if (wpa_ie_len >= 1 && wpa_ie[0] == WLAN_EID_RSNX) {
-        return wpa_parse_wpa_ie_rsnxe_scan_only(wpa_ie, wpa_ie_len, data);
-    } else if (wpa_ie_len >= 1 && wpa_ie[0] == WLAN_EID_WAPI) {
-        return 0;
-    } else if (wpa_ie_len >= 6 && wpa_ie[0] == WLAN_EID_VENDOR_SPECIFIC &&
-               wpa_ie[1] >= 4 &&
-               WPA_GET_BE32(&wpa_ie[2]) == RSNE_OVERRIDE_IE_VENDOR_TYPE) {
-        return wpa_parse_wpa_ie_rsn_scan_only(wpa_ie, wpa_ie_len, data);
-    } else if (wpa_ie_len >= 6 && wpa_ie[0] == WLAN_EID_VENDOR_SPECIFIC &&
-               wpa_ie[1] >= 4 &&
-               WPA_GET_BE32(&wpa_ie[2]) == RSNXE_OVERRIDE_IE_VENDOR_TYPE) {
-        return wpa_parse_wpa_ie_rsnxe_scan_only(wpa_ie, wpa_ie_len, data);
     }
 
     return wpa_parse_wpa_ie_wpa(wpa_ie, wpa_ie_len, data);
@@ -171,9 +139,7 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
         return -1;
     }
 
-    if ( (sm->ap_notify_completed_rsne == true) ||
-         (key_mgmt == WPA_KEY_MGMT_IEEE8021X) ||
-         (key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X) ) {
+    if ( (sm->ap_notify_completed_rsne == true) || (key_mgmt == WPA_KEY_MGMT_IEEE8021X) ) {
         min_len = sizeof(*hdr) + RSN_SELECTOR_LEN + 2 + RSN_SELECTOR_LEN + 2 + RSN_SELECTOR_LEN + 2;
     } else {
         min_len = sizeof(*hdr) + RSN_SELECTOR_LEN;
@@ -197,9 +163,7 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
     RSN_SELECTOR_PUT(pos, suite);
     pos += RSN_SELECTOR_LEN;
 
-    if ( (sm->ap_notify_completed_rsne == false) &&
-         (key_mgmt != WPA_KEY_MGMT_IEEE8021X) &&
-         (key_mgmt != WPA_KEY_MGMT_FT_IEEE8021X) ) {
+    if ( (sm->ap_notify_completed_rsne == false) && (key_mgmt != WPA_KEY_MGMT_IEEE8021X) ) {
         hdr->len = (pos - rsn_ie) - 2;
         return (pos - rsn_ie);
     }
@@ -241,10 +205,6 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
         RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_SAE_EXT_KEY);
     } else if (key_mgmt == WPA_KEY_MGMT_FT_SAE) {
         RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE);
-#ifdef CONFIG_IEEE80211R
-    } else if (key_mgmt == WPA_KEY_MGMT_FT_SAE_EXT_KEY) {
-        RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE_EXT_KEY);
-#endif /* CONFIG_IEEE80211R */
 #endif /* CONFIG_WPA3_SAE */
 #ifdef CONFIG_OWE_STA
     } else if (key_mgmt == WPA_KEY_MGMT_OWE) {
@@ -271,7 +231,7 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
 #ifdef CONFIG_IEEE80211W
     if (sm->pmf_cfg.capable) {
         capab |= WPA_CAPABILITY_MFPC;
-        if (sm->pmf_cfg.required || wpa_key_mgmt_sae(key_mgmt) || key_mgmt == WPA_KEY_MGMT_OWE) {
+        if (sm->pmf_cfg.required || key_mgmt == WPA_KEY_MGMT_SAE || key_mgmt == WPA_KEY_MGMT_OWE) {
             capab |= WPA_CAPABILITY_MFPR;
         }
     }
@@ -283,15 +243,6 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
 
     if (sm->spp_sup.require) {
         capab |= WPA_CAPABILITY_SPP_REQUIRED;
-    }
-
-    /* Extended Key ID for Individually Addressed Frames: advertise only
-     * for RSN with CCMP/GCMP pairwise ciphers (not for TKIP or FT, whose
-     * key installation paths do not support a second PTK slot). */
-    if ((pairwise_cipher & (WPA_CIPHER_CCMP | WPA_CIPHER_GCMP |
-                WPA_CIPHER_GCMP_256)) &&
-            !wpa_key_mgmt_ft(key_mgmt)) {
-        capab |= WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST;
     }
 
     WPA_PUT_LE16(pos, capab);

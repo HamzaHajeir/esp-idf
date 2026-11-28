@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,7 +50,7 @@ static void test_parlio_sleep_retention(bool allow_pd)
         .trans_queue_depth = 8,
         .max_transfer_size = 128,
         .bit_pack_order = PARLIO_BIT_PACK_ORDER_MSB,
-        .shift_edge = PARLIO_SHIFT_EDGE_POS,
+        .sample_edge = PARLIO_SAMPLE_EDGE_POS,
         .flags.allow_pd = allow_pd,
     };
     TEST_ESP_OK(parlio_new_tx_unit(&tx_config, &tx_unit));
@@ -59,8 +59,7 @@ static void test_parlio_sleep_retention(bool allow_pd)
     parlio_transmit_config_t transmit_config = {
         .idle_value = 0x00,
     };
-    uint8_t *tx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE);
-    TEST_ASSERT_NOT_NULL(tx_payload);
+    uint8_t tx_payload[TEST_PAYLOAD_SIZE] = {0};
     for (int i = 0; i < TEST_PAYLOAD_SIZE; i++) {
         tx_payload[i] = i;
     }
@@ -115,8 +114,7 @@ static void test_parlio_sleep_retention(bool allow_pd)
         .delimiter = deli,
         .flags.partial_rx_en = false,
     };
-    uint8_t *rx_payload = test_parlio_alloc_dma_buffer(TEST_PAYLOAD_SIZE);
-    TEST_ASSERT_NOT_NULL(rx_payload);
+    __attribute__((aligned(TEST_PAYLOAD_SIZE))) uint8_t rx_payload[TEST_PAYLOAD_SIZE] = {0};
 
     // go to sleep
     esp_sleep_context_t sleep_ctx;
@@ -135,7 +133,7 @@ static void test_parlio_sleep_retention(bool allow_pd)
 
     printf("check if the sleep happened as expected\r\n");
     TEST_ASSERT_EQUAL(0, sleep_ctx.sleep_request_result);
-#if SOC_PARLIO_SUPPORT_SLEEP_RETENTION && SOC_GDMA_SUPPORT_SLEEP_RETENTION
+#if SOC_PARLIO_SUPPORT_SLEEP_RETENTION && !SOC_PM_TOP_PD_NOT_ALLOWED
     // check if the power domain also is powered down
     TEST_ASSERT_EQUAL(allow_pd ? PMU_SLEEP_PD_TOP : 0, (sleep_ctx.sleep_flags) & PMU_SLEEP_PD_TOP);
 #endif
@@ -159,14 +157,12 @@ static void test_parlio_sleep_retention(bool allow_pd)
     TEST_ESP_OK(parlio_rx_unit_disable(rx_unit));
     TEST_ESP_OK(parlio_del_rx_delimiter(deli));
     TEST_ESP_OK(parlio_del_rx_unit(rx_unit));
-    free(tx_payload);
-    free(rx_payload);
 }
 
 TEST_CASE("parlio light sleep", "[parlio]")
 {
     test_parlio_sleep_retention(false);
-#if SOC_PARLIO_SUPPORT_SLEEP_RETENTION && SOC_GDMA_SUPPORT_SLEEP_RETENTION
+#if SOC_PARLIO_SUPPORT_SLEEP_RETENTION
     test_parlio_sleep_retention(true);
 #endif
 }

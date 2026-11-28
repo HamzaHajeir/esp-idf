@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -97,15 +97,11 @@ FORCE_INLINE_ATTR void rv_utils_wfe_mode_enable(bool en)
  */
 FORCE_INLINE_ATTR uint32_t rv_utils_get_interrupt_level_regval(void)
 {
-#if INTTHRESH_STANDARD
     if (IS_PRV_M_MODE()) {
         return RV_READ_CSR(MINTSTATUS_CSR);
     } else {
         return RV_READ_CSR(UINTSTATUS_CSR);
     }
-#else
-    return RV_READ_CSR(MINTSTATUS_CSR);
-#endif
 }
 
 /**
@@ -113,15 +109,14 @@ FORCE_INLINE_ATTR uint32_t rv_utils_get_interrupt_level_regval(void)
  */
 FORCE_INLINE_ATTR uint32_t rv_utils_get_interrupt_level(void)
 {
-#if INTTHRESH_STANDARD
+    uint32_t xintstatus;
     if (IS_PRV_M_MODE()) {
-        return CLIC_STATUS_TO_INT(RV_READ_CSR(MINTSTATUS_CSR));
+        xintstatus = RV_READ_CSR(MINTSTATUS_CSR);
     } else {
-        return CLIC_USTATUS_TO_INT(RV_READ_CSR(UINTSTATUS_CSR));
+        xintstatus = RV_READ_CSR(UINTSTATUS_CSR);
     }
-#else
-    return CLIC_STATUS_TO_INT(RV_READ_CSR(MINTSTATUS_CSR));
-#endif
+    /* Extract the level from this field */
+    return CLIC_STATUS_TO_INT(xintstatus);
 }
 
 /**
@@ -230,7 +225,7 @@ FORCE_INLINE_ATTR uint32_t rv_utils_intr_get_enabled_mask(void)
  */
 FORCE_INLINE_ATTR void rv_utils_intr_edge_ack(uint32_t intr_num)
 {
-    REG_CLR_BIT(CLIC_INT_CTRL_REG(intr_num + CLIC_EXT_INTR_NUM_OFFSET), CLIC_INT_IP);
+    REG_SET_BIT(CLIC_INT_CTRL_REG(intr_num + CLIC_EXT_INTR_NUM_OFFSET) , CLIC_INT_IP);
 }
 
 #ifdef __cplusplus

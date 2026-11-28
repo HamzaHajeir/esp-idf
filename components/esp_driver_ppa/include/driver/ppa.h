@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,17 +39,10 @@ typedef struct {
     ppa_data_burst_length_t data_burst_length;  /*!< The desired data burst length for all the transactions of the client.
                                                      Use a small burst length will decrease PPA performance, but can save burst bandwidth for other peripheral usages.
                                                      By default, it will be at the maximum burst length, `PPA_DATA_BURST_LENGTH_128` */
-    struct {
-        uint32_t allow_pd: 1;                   /*!< If set, driver allows the power domain to be powered off when system enters sleep mode.
-                                                     This can save power, but at the expense of more RAM being consumed to save register context.
-                                                     All clients must have the same value for this flag. */
-    } flags;                                    /*!< Configuration flags */
 } ppa_client_config_t;
 
 /**
  * @brief Register a PPA client to do a specific PPA operation
- *
- * No two tasks should share the same PPA client.
  *
  * @param[in] config Pointer to a collection of configurations for the client
  * @param[out] ret_client Returned client handle
@@ -98,8 +91,7 @@ typedef bool (*ppa_event_callback_t)(ppa_client_handle_t ppa_client, ppa_event_d
  * @brief Group of supported PPA callbacks
  */
 typedef struct {
-    ppa_event_callback_t on_trans_done;     /*!< Invoked when a PPA transaction finishes
-                                                 Note that this callback will not be invoked if the PPA operation is performed with `PPA_TRANS_MODE_BLOCKING` mode. */
+    ppa_event_callback_t on_trans_done;     /*!< Invoked when a PPA transaction finishes */
 } ppa_event_callbacks_t;
 
 /**
@@ -132,7 +124,6 @@ typedef struct {
         ppa_srm_color_mode_t srm_cm;        /*!< Color mode of the picture in a PPA SRM operation. Supported color mode in `ppa_srm_color_mode_t` */
         ppa_blend_color_mode_t blend_cm;    /*!< Color mode of the picture in a PPA blend operation. Supported color mode in `ppa_blend_color_mode_t` */
         ppa_fill_color_mode_t fill_cm;      /*!< Color mode of the picture in a PPA fill operation. Supported color mode in `ppa_fill_color_mode_t` */
-        esp_color_fourcc_t cm;              /*!< Four Character Code of the color mode */
     };
     ppa_color_range_t yuv_range;            /*!< When the color mode is any YUV color space, this field is to describe its color range */
     ppa_color_conv_std_rgb_yuv_t yuv_std;   /*!< When the color mode is any YUV color space, this field is to describe its YUV<->RGB conversion standard */
@@ -152,7 +143,6 @@ typedef struct {
         ppa_srm_color_mode_t srm_cm;        /*!< Color mode of the picture in a PPA SRM operation. Supported color mode in `ppa_srm_color_mode_t` */
         ppa_blend_color_mode_t blend_cm;    /*!< Color mode of the picture in a PPA blend operation. Supported color mode in `ppa_blend_color_mode_t` */
         ppa_fill_color_mode_t fill_cm;      /*!< Color mode of the picture in a PPA fill operation. Supported color mode in `ppa_fill_color_mode_t` */
-        esp_color_fourcc_t cm;              /*!< Four Character Code of the color mode */
     };
     ppa_color_range_t yuv_range;            /*!< When the color mode is any YUV color space, this field is to describe its color range */
     ppa_color_conv_std_rgb_yuv_t yuv_std;   /*!< When the color mode is any YUV color space, this field is to describe its YUV<->RGB conversion standard */
@@ -162,8 +152,8 @@ typedef struct {
  * @brief Modes to perform the PPA operations
  */
 typedef enum {
-    PPA_TRANS_MODE_BLOCKING,        /*!< `ppa_do_xxx` function will block until the PPA operation is finished. Registered `on_trans_done` callback function will not be invoked upon completion automatically. */
-    PPA_TRANS_MODE_NON_BLOCKING,    /*!< `ppa_do_xxx` function will return immediately after the PPA operation is pushed to the internal queue. Registered `on_trans_done` callback function will be invoked upon completion automatically. */
+    PPA_TRANS_MODE_BLOCKING,        /*!< `ppa_do_xxx` function will block until the PPA operation is finished */
+    PPA_TRANS_MODE_NON_BLOCKING,    /*!< `ppa_do_xxx` function will return immediately after the PPA operation is pushed to the internal queue */
 } ppa_trans_mode_t;
 
 /**
@@ -193,8 +183,7 @@ typedef struct {
     };
 
     ppa_trans_mode_t mode;                      /*!< Determines whether to block inside the operation functions, see `ppa_trans_mode_t` */
-    void *user_data;                            /*!< User registered data to be passed into `on_trans_done` callback function
-                                                     A blocking transaction should set this field to NULL, since the callback function will not be invoked upon completion for blocking mode. */
+    void *user_data;                            /*!< User registered data to be passed into `done_cb` callback function */
 } ppa_srm_oper_config_t;
 
 /**
@@ -267,7 +256,6 @@ typedef struct {
  * @return
  *      - ESP_OK: Perform a blend operation successfully
  *      - ESP_ERR_INVALID_ARG: Perform a blend operation failed because of invalid argument
- *      - ESP_ERR_INVALID_STATE: Perform a blend operation failed because an input picture uses an indexed color mode, but the corresponding CLUT has not been set by `ppa_set_color_lookup_table`
  *      - ESP_FAIL: Perform a blend operation failed because the client's pending transactions has reached its maximum capacity
  */
 esp_err_t ppa_do_blend(ppa_client_handle_t ppa_client, const ppa_blend_oper_config_t *config);
@@ -320,31 +308,6 @@ esp_err_t ppa_do_fill(ppa_client_handle_t ppa_client, const ppa_fill_oper_config
  *     - ESP_ERR_INVALID_STATE: Set the RGB888 to GRAY color conversion formula failed because the PPA peripheral not initialized
  */
 esp_err_t ppa_set_rgb2gray_formula(uint8_t r_weight, uint8_t g_weight, uint8_t b_weight);
-
-/**
- * @brief Set the content of a PPA Color Look-Up Table (CLUT)
- *
- * A CLUT holds up to 256 ARGB8888 colors. When a picture is in an indexed color mode, every pixel in that picture is an
- * index into the CLUT that sits on the path the picture travels, instead of a color value itself, and the PPA expands
- * each index into the color stored at that entry. For example, on the blending engine input paths,
- * `PPA_BLEND_COLOR_MODE_L8` addresses entries [0, 255] and `PPA_BLEND_COLOR_MODE_L4` addresses entries [0, 15].
- *
- * The table entries are written starting from index 0, so `num_entries` only needs to cover the largest index that the
- * pictures actually use. Every call replaces the whole table, the entries beyond `num_entries` are cleared to zero.
- *
- * @note A CLUT content is shared by all the clients that use the corresponding engine. Do not call this function while
- *     any transaction that relies on the CLUT content is still pending, otherwise the result of that transaction is undefined.
- *
- * @param[in] clut_id Selects which CLUT to write, see `ppa_clut_id_t`
- * @param[in] entries Array of the ARGB8888 colors to be written into the CLUT, or NULL to disable the CLUT
- * @param[in] num_entries Number of entries in the `entries` array, range: [1, 256], or 0 to disable the CLUT
- *
- * @return
- *      - ESP_OK: Set the CLUT content successfully
- *      - ESP_ERR_INVALID_ARG: Set the CLUT content failed because of invalid argument
- *      - ESP_ERR_INVALID_STATE: Set the CLUT content failed because the PPA peripheral not initialized
- */
-esp_err_t ppa_set_color_lookup_table(ppa_clut_id_t clut_id, const color_pixel_argb8888_data_t *entries, uint32_t num_entries);
 
 #ifdef __cplusplus
 }

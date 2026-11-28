@@ -19,10 +19,6 @@ VFS 组件支持 C 库函数（如 fopen 和 fprintf 等）与文件系统 (FS) 
 
 如需注册 FS 驱动程序，应用程序首先要定义一个 :cpp:type:`esp_vfs_fs_ops_t` 结构体实例，并用指向 FS API 的函数指针填充它。
 
-.. warning::
-
-    不带上下文指针的 API 版本已弃用，未来将被移除，请参见 :ref:`context_api`。
-
 .. highlight:: c
 
 ::
@@ -69,7 +65,6 @@ VFS 组件支持 C 库函数（如 fopen 和 fprintf 等）与文件系统 (FS) 
         ESP_ERROR_CHECK(esp_vfs_register_fs("/data", &myfs, ESP_VFS_FLAG_DEFAULT, NULL));
     }
 
-.. _context_api:
 
 上下文感知文件系统
 ^^^^^^^^^^^^^^^^^^
@@ -168,11 +163,11 @@ VFS 组件支持通过 :cpp:func:`select` 进行同步输入/输出多路复用�
 
 :cpp:func:`stop_socket_select_isr` 与 :cpp:func:`stop_socket_select` 的作用相似，但是前者可在 ISR 中使用。
 
-请参考 :component_file:`lwip/port/vfs_lwip.c` 以了解使用 LWIP 的套接字驱动参考实现。
+请参考 :component_file:`lwip/port/esp32xx/vfs_lwip.c` 以了解使用 LWIP 的套接字驱动参考实现。
 
 .. note::
 
-    如果 :cpp:func:`select` 用于套接字文件描述符，可以禁用 :menuitem:`CONFIG_VFS_SUPPORT_SELECT` 选项来减少代码量，提高性能。
+    如果 :cpp:func:`select` 用于套接字文件描述符，可以禁用 :ref:`CONFIG_VFS_SUPPORT_SELECT` 选项来减少代码量，提高性能。
 
     不要在 :cpp:func:`select` 调用过程中更改套接字驱动，否则会出现一些未定义行为。
 
@@ -223,8 +218,6 @@ VFS 对文件路径长度没有限制，但文件系统路径前缀受 ``ESP_VFS
 - 标志中没有 ``EFD_CLOEXEC``、``EFD_NONBLOCK`` 和 ``EFD_SEMAPHORE`` 选项；
 - ``EFD_SUPPORT_ISR`` 选项已经被添加到标志中。在中断处理程序中读取和写入 eventfd 需要这个标志。
 
-与 Linux 相同，``eventfd()``、``eventfd_t``、``eventfd_read()`` 和 ``eventfd_write()`` 也在 ``sys/eventfd.h`` 中声明。
-
 注意，用 ``EFD_SUPPORT_ISR`` 创建 eventfd 将导致在读取、写入文件时，以及在设置这个文件的 ``select()`` 开始和结束时，暂时禁用中断。
 
 
@@ -234,8 +227,8 @@ VFS 对文件路径长度没有限制，但文件系统路径前缀受 ``ESP_VFS
 IDF 定义了多个可供应用程序使用的 VFS 设备。这些设备包括：
 
 * ``/dev/uart/<UART NUMBER>`` - 此文件映射到使用 VFS 驱动程序打开的 UART 中。UART 编号是 UART 外设的编号。
-* ``/dev/null`` - 此文件丢弃所有写入的数据，并在读取时返回 EOF。启用 :menuitem:`CONFIG_VFS_INITIALIZE_DEV_NULL` 会自动创建此文件。
-* ``/dev/console`` - 此文件连接到在 menuconfig 中由 :menuitem:`CONFIG_ESP_CONSOLE_UART` 和 :menuitem:`CONFIG_ESP_CONSOLE_SECONDARY` 指定的主输出和次输出。更多信息请参考 :doc:`../../api-guides/stdio`。
+* ``/dev/null`` - 此文件丢弃所有写入的数据，并在读取时返回 EOF。启用 :ref:`CONFIG_VFS_INITIALIZE_DEV_NULL` 会自动创建此文件。
+* ``/dev/console`` - 此文件连接到在 menuconfig 中由 :ref:`CONFIG_ESP_CONSOLE_UART` 和 :ref:`CONFIG_ESP_CONSOLE_SECONDARY` 指定的主输出和次输出。更多信息请参考 :doc:`../../api-guides/stdio`。
 
 
 应用示例

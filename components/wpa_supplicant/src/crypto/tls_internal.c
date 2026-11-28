@@ -529,9 +529,6 @@ struct wpabuf * tls_connection_server_handshake(void *tls_ctx,
 	if (conn->server == NULL)
 		return NULL;
 
-	if (in_data == NULL)
-		return NULL;
-
 	if (appl_data)
 		*appl_data = NULL;
 

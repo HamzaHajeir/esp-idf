@@ -23,17 +23,15 @@ typedef void * RingbufHandle_t;
 typedef enum {
     /**
      * No-split buffers will only store an item in contiguous memory and will
-     * never split an item. Each item requires a header (8 bytes on 32-bit
-     * targets) and will always internally occupy a size of space aligned to
-     * that header (32-bit on 32-bit targets).
+     * never split an item. Each item requires an 8 byte overhead for a header
+     * and will always internally occupy a 32-bit aligned size of space.
      */
     RINGBUF_TYPE_NOSPLIT = 0,
     /**
      * Allow-split buffers will split an item into two parts if necessary in
-     * order to store it. Each item requires a header (8 bytes on 32-bit
-     * targets), splitting incurs an extra header. Each item will always
-     * internally occupy a size of space aligned to that header (32-bit on
-     * 32-bit targets).
+     * order to store it. Each item requires an 8 byte overhead for a header,
+     * splitting incurs an extra header. Each item will always internally occupy
+     * a 32-bit aligned size of space.
      */
     RINGBUF_TYPE_ALLOWSPLIT,
     /**
@@ -74,9 +72,7 @@ typedef struct xSTATIC_RINGBUFFER {
  *              space for a header in no-split/allow-split buffers
  * @param[in]   xBufferType Type of ring buffer, see documentation.
  *
- * @note    xBufferSize of no-split/allow-split buffers will be rounded up to the item header's
- *          alignment (32-bit on 32-bit targets).
- *          The aligned size must be large enough to hold two item headers.
+ * @note    xBufferSize of no-split/allow-split buffers will be rounded up to the nearest 32-bit aligned size.
  *
  * @return  A handle to the created ring buffer, or NULL in case of error.
  */
@@ -90,9 +86,6 @@ RingbufHandle_t xRingbufferCreate(size_t xBufferSize, RingbufferType_t xBufferTy
  *
  * @param[in]   xItemSize   Size of each item to be put into the ring buffer
  * @param[in]   xItemNum    Maximum number of items the buffer needs to hold simultaneously
- *
- * @note    Returns NULL if xItemNum is 0, the calculated buffer size overflows,
- *          or the resulting buffer is too small to hold two item headers.
  *
  * @return  A RingbufHandle_t handle to the created ring buffer, or NULL in case of error.
  */
@@ -108,11 +101,9 @@ RingbufHandle_t xRingbufferCreateNoSplit(size_t xItemSize, size_t xItemNum);
  * @param[in]   pxStaticRingbuffer Pointed to a struct of type StaticRingbuffer_t
  *              which will be used to hold the ring buffer's data structure
  *
- * @note    For no-split/allow-split buffers, xBufferSize and pucRingbufferStorage MUST be aligned
- *          to the item header's alignment (32-bit on 32-bit targets, 64-bit where size_t is).
- *          The aligned size must be large enough to hold two item headers.
+ * @note    xBufferSize of no-split/allow-split buffers MUST be 32-bit aligned.
  *
- * @return  A handle to the created ring buffer, or NULL in case of error.
+ * @return  A handle to the created ring buffer
  */
 RingbufHandle_t xRingbufferCreateStatic(size_t xBufferSize,
                                         RingbufferType_t xBufferType,
@@ -131,9 +122,9 @@ RingbufHandle_t xRingbufferCreateStatic(size_t xBufferSize,
  * @param[in]   xTicksToWait    Ticks to wait for room in the ring buffer.
  *
  * @note    For no-split/allow-split ring buffers, the actual size of memory that
- *          the item will occupy will be rounded up to the item header's
- *          alignment (32-bit on 32-bit targets). This is done to ensure all items
- *          are always stored aligned.
+ *          the item will occupy will be rounded up to the nearest 32-bit aligned
+ *          size. This is done to ensure all items are always stored in 32-bit
+ *          aligned fashion.
  * @note    For no-split/allow-split buffers, an xItemSize of 0 will result in
  *          an item with no data being set (i.e., item only contains the header).
  *          For byte buffers, an xItemSize of 0 will simply return pdTRUE without
@@ -160,9 +151,9 @@ BaseType_t xRingbufferSend(RingbufHandle_t xRingbuffer,
  * @param[out]  pxHigherPriorityTaskWoken   Value pointed to will be set to pdTRUE if the function woke up a higher priority task.
  *
  * @note    For no-split/allow-split ring buffers, the actual size of memory that
- *          the item will occupy will be rounded up to the item header's
- *          alignment (32-bit on 32-bit targets). This is done to ensure all items
- *          are always stored aligned.
+ *          the item will occupy will be rounded up to the nearest 32-bit aligned
+ *          size. This is done to ensure all items are always stored in 32-bit
+ *          aligned fashion.
  * @note    For no-split/allow-split buffers, an xItemSize of 0 will result in
  *          an item with no data being set (i.e., item only contains the header).
  *          For byte buffers, an xItemSize of 0 will simply return pdTRUE without
@@ -195,9 +186,9 @@ BaseType_t xRingbufferSendFromISR(RingbufHandle_t xRingbuffer,
  * @param[in]   xTicksToWait    Ticks to wait for room in the ring buffer.
  *
  * @note Only applicable for no-split ring buffers now, the actual size of
- *       memory that the item will occupy will be rounded up to the item header's
- *       alignment (32-bit on 32-bit targets). This is done to ensure all items
- *       are always stored aligned.
+ *       memory that the item will occupy will be rounded up to the nearest 32-bit
+ *       aligned size. This is done to ensure all items are always stored in 32-bit
+ *       aligned fashion.
  * @note An xItemSize of 0 will result in a buffer being acquired, but the buffer
  *       will have a size of 0.
  *
@@ -547,10 +538,6 @@ BaseType_t xRingbufferGetStaticBuffer(RingbufHandle_t xRingbuffer, uint8_t **ppu
  *
  * @note A queue created using this function must only be deleted using
  * vRingbufferDeleteWithCaps()
- * @note xBufferSize of no-split/allow-split buffers will be rounded up to the
- * item header's alignment (32-bit on 32-bit targets). The aligned size must be
- * large enough to hold two item headers.
- *
  * @param[in] xBufferSize Size of the buffer in bytes
  * @param[in] xBufferType Type of ring buffer, see documentation.
  * @param[in] uxMemoryCaps Memory capabilities of the queue's memory (see

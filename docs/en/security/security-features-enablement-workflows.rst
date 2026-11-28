@@ -8,7 +8,7 @@ Security Features Enablement Workflows
 
 {IDF_TARGET_CRYPT_CNT:default="SPI_BOOT_CRYPT_CNT",esp32="FLASH_CRYPT_CNT"}
 {IDF_TARGET_CRYPT_CNT_MAX_VAL:default="7",esp32="127"}
-{IDF_TARGET_SBV2_DEFAULT_SCHEME:default="RSA", esp32c2, esp32h4="ECDSA (V2)"}
+{IDF_TARGET_SBV2_DEFAULT_SCHEME:default="RSA", esp32c2="ECDSA (V2)"}
 {IDF_TARGET_FLASH_ENC_ARGS:default="--aes-xts", esp32=""}
 
 Introduction
@@ -61,19 +61,19 @@ Enable Flash Encryption and Secure Boot v2 Externally
 
     It is recommended to enable both Flash Encryption and Secure Boot v2 for a production use case.
 
-When enabling the Flash Encryption and Secure Boot v2 together, they must be enabled in the following order:
+When enabling the Flash Encryption and Secure Boot v2 together, they need to enable them in the following order:
 
 #. Enable the Flash Encryption feature by following the steps listed in :ref:`enable-flash-encryption-externally`.
 #. Enable the Secure Boot v2 feature by following the steps listed in :ref:`enable-secure-boot-v2-externally`.
 
-The reason for this particular ordering is that when enabling Secure Boot (SB) v2, it is necessary to keep the SB v2 key readable. To protect the key's readability, the write protection for ``RD_DIS`` (``ESP_EFUSE_WR_DIS_RD_DIS``) is applied. However, this action poses a challenge when attempting to enable Flash Encryption, as the Flash Encryption (FE) key needs to remain unreadable. This conflict arises because the ``RD_DIS`` is already write-protected, making it impossible to read protect the FE key.
+The reason this particular ordering is that when enabling Secure Boot (SB) v2, it is necessary to keep the SB v2 key readable. To protect the key's readability, the write protection for ``RD_DIS`` (``ESP_EFUSE_WR_DIS_RD_DIS``) is applied. However, this action poses a challenge when attempting to enable Flash Encryption, as the Flash Encryption (FE) key needs to remain unreadable. This conflict arises because the ``RD_DIS`` is already write-protected, making it impossible to read protect the FE key.
 
 .. _enable-flash-encryption-externally:
 
 Enable Flash Encryption Externally
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In this case, all the eFuses related to Flash Encryption are written with help of the espefuse tool. More details about Flash Encryption process can be found in :doc:`/security/flash-encryption`.
+In this case all the eFuses related to Flash Encryption are written with help of the espefuse tool. More details about Flash Encryption can process can be found in :doc:`/security/flash-encryption`.
 
 1. Ensure that you have an {IDF_TARGET_NAME} device with default Flash Encryption eFuse settings as shown in :ref:`flash-encryption-efuse`
 
@@ -97,13 +97,13 @@ In this case, all the eFuses related to Flash Encryption are written with help o
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_256
 
-        If :menuitem:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 (256-bit key):
+        If :ref:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 (256-bit key):
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key my_flash_encryption_key.bin
 
-        else if :menuitem:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-256 (512-bit key):
+        else if :ref:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-256 (512-bit key):
 
         .. code-block:: bash
 
@@ -118,63 +118,25 @@ In this case, all the eFuses related to Flash Encryption are written with help o
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-        If :menuitem:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 (256-bit key):
+        If :ref:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 (256-bit key):
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key my_flash_encryption_key.bin
 
-        else if :menuitem:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 key derived from 128 bits (SHA256(128 bits)):
+        else if :ref:`Size of generated AES-XTS key <CONFIG_SECURE_FLASH_ENCRYPTION_KEYSIZE>` is AES-128 key derived from 128 bits (SHA256(128 bits)):
 
         .. code-block:: bash
 
             espsecure generate-flash-encryption-key --keylen 128 my_flash_encryption_key.bin
 
-3. Program the generated Flash Encryption key into the device
-
-    .. only:: SOC_KEY_MANAGER_SUPPORTED
-
-        a. If you intend to use the Key Manager to store the Flash Encryption key, generate the Key Recovery Information for the Flash Encryption key and store it in the flash memory at the address 0x0 using the command:
-
-        .. code-block:: bash
-
-            esptool --port PORT write-flash 0x0 key_recovery_info.bin
-
-        After storing the Key Recovery Information in flash memory, you also need to program the ``KM_XTS_KEY_LENGTH_256`` and the ``FORCE_USE_KEY_MANAGER_KEY`` eFuses.
-
-        .. warning::
-
-            This action **cannot be reverted**.
-
-        Bit 1 of the ``FORCE_USE_KEY_MANAGER_KEY`` eFuse is used to force using a Key Manager-based XTS-AES key. Once this eFuse is burned, eFuse-based Flash Encryption keys can no longer be used; the device will exclusively use the Key Manager for Flash Encryption key management.
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse FORCE_USE_KEY_MANAGER_KEY 2
-
-        The ``KM_XTS_KEY_LENGTH_256`` eFuse controls the length of the Key-Manager based XTS-AES key. Set this eFuse to 1 to use a 128-bit key, and to 0 to use a 256-bit key.
-
-        To use a 128-bit key, set the ``KM_XTS_KEY_LENGTH_256`` eFuse to 1.
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse KM_XTS_KEY_LENGTH_256 1
-
-        Otherwise, to use a 256-bit key, set the ``KM_XTS_KEY_LENGTH_256`` eFuse to 0.
-
-        .. code-block:: bash
-
-            espefuse --port PORT burn-efuse KM_XTS_KEY_LENGTH_256 0
-
-        b. To store the Flash Encryption key in the eFuses, run the following commands:
-
-    .. only:: not SOC_KEY_MANAGER_SUPPORTED
-
-        To store the Flash Encryption key in the eFuses, run the following commands:
+3. Burn the Flash Encryption key into eFuse
 
     .. warning::
 
         This action **cannot be reverted**.
+
+    It can be done by running:
 
     .. only:: not SOC_FLASH_ENCRYPTION_XTS_AES
 
@@ -221,13 +183,13 @@ In this case, all the eFuses related to Flash Encryption are written with help o
 
     .. only:: SOC_FLASH_ENCRYPTION_XTS_AES_128 and SOC_EFUSE_CONSISTS_OF_ONE_KEY_BLOCK
 
-        For AES-128 (256-bit key) - ``XTS_AES_128_KEY`` (the ``XTS_KEY_LENGTH_256`` eFuse will be burned to 1):
+        For AES-128 (256-bit key) - ``XTS_AES_128_KEY`` (the ``XTS_KEY_LENGTH_256`` eFuse will be burn to 1):
 
         .. code-block:: bash
 
             espefuse --port PORT burn-key BLOCK_KEY0 flash_encryption_key256.bin XTS_AES_128_KEY
 
-        For AES-128 key derived from SHA256 (128 eFuse bits) - ``XTS_AES_128_KEY_DERIVED_FROM_128_EFUSE_BITS``. The FE key will be written in the lower part of eFuse BLOCK_KEY0. The upper 128 bits are not used and will remain available for reading by software. Using the special mode of the espefuse tool, shown in the ``For burning both keys together`` section below, the user can write their data to it using any espefuse commands.
+        For AES-128 key derived from SHA256(128 eFuse bits) - ``XTS_AES_128_KEY_DERIVED_FROM_128_EFUSE_BITS``. The FE key will be written in the lower part of eFuse BLOCK_KEY0. The upper 128 bits are not used and will remain available for reading by software. Using the special mode of the espefuse tool, shown in the ``For burning both keys together`` section below, the user can write their data to it using any espefuse commands.
 
         .. code-block:: bash
 
@@ -282,7 +244,7 @@ In this case, all the eFuses related to Flash Encryption are written with help o
         :SOC_EFUSE_DIS_DOWNLOAD_ICACHE: - ``DIS_DOWNLOAD_ICACHE``: Disable UART cache
         :SOC_EFUSE_DIS_DOWNLOAD_DCACHE: - ``DIS_DOWNLOAD_DCACHE``: Disable UART cache
         :SOC_EFUSE_HARD_DIS_JTAG: - ``HARD_DIS_JTAG``: Hard disable JTAG peripheral
-        :SOC_EFUSE_DIS_DIRECT_BOOT: - ``DIS_DIRECT_BOOT``: Disable direct boot (legacy SPI boot mode)
+        :SOC_EFUSE_DIS_DIRECT_BOOT:- ``DIS_DIRECT_BOOT``: Disable direct boot (legacy SPI boot mode)
         :SOC_EFUSE_DIS_LEGACY_SPI_BOOT: - ``DIS_LEGACY_SPI_BOOT``: Disable legacy SPI boot mode
         :SOC_EFUSE_DIS_USB_JTAG: - ``DIS_USB_JTAG``: Disable USB switch to JTAG
         :SOC_EFUSE_DIS_PAD_JTAG: - ``DIS_PAD_JTAG``: Disable JTAG permanently
@@ -304,7 +266,7 @@ In this case, all the eFuses related to Flash Encryption are written with help o
 
         B) Write protect security eFuses
 
-        After burning the respective eFuses we need to write-protect the security configurations. It can be done by burning following eFuse:
+        After burning the respective eFuses we need to write_protect the security configurations. It can be done by burning following eFuse:
 
         .. code:: bash
 
@@ -336,12 +298,12 @@ In this case, all the eFuses related to Flash Encryption are written with help o
 
     .. list::
 
-        - :menuitem:`Enable Flash Encryption on boot <CONFIG_SECURE_FLASH_ENC_ENABLED>`.
-        :esp32: - :menuitem:`Select release mode <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` (Note that once release mode is selected, the ``DISABLE_DL_ENCRYPT`` and ``DISABLE_DL_DECRYPT`` eFuse bits will be burned to disable Flash Encryption hardware in ROM download mode).
-        :esp32: - :menuitem:`Select UART ROM download mode (permanently disabled (recommended)) <CONFIG_SECURE_UART_ROM_DL_MODE>` (Note that this option is only available when :menuitem:`CONFIG_ESP32_REV_MIN` is set to 3 (ESP32 V3)). The default choice is to keep UART ROM download mode enabled, however it is recommended to permanently disable this mode to reduce the options available to an attacker.
-        :not esp32: - :menuitem:`Select release mode <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` (Note that once release mode is selected, the ``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse bit will be burned to disable Flash Encryption hardware in ROM download mode).
-        :not esp32: - :menuitem:`Select UART ROM download mode (permanently switch to Secure mode (recommended)) <CONFIG_SECURE_UART_ROM_DL_MODE>`. This is the default option, and is recommended. It is also possible to change this configuration setting to permanently disable UART ROM download mode, if this mode is not needed.
-        - :menuitem:`Select the appropriate bootloader log verbosity <CONFIG_BOOTLOADER_LOG_LEVEL>`.
+        - :ref:`Enable Flash Encryption on boot <CONFIG_SECURE_FLASH_ENC_ENABLED>`.
+        :esp32: - :ref:`Select release mode <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` (Note that once release mode is selected, the ``DISABLE_DL_ENCRYPT`` and ``DISABLE_DL_DECRYPT`` eFuse bits will be burned to disable Flash Encryption hardware in ROM download mode).
+        :esp32: - :ref:`Select UART ROM download mode (permanently disabled (recommended)) <CONFIG_SECURE_UART_ROM_DL_MODE>` (Note that this option is only available when :ref:`CONFIG_ESP32_REV_MIN` is set to 3 (ESP32 V3)). The default choice is to keep UART ROM download mode enabled, however it is recommended to permanently disable this mode to reduce the options available to an attacker.
+        :not esp32: - :ref:`Select release mode <CONFIG_SECURE_FLASH_ENCRYPTION_MODE>` (Note that once release mode is selected, the ``EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT`` eFuse bit will be burned to disable Flash Encryption hardware in ROM download mode).
+        :not esp32: - :ref:`Select UART ROM download mode (permanently switch to Secure mode (recommended)) <CONFIG_SECURE_UART_ROM_DL_MODE>`. This is the default option, and is recommended. It is also possible to change this configuration setting to permanently disable UART ROM download mode, if this mode is not needed.
+        - :ref:`Select the appropriate bootloader log verbosity <CONFIG_BOOTLOADER_LOG_LEVEL>`.
         - Save the configuration and exit.
 
 7. Build, Encrypt and Flash the binaries
@@ -448,9 +410,13 @@ In this workflow we shall use ``espsecure`` tool to generate signing keys and us
 
             espsecure generate-signing-key --version 2 --scheme ecdsa256 secure_boot_signing_key.pem
 
+        .. only:: not SOC_ECDSA_SUPPORT_CURVE_P384
+
+           The scheme in the above command can be changed to ``ecdsa192`` to generate ecdsa192 private key.
+
         .. only:: SOC_ECDSA_SUPPORT_CURVE_P384
 
-           The scheme in the above command can be changed to ``ecdsa384`` to generate an ecdsa384 private key.
+           The scheme in the above command can be changed to ``ecdsa384`` or ``ecdsa192`` to generate ecdsa384 or ecdsa192 private key.
 
     .. only:: SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS
 
@@ -510,7 +476,7 @@ In this workflow we shall use ``espsecure`` tool to generate signing keys and us
 
             espefuse --port PORT --chip {IDF_TARGET_PATH_NAME} burn-efuse SECURE_BOOT_EN
 
-    .. only:: SOC_SECURE_BOOT_V2_ECC and SOC_ECDSA_SUPPORT_CURVE_P384
+    .. only:: SOC_ECDSA_SUPPORT_CURVE_P384
 
         In case Secure Boot v2 is enabled with the ECDSA-P384 signature scheme, SHA-384 must be used to calculate the digest of the image. Thus, the following eFuse needs to be burned:
 
@@ -533,12 +499,12 @@ In this workflow we shall use ``espsecure`` tool to generate signing keys and us
         :SOC_EFUSE_DIS_BOOT_REMAP: - ``DIS_BOOT_REMAP``: Disable capability to remap ROM to RAM address space.
         :SOC_EFUSE_HARD_DIS_JTAG: - ``HARD_DIS_JTAG``: Hard disable JTAG peripheral.
         :SOC_EFUSE_SOFT_DIS_JTAG: - ``SOFT_DIS_JTAG``: Disable software access to JTAG peripheral.
-        :SOC_EFUSE_DIS_DIRECT_BOOT: - ``DIS_DIRECT_BOOT``: Disable direct boot (legacy SPI boot mode).
+        :SOC_EFUSE_DIS_DIRECT_BOOT:- ``DIS_DIRECT_BOOT``: Disable direct boot (legacy SPI boot mode).
         :SOC_EFUSE_DIS_LEGACY_SPI_BOOT: - ``DIS_LEGACY_SPI_BOOT``: Disable legacy SPI boot mode.
         :SOC_EFUSE_DIS_USB_JTAG: - ``DIS_USB_JTAG``: Disable USB switch to JTAG.
         :SOC_EFUSE_DIS_PAD_JTAG: - ``DIS_PAD_JTAG``: Disable JTAG permanently.
         :SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS: - ``SECURE_BOOT_AGGRESSIVE_REVOKE``: Aggressive revocation of key digests, see :ref:`secure-boot-v2-aggressive-key-revocation` for more details.
-        :SOC_ECDSA_P192_CURVE_DEFAULT_DISABLED: - ``WR_DIS_ECDSA_CURVE_MODE``: Disable writing to the ECDSA curve mode eFuse bit. As this write protection bit is shared with ``ECC_FORCE_CONST_TIME``, it is recommended to write-protect this bit only after configuring the ``ECC_FORCE_CONST_TIME`` eFuse.
+        :SOC_ECDSA_P192_CURVE_DEFAULT_DISABLED: - ``WR_DIS_ECDSA_CURVE_MODE``: Disable writing to the ECDSA curve mode eFuse bit. As this write protection bit is shared with ``ECC_FORCE_CONST_TIME``, it is recommended to write protect this bit only after configuring the ``ECC_FORCE_CONST_TIME`` eFuse.
         :SOC_ECDSA_SUPPORT_CURVE_P384: - ``WR_DIS_SECURE_BOOT_SHA384_EN``: Disable writing to the SHA-384 Secure Boot eFuse bit. As this write protection bit is shared with ``XTS_DPA_PSEUDO_LEVEL`` and ``ECC_FORCE_CONST_TIME``, it is recommended to write protect this bit only after configuring all the other shared eFuses.
 
     The respective eFuses can be burned by running:
@@ -579,7 +545,7 @@ In this workflow we shall use ``espsecure`` tool to generate signing keys and us
 
 6. Configure the project
 
-    By default, the first stage (ROM) bootloader would only verify the :ref:`second-stage-bootloader`. The second stage bootloader would verify the app partition only when the :menuitem:`CONFIG_SECURE_BOOT` option is enabled (and :menuitem:`CONFIG_SECURE_BOOT_VERSION` is set to ``SECURE_BOOT_V2_ENABLED``) while building the bootloader.
+    By default, the first stage (ROM) bootloader would only verify the :ref:`second-stage-bootloader`. The second stage bootloader would verify the app partition only when the :ref:`CONFIG_SECURE_BOOT` option is enabled (and :ref:`CONFIG_SECURE_BOOT_VERSION` is set to ``SECURE_BOOT_V2_ENABLED``) while building the bootloader.
 
     A) Open the :ref:`project-configuration-menu`, in ``Security features`` set ``Enable hardware Secure Boot in bootloader`` to enable Secure Boot.
 
@@ -591,7 +557,7 @@ In this workflow we shall use ``espsecure`` tool to generate signing keys and us
 
         The ``Secure Boot v2`` option will be selected and the ``App Signing Scheme`` will be set to {IDF_TARGET_SBV2_DEFAULT_SCHEME} by default.
 
-    B) Disable the option :menuitem:`CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES` for the project in the :ref:`project-configuration-menu`. This shall make sure that all the generated binaries are secure padded and unsigned. This step is done to avoid generating signed binaries as we are going to manually sign the binaries using ``espsecure`` tool.
+    B) Disable the option :ref:`CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES` for the project in the :ref:`project-configuration-menu`. This shall make sure that all the generated binaries are secure padded and unsigned. This step is done to avoid generating signed binaries as we are going to manually sign the binaries using ``espsecure`` tool.
 
 7. Build, Sign and Flash the binaries
 
@@ -727,11 +693,11 @@ The details about NVS encryption and related schemes can be found at :doc:`NVS E
 
     4. Configure the project
 
-        * Enable `NVS Encryption` by enabling :menuitem:`CONFIG_NVS_ENCRYPTION`.
+        * Enable `NVS Encryption` by enabling :ref:`CONFIG_NVS_ENCRYPTION`.
 
-        * Enable the HMAC based NVS encryption by setting :menuitem:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` to ``CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC``.
+        * Enable the HMAC based NVS encryption by setting :ref:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` to ``CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC``.
 
-        * Set the HMAC efuse key ID at :menuitem:`CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID` to the one in which the eFuse key was burned in Step 2.
+        * Set the HMAC efuse key ID at :ref:`CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID` to the one in which the eFuse key was burned in Step 2.
 
     5. Flash NVS partition
 
@@ -776,8 +742,8 @@ In this case we generate NVS Encryption keys on a host. This key is then flashed
 
 3. Configure the project
 
-    * Enable `NVS Encryption` by enabling :menuitem:`CONFIG_NVS_ENCRYPTION`.
-    * Set NVS to use Flash Encryption based scheme by setting :menuitem:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` to ``CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC``.
+    * Enable `NVS Encryption` by enabling :ref:`CONFIG_NVS_ENCRYPTION`.
+    * Set NVS to use Flash Encryption based scheme by setting :ref:`CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME` to ``CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC``.
 
 4. Flash NVS partition and NVS encryption keys
 

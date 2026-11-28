@@ -11,14 +11,11 @@
 #define SMALL_ITEM_SIZE             8
 #define ITEM_HDR_SIZE               (sizeof(size_t) + sizeof(UBaseType_t))
 #define MEDIUM_ITEM_SIZE            ((3 * SMALL_ITEM_SIZE) >> 1)  //12 bytes
-//Items occupy their size rounded up to the alignment of their header (32-bit on 32-bit targets)
-#define ITEM_ALIGN                  (sizeof(size_t) > sizeof(UBaseType_t) ? sizeof(size_t) : sizeof(UBaseType_t))
-#define ITEM_SPACE(size)            ((((size) + ITEM_ALIGN - 1) / ITEM_ALIGN) * ITEM_ALIGN)
-#define BUFFER_SIZE                 4 * (ITEM_HDR_SIZE + ITEM_SPACE(MEDIUM_ITEM_SIZE))     //Aligned size
+#define BUFFER_SIZE                 4 * (ITEM_HDR_SIZE + MEDIUM_ITEM_SIZE)     //4Byte aligned size
 
 #define CONT_DATA_LEN                   continuous_test_string_len()
-//Aligned size that guarantees a wrap around at some point
-#define CONT_DATA_TEST_BUFF_LEN         ITEM_SPACE(CONT_DATA_LEN/2)
+//32-bit aligned size that guarantees a wrap around at some point
+#define CONT_DATA_TEST_BUFF_LEN         (((CONT_DATA_LEN/2) + 0x03) & ~0x3)
 
 typedef struct {
     RingbufHandle_t buffer;

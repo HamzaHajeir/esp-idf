@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import json
 import os
@@ -11,11 +11,9 @@ import time
 from threading import Thread
 from typing import Any
 
+from click import INT
+from click.core import Context
 from esp_coredump import CoreDump
-from esp_pylib.logger import log
-from rich.markup import escape
-from rich_click import INT
-from rich_click import Context
 
 from idf_py_actions.errors import FatalError
 from idf_py_actions.serial_ext import BAUD_RATE
@@ -25,6 +23,7 @@ from idf_py_actions.tools import ensure_build_directory
 from idf_py_actions.tools import generate_hints
 from idf_py_actions.tools import get_default_serial_port
 from idf_py_actions.tools import get_sdkconfig_value
+from idf_py_actions.tools import yellow_print
 
 
 def chip_rev_to_int(chip_rev: str | None) -> int | None:
@@ -49,11 +48,13 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
         if not processes['allow_hints']:
             return
 
-        # Redirect hints to stderr so stdout stays clean for the gdb console.
-        log.set_info_stream(sys.stderr)
-        sys.stdout.flush()
         for hint in generate_hints(file_name):
-            log.hint(escape(hint))
+            if sys.stderr.isatty():
+                yellow_print(hint)
+            else:
+                # Hints go to stderr. Flush stdout, so hints are printed last.
+                sys.stdout.flush()
+                print(hint, file=sys.stderr)
 
     def _check_openocd_errors(fail_if_openocd_failed: dict, target: str, ctx: Context) -> None:
         if fail_if_openocd_failed:
@@ -107,8 +108,6 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
         core: str | None = None,
         chip_rev: str | None = None,
         save_core: str | None = None,
-        print_vars: list[str] | None = None,
-        print_all_vars: bool = False,
     ) -> CoreDump:
         ensure_build_directory(args, ctx.info_name)
         project_desc = get_project_desc(args, ctx)
@@ -140,10 +139,11 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
             #  The format will be determined automatically
             args.port = args.port or get_default_serial_port()
         else:
-            log.die(
+            print(
                 'Path to core dump file is not provided. '
                 "Core dump can't be read from flash since this option is not enabled in menuconfig"
             )
+            sys.exit(1)
 
         espcoredump_kwargs['port'] = args.port
         espcoredump_kwargs['parttable_off'] = get_sdkconfig_value(
@@ -152,12 +152,6 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
 
         if save_core:
             espcoredump_kwargs['save_core'] = save_core
-
-        if print_vars:
-            espcoredump_kwargs['print_vars'] = print_vars
-
-        if print_all_vars:
-            espcoredump_kwargs['print_all_vars'] = print_all_vars
 
         espcoredump_kwargs['prog'] = prog
 
@@ -214,8 +208,6 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
                     time.sleep(0.5)
             except KeyboardInterrupt:
                 print('Terminated -> exiting debug utility targets')
-        if processes['allow_hints']:
-            ensure_build_directory(args, ctx.info_name)  # initialize build context for hints
         _terminate_async_target('openocd')
         _terminate_async_target('gdbgui')
 
@@ -326,7 +318,7 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
             pass
 
         if not subprocess_success or completed_process.returncode != 0:
-            log.die(
+            raise SystemExit(
                 'Error occurred while starting gdbgui. Please make sure gdbgui has been installed with '
                 'pipx based on https://www.gdbgui.com/installation/ and "gdbgui --version" can be run '
                 'successfully. Gdbgui issues can be reported at https://github.com/cs01/gdbgui/issues.'
@@ -334,7 +326,7 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
 
         v = re.search(r'(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?', captured_output)
         if not v:
-            log.die(escape(f'"gdbgui --version" returned "{captured_output}"'))
+            raise SystemExit(f'Error: "gdbgui --version" returned "{captured_output}"')
         return tuple(int(i) if i else 0 for i in (v[1], v[2], v[3], v[4]))
 
     def gdbui(
@@ -491,18 +483,9 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
         core: str | None = None,
         chip_rev: str | None = None,
         save_core: str | None = None,
-        print_var: tuple[str, ...] = (),
-        print_all_vars: bool = False,
     ) -> None:
         espcoredump = _get_espcoredump_instance(
-            ctx=ctx,
-            args=args,
-            gdb_timeout_sec=gdb_timeout_sec,
-            core=core,
-            chip_rev=chip_rev,
-            save_core=save_core,
-            print_vars=list(print_var),
-            print_all_vars=print_all_vars,
+            ctx=ctx, args=args, gdb_timeout_sec=gdb_timeout_sec, core=core, chip_rev=chip_rev, save_core=save_core
         )
 
         espcoredump.info_corefile()
@@ -542,19 +525,6 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
         'default': 3,
         'help': 'Overwrite the default internal delay for gdb responses',
     }
-    print_var_opts = [
-        {
-            'names': ['--print-var'],
-            'multiple': True,
-            'help': 'Print a variable or expression as "[/fmt] EXPR", for example "/x g_state.flags". Can be repeated.',
-        },
-        {
-            'names': ['--print-all-vars'],
-            'is_flag': True,
-            'default': False,
-            'help': 'Print all variables tagged with a COREDUMP_*_ATTR attribute.',
-        },
-    ]
     fail_if_openocd_failed = {
         'names': ['--require-openocd', '--require_openocd'],
         'help': 'Fail this target if openocd (this targets dependency) failed.\n',
@@ -647,7 +617,7 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
                 'callback': coredump_info,
                 'help': 'Print crashed task’s registers, callstack, list of available tasks in the system, '
                 'memory regions and contents of memory stored in core dump (TCBs and stacks)',
-                'options': coredump_base + [PORT, BAUD_RATE, gdb_timeout_sec_opt] + print_var_opts,  # type: ignore
+                'options': coredump_base + [PORT, BAUD_RATE, gdb_timeout_sec_opt],  # type: ignore
                 'order_dependencies': ['all', 'flash'],
             },
             'coredump-debug': {

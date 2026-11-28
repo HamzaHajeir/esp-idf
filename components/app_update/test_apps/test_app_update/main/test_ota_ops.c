@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -43,28 +43,6 @@ TEST_CASE("esp_ota_begin() verifies arguments", "[ota]")
     /* non existent partition fails */
     TEST_ASSERT_EQUAL_HEX(ESP_ERR_NOT_FOUND, esp_ota_begin(&partition, OTA_SIZE_UNKNOWN, &handle));
     TEST_ASSERT_EQUAL(0, handle);
-}
-
-TEST_CASE("esp_ota_begin() failed erase does not leak the entry", "[ota]")
-{
-    const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
-    TEST_ASSERT_NOT_NULL(partition);
-
-    esp_ota_handle_t handle = 0;
-
-    /* image larger than partition makes the erase fail */
-    esp_err_t err = esp_ota_begin(partition, partition->size + partition->erase_size, &handle);
-    TEST_ASSERT_EQUAL_HEX(ESP_ERR_INVALID_SIZE, err);
-    /* failed begin must not return a live handle */
-    TEST_ASSERT_EQUAL(0, handle);
-
-    /* second begin must succeed, the failed one left no entry behind */
-    err = esp_ota_begin(partition, OTA_WITH_SEQUENTIAL_WRITES, &handle);
-    TEST_ASSERT_EQUAL_HEX(ESP_OK, err);
-    TEST_ASSERT_NOT_EQUAL(0, handle);
-
-    /* clean up so later tests start from a free entry list */
-    TEST_ESP_OK(esp_ota_abort(handle));
 }
 
 TEST_CASE("esp_ota_get_next_update_partition logic", "[ota]")

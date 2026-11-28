@@ -8,7 +8,7 @@
 */
 #include <stdio.h>
 #include <sys/fcntl.h>
-#include <errno.h>
+#include <sys/errno.h>
 #include <sys/unistd.h>
 #include <sys/param.h>
 #include <sys/select.h>

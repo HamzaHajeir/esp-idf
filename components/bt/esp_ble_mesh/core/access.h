@@ -15,8 +15,6 @@
 extern "C" {
 #endif
 
-#define BLE_MESH_MODEL_MAX_ELEM_COUNT 255
-
 /* bt_mesh_model.flags */
 enum {
     BLE_MESH_MOD_BIND_PENDING = BIT(0),

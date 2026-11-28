@@ -1,3 +1,0 @@
-CompileFlags:
-  BuiltinHeaders: QueryDriver
-  Remove: [-m*, -f*]

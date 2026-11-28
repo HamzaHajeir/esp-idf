@@ -11,13 +11,11 @@ if(CONFIG_SOC_SDMMC_HOST_SUPPORTED)
                      "sdmmc_test_discard_sd.c"
                      "sdmmc_test_sanitize_sd.c"
                      "sdmmc_test_various_cmds.c"
-                     "sdmmc_test_dma_recovery_sd.c"
                      "sdmmc_test_card_init.c")
 endif()
 
 set(priv_requires "sdmmc"
                   "esp_driver_sdmmc"
-                  "esp_psram"
                   "sdmmc_test_boards"
                   "common_test_flows"
                   "unity"

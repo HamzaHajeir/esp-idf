@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -99,9 +99,6 @@ TEST_CASE("gptimer_etm_alarm_event_with_interrupt_enabled", "[gptimer][etm]")
     TEST_ESP_OK(gptimer_disable(gptimer));
     TEST_ESP_OK(gptimer_del_timer(gptimer));
 
-    // reset gpio
-    TEST_ESP_OK(gpio_reset_pin(output_gpio));
-
     // delete etm primitives
     TEST_ESP_OK(gpio_etm_task_rm_gpio(gpio_task, output_gpio));
     TEST_ESP_OK(esp_etm_del_task(gpio_task));
@@ -186,9 +183,6 @@ TEST_CASE("gptimer_etm_alarm_event_without_interrupt", "[gptimer][etm]")
     TEST_ESP_OK(gptimer_stop(gptimer));
     TEST_ESP_OK(gptimer_disable(gptimer));
     TEST_ESP_OK(gptimer_del_timer(gptimer));
-
-    // reset gpio
-    TEST_ESP_OK(gpio_reset_pin(output_gpio));
 
     // delete etm primitives
     TEST_ESP_OK(gpio_etm_task_rm_gpio(gpio_task, output_gpio));
@@ -288,9 +282,6 @@ TEST_CASE("gptimer_auto_reload_by_etm", "[gptimer][etm]")
     TEST_ESP_OK(gptimer_disable(gptimer));
     TEST_ESP_OK(gptimer_del_timer(gptimer));
 
-    // reset gpio
-    TEST_ESP_OK(gpio_reset_pin(output_gpio));
-
     // delete etm primitives
     TEST_ESP_OK(gpio_etm_task_rm_gpio(gpio_task, output_gpio));
     TEST_ESP_OK(esp_etm_del_task(gpio_task));
@@ -374,9 +365,6 @@ TEST_CASE("gptimer_etm_task_capture", "[gptimer][etm]")
     TEST_ESP_OK(gptimer_stop(gptimer));
     TEST_ESP_OK(gptimer_disable(gptimer));
     TEST_ESP_OK(gptimer_del_timer(gptimer));
-
-    // reset gpio
-    TEST_ESP_OK(gpio_reset_pin(input_gpio));
 
     // delete etm primitives
     TEST_ESP_OK(esp_etm_del_task(gptimer_task));
@@ -469,9 +457,6 @@ TEST_CASE("gptimer_start_stop_by_etm_task", "[gptimer][etm]")
     // delete gptimer
     TEST_ESP_OK(gptimer_disable(gptimer));
     TEST_ESP_OK(gptimer_del_timer(gptimer));
-
-    // reset gpio
-    TEST_ESP_OK(gpio_reset_pin(input_gpio));
 
     // delete etm primitives
     TEST_ESP_OK(esp_etm_del_task(gptimer_task_start));

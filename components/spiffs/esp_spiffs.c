@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
-#include <errno.h>
+#include <sys/errno.h>
 #include <sys/fcntl.h>
 #include <sys/lock.h>
 #include "esp_vfs.h"
@@ -746,15 +746,7 @@ static int vfs_spiffs_readdir_r(void* ctx, DIR* pdir, struct dirent* entry,
     char * item_name;
     do {
         if (SPIFFS_readdir(&dir->d, &out) == 0) {
-            s32_t spiffs_res = SPIFFS_errno(efs->fs);
-            switch (spiffs_res) {
-                case SPIFFS_ERR_END_OF_OBJECT:
-                    errno = 0;
-                    break;
-                default:
-                    errno = spiffs_res_to_errno(spiffs_res);
-                    break;
-            }
+            errno = spiffs_res_to_errno(SPIFFS_errno(efs->fs));
             SPIFFS_clearerr(efs->fs);
             if (!errno) {
                 *out_dirent = NULL;

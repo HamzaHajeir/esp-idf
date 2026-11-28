@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
 import http.server
@@ -14,16 +14,14 @@ import pexpect
 import pytest
 from common_test_methods import get_env_config_variable
 from common_test_methods import get_host_ip4_by_dest_ip
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric import utils
+from ecdsa.curves import NIST256p
+from ecdsa.keys import VerifyingKey
+from ecdsa.util import sigdecode_der
 from pytest_embedded import Dut
 from pytest_embedded_idf.utils import idf_parametrize
 
-TEST_TARGETS = ['esp32c6', 'esp32c5', 'esp32c61', 'esp32h2']
-
-TEST_TARGETS_OTA = ['esp32c6', 'esp32c5', 'esp32c61']
+TESTING_TARGETS = ['esp32c6', 'esp32c5', 'esp32c61']
 
 TEST_MSG = 'hello world'
 
@@ -36,22 +34,8 @@ key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_certs/
 ###########################
 
 
-def verify_p256_signature(pubkey: bytes, signature_der: bytes, digest: bytes) -> bool:
-    """Verify a NIST P-256 signature over an already-computed SHA-256 digest.
-
-    `pubkey` is a SEC1 point, compressed or uncompressed; `signature_der` is DER
-    encoded.
-    """
-    key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), pubkey)
-    try:
-        key.verify(signature_der, digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
-    except InvalidSignature:
-        return False
-    return True
-
-
 @pytest.mark.generic
-@idf_parametrize('target', TEST_TARGETS, indirect=['target'])
+@idf_parametrize('target', TESTING_TARGETS, indirect=['target'])
 def test_tee_cli_secure_storage(dut: Dut) -> None:
     # Dumping the REE binary size
     binary_file = os.path.join(dut.app.binary_path, 'tee_cli.bin')
@@ -80,11 +64,8 @@ def test_tee_cli_secure_storage(dut: Dut) -> None:
         test_msg_pubkey = dut.expect(r'Public key \(Uncompressed\) -\s*([0-9a-fA-F]{130})', timeout=30)[1].decode()
         dut.expect('Signature verified successfully', timeout=30)
 
-        sign = bytes.fromhex(test_msg_sign)
-        signature = utils.encode_dss_signature(
-            int.from_bytes(sign[: len(sign) // 2], 'big'), int.from_bytes(sign[len(sign) // 2 :], 'big')
-        )
-        assert verify_p256_signature(bytes.fromhex(test_msg_pubkey), signature, bytes.fromhex(test_msg_hash))
+        vk = VerifyingKey.from_string(bytes.fromhex(test_msg_pubkey), curve=NIST256p, hashfunc=hashlib.sha256)
+        assert vk.verify_digest(bytes.fromhex(test_msg_sign), bytes.fromhex(test_msg_hash))
         time.sleep(1)
 
     # Test out the TEE secure storage workflow - Encryption and decryption
@@ -94,10 +75,9 @@ def test_tee_cli_secure_storage(dut: Dut) -> None:
 
         dut.write(f'tee_sec_stg_encrypt {sec_stg_key_ids.get(i)} {test_msg_hash}')
         test_msg_cipher = dut.expect(r'Ciphertext -\s*([0-9a-fA-F]{64})', timeout=30)[1].decode()
-        test_msg_iv = dut.expect(r'IV -\s*([0-9a-fA-F]{24})', timeout=30)[1].decode()
         test_msg_tag = dut.expect(r'Tag -\s*([0-9a-fA-F]{32})', timeout=30)[1].decode()
 
-        dut.write(f'tee_sec_stg_decrypt {sec_stg_key_ids.get(i)} {test_msg_cipher} {test_msg_iv} {test_msg_tag}')
+        dut.write(f'tee_sec_stg_decrypt {sec_stg_key_ids.get(i)} {test_msg_cipher} {test_msg_tag}')
         test_msg_decipher = dut.expect(r'Decrypted plaintext -\s*([0-9a-fA-F]{64})', timeout=30)[1].decode()
 
         assert test_msg_decipher == test_msg_hash
@@ -136,11 +116,12 @@ def verify_att_token_signature(att_tk: str) -> Any:
     signature = utils.encode_dss_signature(int.from_bytes(tk_sign_r, 'big'), int.from_bytes(tk_sign_s, 'big'))
 
     # Uncompress the public key and verify the signature
-    return verify_p256_signature(tk_pubkey_c, signature, digest)
+    vk = VerifyingKey.from_string(tk_pubkey_c, NIST256p, hashfunc=hashlib.sha256)
+    return vk.verify_digest(signature, digest, sigdecode=sigdecode_der)
 
 
 @pytest.mark.generic
-@idf_parametrize('target', TEST_TARGETS, indirect=['target'])
+@idf_parametrize('target', TESTING_TARGETS, indirect=['target'])
 def test_tee_cli_attestation(dut: Dut) -> None:
     # Dumping the REE binary size
     binary_file = os.path.join(dut.app.binary_path, 'tee_cli.bin')
@@ -150,6 +131,10 @@ def test_tee_cli_attestation(dut: Dut) -> None:
     # Starting the test
     dut.expect('ESP-TEE: Secure services demonstration', timeout=30)
     time.sleep(1)
+
+    att_key_id = dut.app.sdkconfig.get('SECURE_TEE_ATT_KEY_STR_ID')
+    dut.write(f'tee_sec_stg_gen_key {att_key_id} 1')
+    dut.expect(r'Generated ECDSA_SECP256R1 key with ID (\S+)', timeout=30)
 
     # Get the Entity Attestation token from TEE and verify its signature
     dut.write('tee_att_info')
@@ -178,7 +163,7 @@ def start_https_server(ota_image_dir: str, server_ip: str, server_port: int) -> 
 
 
 @pytest.mark.wifi_high_traffic
-@idf_parametrize('target', TEST_TARGETS_OTA, indirect=['target'])
+@idf_parametrize('target', TESTING_TARGETS, indirect=['target'])
 def test_tee_cli_secure_ota_wifi(dut: Dut) -> None:
     """
     This is a positive test case, which downloads complete binary file multiple number of times.
@@ -253,8 +238,7 @@ def test_tee_cli_secure_ota_wifi(dut: Dut) -> None:
                     raise ValueError('Updated user app is not running')
             else:
                 dut.write(f'tee_ota https://{host_ip}:{str(server_port)}/{tee_bin}')
-                # NOTE: esp_tee_ota_end() restarts the device; the offset check in
-                # the next iteration confirms the update
+                dut.expect('esp_tee_ota_end succeeded', timeout=150)
                 dut.expect('Prepare to restart system!', timeout=150)
 
     finally:

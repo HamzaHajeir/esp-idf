@@ -1,16 +1,15 @@
 /**
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  *  SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define DR_REG_I2C_BASE(i)                         (DR_REG_I2C0_BASE + (i) * 0x1000)
 
 /** I2C_SCL_LOW_PERIOD_REG register
  *  Configures the low level width of the SCL Clock
@@ -1141,10 +1140,10 @@ extern "C" {
  *  Configures command 0.
  *  It consists of three parts:
  *  op_code is the command
- *  6: RSTART
+ *  0: RSTART
  *  1: WRITE
- *  3: READ
- *  2: STOP
+ *  2: READ
+ *  3: STOP
  *  4: END.
  *  Byte_num represents the number of bytes that need to be sent or received.
  *  ack_check_en, ack_exp, and ack are used to control the ACK bit. See I2C cmd

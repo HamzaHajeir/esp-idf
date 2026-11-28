@@ -1,11 +1,10 @@
-# SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 import os.path
 
 import pytest
 from pytest_embedded_idf.dut import IdfDut
 from pytest_embedded_idf.utils import idf_parametrize
-from pytest_embedded_idf.utils import soc_filtered_targets
 
 # @pytest.mark.supported_targets
 # This test should support all targets, even between different target types
@@ -34,7 +33,7 @@ from pytest_embedded_idf.utils import soc_filtered_targets
 )
 @idf_parametrize(
     'target',
-    soc_filtered_targets('SOC_WIFI_SUPPORTED == 1 and IDF_TARGET not in ["esp32c2"]'),
+    ['esp32', 'esp32c3', 'esp32s2', 'esp32s3', 'esp32c5', 'esp32c6', 'esp32c61'],
     indirect=['target'],
 )
 def test_wifi_getting_started(dut: tuple[IdfDut, IdfDut]) -> None:
@@ -85,13 +84,13 @@ def test_wifi_getting_started_esp32c2_xtal_26mhz(dut: tuple[IdfDut, IdfDut]) -> 
 
 @pytest.mark.two_duts
 @pytest.mark.xtal_26mhz
-@pytest.mark.esp32c2_rev2
+@pytest.mark.esp32c2eco4
 @pytest.mark.parametrize(
     'count, config, baud, app_path',
     [
         (
             2,
-            'esp32c2_rev2_xtal26m',
+            'esp32c2eco4_xtal26m',
             '74880',
             f'{os.path.join(os.path.dirname(__file__), "softAP")}|{os.path.join(os.path.dirname(__file__), "station")}',
         ),
@@ -99,7 +98,7 @@ def test_wifi_getting_started_esp32c2_xtal_26mhz(dut: tuple[IdfDut, IdfDut]) -> 
     indirect=True,
 )
 @idf_parametrize('target', ['esp32c2'], indirect=['target'])
-def test_wifi_getting_started_esp32c2_rev2_xtal_26mhz(dut: tuple[IdfDut, IdfDut]) -> None:
+def test_wifi_getting_started_esp32c2eco4_xtal_26mhz(dut: tuple[IdfDut, IdfDut]) -> None:
     softap = dut[0]
     station = dut[1]
 
@@ -116,20 +115,20 @@ def test_wifi_getting_started_esp32c2_rev2_xtal_26mhz(dut: tuple[IdfDut, IdfDut]
 
 
 @pytest.mark.two_duts
-@pytest.mark.esp32c3_rev1
+@pytest.mark.esp32c3eco7
 @pytest.mark.parametrize(
     'count, config, app_path',
     [
         (
             2,
-            'esp32c3_rev1',
+            'esp32c3eco7',
             f'{os.path.join(os.path.dirname(__file__), "softAP")}|{os.path.join(os.path.dirname(__file__), "station")}',
         ),
     ],
     indirect=True,
 )
 @idf_parametrize('target', ['esp32c3'], indirect=['target'])
-def test_wifi_getting_started_esp32c3_rev1(dut: tuple[IdfDut, IdfDut]) -> None:
+def test_wifi_getting_started_esp32c3eco7(dut: tuple[IdfDut, IdfDut]) -> None:
     softap = dut[0]
     station = dut[1]
 

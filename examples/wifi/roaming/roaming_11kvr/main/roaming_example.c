@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -19,8 +19,6 @@
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include <sys/time.h>
-
-#define BTM_QUERY_REASON_LOW_RSSI 16
 
 /* Configuration */
 #define EXAMPLE_WIFI_SSID CONFIG_EXAMPLE_WIFI_SSID
@@ -327,7 +325,7 @@ static void esp_neighbor_report_recv_handler(void* arg, esp_event_base_t event_b
     g_neighbor_report_active = false;
     uint8_t cand_list = 0;
     wifi_event_neighbor_report_t *neighbor_report_event = (wifi_event_neighbor_report_t*)event_data;
-    uint8_t *pos = (uint8_t *)neighbor_report_event->n_report;
+    uint8_t *pos = (uint8_t *)neighbor_report_event->report;
     char * neighbor_list = NULL;
     if (!pos) {
         ESP_LOGE(TAG, "Neighbor report is empty");
@@ -345,19 +343,19 @@ static void esp_neighbor_report_recv_handler(void* arg, esp_event_base_t event_b
         /* issue scan */
         wifi_scan_config_t params;
         memset(&params, 0, sizeof(wifi_scan_config_t));
-        if (esp_wifi_scan_start(&params, true) != ESP_OK) {
-            goto cleanup;
-        }
-        /* cleanup from net802.11 */
+        if (esp_wifi_scan_start(&params, true) < 0) {
+		    goto cleanup;
+	    }
+	    /* cleanup from net802.11 */
         esp_wifi_clear_ap_list();
         cand_list = 1;
-    }
-    /* send AP btm query, this will cause STA to roam as well */
-    esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, neighbor_list, cand_list);
+	}
+	/* send AP btm query, this will cause STA to roam as well */
+	esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, neighbor_list, cand_list);
 cleanup:
-    if (neighbor_list) {
-        free(neighbor_list);
-    }
+	if (neighbor_list)
+		free(neighbor_list);
+
 }
 
 #if EXAMPLE_WIFI_RSSI_THRESHOLD
@@ -371,8 +369,7 @@ static void esp_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
 	if (esp_rrm_send_neighbor_report_request() < 0) {
 		/* failed to send neighbor report request */
 		ESP_LOGI(TAG, "failed to send neighbor report request");
-		if (esp_wnm_send_bss_transition_mgmt_query((enum btm_query_reason)BTM_QUERY_REASON_LOW_RSSI,
-							   NULL, 0) < 0) {
+		if (esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0) < 0) {
 			ESP_LOGI(TAG, "failed to send btm query");
 		}
 	} else {

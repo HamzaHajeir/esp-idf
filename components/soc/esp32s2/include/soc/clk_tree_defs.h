@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -35,22 +35,11 @@ extern "C" {
  *    XTAL32K_CLK can also be calibrated to get its exact frequency.
  */
 
-/* The pin number to connect the external 32kHz crystal clock (XTAL32K_CLK) */
-#define SOC_XTAL32K_P_GPIO_NUM              15
-#define SOC_XTAL32K_N_GPIO_NUM              16
-
 /* With the default value of CK8M_DFREQ = 172, RC_FAST clock frequency is 8.5 MHz +/- 7% */
 #define SOC_CLK_RC_FAST_FREQ_APPROX         8500000                             /*!< Approximate RC_FAST_CLK frequency in Hz */
 #define SOC_CLK_RC_SLOW_FREQ_APPROX         90000                               /*!< Approximate RC_SLOW_CLK frequency in Hz */
-#define SOC_CLK_RC_SLOW_SUPPORT_CALIBRATION (1)     /*!< RC_SLOW_CLK frequency can be measured with CLK_CAL_RC_SLOW */
 #define SOC_CLK_RC_FAST_D256_FREQ_APPROX    (SOC_CLK_RC_FAST_FREQ_APPROX / 256) /*!< Approximate RC_FAST_D256_CLK frequency in Hz */
 #define SOC_CLK_XTAL32K_FREQ_APPROX         32768                               /*!< Approximate XTAL32K_CLK frequency in Hz */
-
-/* Default clock accuracy values in ppm (parts per million) at different observation durations */
-/* Row order: 1 s, 10 s, 30 s, 60 s */
-#define SOC_CLK_RC_FAST_ACCURACY_PPM_DEFAULTS    { (1008), (1351), (2513), (3859) }
-#define SOC_CLK_RC_SLOW_ACCURACY_PPM_DEFAULTS    { (4076), (5114), (7106), (11294) }
-#define SOC_CLK_CRYSTAL_ACCURACY_PPM_DEFAULTS    { (500), (500), (500), (500) }
 
 // Naming convention: SOC_ROOT_CLK_{loc}_{type}_[attr]
 // {loc}: EXT, INT
@@ -64,7 +53,6 @@ typedef enum {
     SOC_ROOT_CLK_INT_RC_SLOW,          /*!< Internal 90kHz RC oscillator */
     SOC_ROOT_CLK_EXT_XTAL,             /*!< External 40MHz crystal */
     SOC_ROOT_CLK_EXT_XTAL32K,          /*!< External 32kHz crystal/clock signal */
-    SOC_ROOT_CLK_SRC_NUM,              /*!< Number of root clock sources */
 } soc_root_clk_t;
 
 /**
@@ -148,7 +136,6 @@ typedef enum {
     SOC_MOD_CLK_REF_TICK,                      /*!< REF_TICK is derived from XTAL or RC_FAST via a divider, it has a fixed frequency of 1MHz by default */
     SOC_MOD_CLK_APLL,                          /*!< APLL is sourced from PLL, and its frequency is configurable through APLL configuration registers */
     SOC_MOD_CLK_TEMP_SENSOR,                   /*!< TEMP_SENSOR_CLK comes directly from the internal 8MHz rc oscillator */
-    SOC_MOD_CLK_RC_SLOW,                       /*!< RC_SLOW_CLK comes from the internal RC slow oscillator */
     SOC_MOD_CLK_INVALID,                       /*!< Indication of the end of the available module clock sources */
 } soc_module_clk_t;
 
@@ -238,14 +225,14 @@ typedef enum {
 /**
  * @brief Array initializer for all supported clock sources of Temperature Sensor
  */
-#define SOC_TEMP_SENSOR_CLKS {SOC_MOD_CLK_RC_FAST}
+#define SOC_TEMP_SENSOR_CLKS {SOC_MOD_CLK_TEMP_SENSOR}
 
 /**
  * @brief Type of Temp Sensor clock source
  */
 typedef enum {
-    TEMPERATURE_SENSOR_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST, /*!< Select RC_FAST as the source clock */
-    TEMPERATURE_SENSOR_CLK_SRC_DEFAULT = SOC_MOD_CLK_RC_FAST, /*!< Select RC_FAST as the default choice */
+    TEMPERATURE_SENSOR_CLK_SRC_RC_FAST = SOC_MOD_CLK_TEMP_SENSOR, /*!< Select RC_FAST as the source clock */
+    TEMPERATURE_SENSOR_CLK_SRC_DEFAULT = SOC_MOD_CLK_TEMP_SENSOR, /*!< Select RC_FAST as the default choice */
 } soc_periph_temperature_sensor_clk_src_t;
 
 ///////////////////////////////////////////////////UART/////////////////////////////////////////////////////////////////
@@ -373,19 +360,6 @@ typedef enum {
     DAC_COSINE_CLK_SRC_DEFAULT = SOC_MOD_CLK_RTC_FAST,  /*!< Select RTC FAST as the default source clock */
 } soc_periph_dac_cosine_clk_src_t;
 
-/**
- * @brief Array initializer for all supported clock sources of DAC oneshot output
- */
-#define SOC_DAC_ONESHOT_CLKS {SOC_MOD_CLK_RTC_FAST}
-
-/**
- * @brief DAC oneshot clock source
- */
-typedef enum {
-    DAC_ONESHOT_CLK_SRC_RTC_FAST = SOC_MOD_CLK_RTC_FAST, /*!< Select RTC FAST as the source clock */
-    DAC_ONESHOT_CLK_SRC_DEFAULT = SOC_MOD_CLK_RTC_FAST,  /*!< Select RTC FAST as the default source clock */
-} soc_periph_dac_oneshot_clk_src_t;
-
 //////////////////////////////////////////////////TWAI/////////////////////////////////////////////////////////////////
 
 /**
@@ -451,7 +425,6 @@ typedef enum {
  * @brief Array initializer for all supported clock sources of LEDC
  */
 #define SOC_LEDC_CLKS {SOC_MOD_CLK_XTAL, SOC_MOD_CLK_APB, SOC_MOD_CLK_RC_FAST, SOC_MOD_CLK_REF_TICK}
-#define SOC_LEDC_CLK_STRS {"LEDC_USE_XTAL_CLK", "LEDC_USE_APB_CLK", "LEDC_USE_RC_FAST_CLK", "LEDC_USE_REF_TICK"}
 
 /**
  * @brief Type of LEDC clock source, reserved for the legacy LEDC driver

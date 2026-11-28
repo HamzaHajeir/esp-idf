@@ -9,37 +9,17 @@
 #include "osi/mutex.h"
 
 
+STAILQ_HEAD(pkt_queue_header, pkt_linked_item);
+
 struct pkt_queue {
     osi_mutex_t lock;
-    slist_t *list;
+    size_t length;
+    struct pkt_queue_header header;
 } pkt_queue_t;
-
-static slist_node_t *pkt_queue_node(pkt_linked_item_t *item)
-{
-    return &item->node;
-}
-
-static pkt_linked_item_t *pkt_queue_item(slist_node_t *node)
-{
-    return (pkt_linked_item_t *)node;
-}
-
-static pkt_linked_item_t *pkt_queue_take_front(struct pkt_queue *queue)
-{
-    slist_node_t *node;
-
-    if (slist_is_empty(queue->list)) {
-        return NULL;
-    }
-
-    node = slist_front(queue->list);
-    slist_delete(queue->list, node);
-    return pkt_queue_item(node);
-}
 
 struct pkt_queue *pkt_queue_create(void)
 {
-    struct pkt_queue *queue = osi_calloc(sizeof(struct pkt_queue));
+    struct pkt_queue *queue = calloc(1, sizeof(struct pkt_queue));
     if (queue == NULL) {
         return NULL;
     }
@@ -47,12 +27,8 @@ struct pkt_queue *pkt_queue_create(void)
         osi_free(queue);
         return NULL;
     }
-    queue->list = slist_new(NULL);
-    if (queue->list == NULL) {
-        osi_mutex_free(&queue->lock);
-        osi_free(queue);
-        return NULL;
-    }
+    struct pkt_queue_header *p = &queue->header;
+    STAILQ_INIT(p);
 
     return queue;
 }
@@ -63,12 +39,20 @@ static void pkt_queue_cleanup(struct pkt_queue *queue, pkt_queue_free_cb free_cb
         return;
     }
 
-    pkt_queue_free_cb free_func = (free_cb != NULL) ? free_cb : (pkt_queue_free_cb)osi_free_func;
-    pkt_linked_item_t *item;
+    struct pkt_queue_header *header = &queue->header;
+    pkt_linked_item_t *item = STAILQ_FIRST(header);
+    pkt_linked_item_t *tmp;
 
-    while ((item = pkt_queue_take_front(queue)) != NULL) {
+    pkt_queue_free_cb free_func = (free_cb != NULL) ? free_cb : (pkt_queue_free_cb)osi_free_func;
+
+    while (item != NULL) {
+        tmp = STAILQ_NEXT(item, next);
         free_func(item);
+        item = tmp;
+        queue->length--;
     }
+    STAILQ_INIT(header);
+    queue->length = 0;
 }
 
 void pkt_queue_flush(struct pkt_queue *queue, pkt_queue_free_cb free_cb)
@@ -90,56 +74,46 @@ void pkt_queue_destroy(struct pkt_queue *queue, pkt_queue_free_cb free_cb)
     pkt_queue_cleanup(queue, free_cb);
     osi_mutex_unlock(&queue->lock);
 
-    slist_free(queue->list);
     osi_mutex_free(&queue->lock);
     osi_free(queue);
 }
 
-pkt_linked_item_t *pkt_queue_dequeue_and_len(struct pkt_queue *queue, size_t *out_len)
+pkt_linked_item_t *pkt_queue_dequeue(struct pkt_queue *queue)
 {
-    if (queue == NULL) {
-        if (out_len != NULL) {
-            *out_len = 0;
-        }
+    if (queue == NULL || queue->length == 0) {
         return NULL;
     }
 
-    pkt_linked_item_t *item;
-
+    struct pkt_linked_item *item;
+    struct pkt_queue_header *header;
     osi_mutex_lock(&queue->lock, OSI_MUTEX_MAX_TIMEOUT);
-    item = pkt_queue_take_front(queue);
-    if (out_len != NULL) {
-        *out_len = slist_length(queue->list);
+    header = &queue->header;
+    item = STAILQ_FIRST(header);
+    if (item != NULL) {
+        STAILQ_REMOVE_HEAD(header, next);
+        if (queue->length > 0) {
+            queue->length--;
+        }
     }
     osi_mutex_unlock(&queue->lock);
 
     return item;
 }
 
-pkt_linked_item_t *pkt_queue_dequeue(struct pkt_queue *queue)
-{
-    return pkt_queue_dequeue_and_len(queue, NULL);
-}
-
-bool pkt_queue_enqueue_and_len(struct pkt_queue *queue, pkt_linked_item_t *item, size_t *out_len)
+bool pkt_queue_enqueue(struct pkt_queue *queue, pkt_linked_item_t *item)
 {
     if (queue == NULL || item == NULL) {
         return false;
     }
 
+    struct pkt_queue_header *header;
     osi_mutex_lock(&queue->lock, OSI_MUTEX_MAX_TIMEOUT);
-    slist_append(queue->list, pkt_queue_node(item));
-    if (out_len != NULL) {
-        *out_len = slist_length(queue->list);
-    }
+    header = &queue->header;
+    STAILQ_INSERT_TAIL(header, item, next);
+    queue->length++;
     osi_mutex_unlock(&queue->lock);
 
     return true;
-}
-
-bool pkt_queue_enqueue(struct pkt_queue *queue, pkt_linked_item_t *item)
-{
-    return pkt_queue_enqueue_and_len(queue, item, NULL);
 }
 
 size_t pkt_queue_length(const struct pkt_queue *queue)
@@ -147,7 +121,7 @@ size_t pkt_queue_length(const struct pkt_queue *queue)
     if (queue == NULL) {
         return 0;
     }
-    return slist_length(queue->list);
+    return queue->length;
 }
 
 bool pkt_queue_is_empty(const struct pkt_queue *queue)
@@ -161,11 +135,11 @@ pkt_linked_item_t *pkt_queue_try_peek_first(struct pkt_queue *queue)
         return NULL;
     }
 
-    slist_node_t *node;
-
+    struct pkt_queue_header *header = &queue->header;
+    pkt_linked_item_t *item;
     osi_mutex_lock(&queue->lock, OSI_MUTEX_MAX_TIMEOUT);
-    node = slist_is_empty(queue->list) ? NULL : slist_front(queue->list);
+    item = STAILQ_FIRST(header);
     osi_mutex_unlock(&queue->lock);
 
-    return pkt_queue_item(node);
+    return item;
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,28 +36,21 @@ static bool esp_sdp_record_integrity_check(esp_bluetooth_sdp_record_t *record)
         case ESP_SDP_TYPE_MAP_MAS:
             if ((record->mas.mas_instance_id >> 8) || (record->mas.supported_message_types >> 8)) {
                 LOG_ERROR("mas_instance_id and supported_message_types are defined as uint8_t in the spec!\n");
-                ret = false;
+               ret = false;
             }
             break;
         case ESP_SDP_TYPE_PBAP_PSE:
             if (record->pse.supported_repositories >> 8) {
                 LOG_ERROR("supported_repositories is defined in the spec as uint8_t!\n");
-                ret = false;
+               ret = false;
             }
             break;
-
-        case ESP_SDP_TYPE_OPP_SERVER:
-            if (record->ops.supported_formats_list_len <= 0 || record->ops.supported_formats_list_len > SDP_OPP_SUPPORTED_FORMATS_MAX_LENGTH) {
-                LOG_ERROR("Invalid supported_formats_list_len in record ops!\n");
-                ret = false;
-            }
 
         default:
             break;
         }
         if (record->hdr.type != ESP_SDP_TYPE_DIP_SERVER) {
-            if (record->hdr.service_name == NULL ||
-                record->hdr.service_name_length > ESP_SDP_SERVER_NAME_MAX ||
+            if (record->hdr.service_name_length > ESP_SDP_SERVER_NAME_MAX ||
                 strlen(record->hdr.service_name) + 1 != record->hdr.service_name_length) {
                 LOG_ERROR("Invalid server name!\n");
                 ret = false;
@@ -76,23 +69,26 @@ esp_err_t esp_sdp_register_callback(esp_sdp_cb_t callback)
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
 
     if (callback == NULL) {
-        return ESP_ERR_INVALID_ARG;
+        return ESP_FAIL;
     }
 
-    int ret = btc_profile_cb_set(BTC_PID_SDP, callback);
-    return (ret == 0) ? ESP_OK : ESP_FAIL;
+    btc_profile_cb_set(BTC_PID_SDP, callback);
+    return ESP_OK;
 }
 
 esp_err_t esp_sdp_init(void)
 {
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
 
-    btc_msg_t msg = {0};
+    btc_msg_t msg;
+    bt_status_t stat;
+
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_SDP;
     msg.act = BTC_SDP_ACT_INIT;
 
-    bt_status_t stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
+    /* Switch to BTC context */
+    stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
@@ -100,12 +96,15 @@ esp_err_t esp_sdp_deinit(void)
 {
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
 
-    btc_msg_t msg = {0};
+    btc_msg_t msg;
+    bt_status_t stat;
+
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_SDP;
     msg.act = BTC_SDP_ACT_DEINIT;
 
-    bt_status_t stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
+    /* Switch to BTC context */
+    stat = btc_transfer_context(&msg, NULL, 0, NULL, NULL);
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
@@ -113,25 +112,21 @@ esp_err_t esp_sdp_search_record(esp_bd_addr_t bd_addr, esp_bt_uuid_t uuid)
 {
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
 
-    if (bd_addr == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
+    btc_msg_t msg;
+    bt_status_t stat;
+    btc_sdp_args_t arg;
 
-    if (uuid.len != ESP_UUID_LEN_16 && uuid.len != ESP_UUID_LEN_32 && uuid.len != ESP_UUID_LEN_128) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    btc_msg_t msg = {0};
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_SDP;
     msg.act = BTC_SDP_ACT_SEARCH;
 
-    btc_sdp_args_t arg = {0};
+    memset(&arg, 0, sizeof(btc_sdp_args_t));
     memcpy(arg.search.bd_addr, bd_addr, ESP_BD_ADDR_LEN);
     arg.search.sdp_uuid.len = uuid.len;
     memcpy(&arg.search.sdp_uuid.uu, &uuid.uuid, sizeof(uuid.uuid));
 
-    bt_status_t stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t), NULL, NULL);
+    /* Switch to BTC context */
+    stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t), NULL, NULL);
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
@@ -143,16 +138,20 @@ esp_err_t esp_sdp_create_record(esp_bluetooth_sdp_record_t *record)
         return ESP_ERR_INVALID_ARG;
     }
 
-    btc_msg_t msg = {0};
+    btc_msg_t msg;
+    bt_status_t stat;
+    btc_sdp_args_t arg;
+
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_SDP;
     msg.act = BTC_SDP_ACT_CREATE_RECORD;
 
-    btc_sdp_args_t arg = {0};
+    memset(&arg, 0, sizeof(btc_sdp_args_t));
     arg.create_record.record = (bluetooth_sdp_record *)record;
 
-    bt_status_t stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t),
-                                            btc_sdp_arg_deep_copy, btc_sdp_arg_deep_free);
+    /* Switch to BTC context */
+    stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t),
+                                    btc_sdp_arg_deep_copy, btc_sdp_arg_deep_free);
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
@@ -160,22 +159,24 @@ esp_err_t esp_sdp_remove_record(int record_handle)
 {
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
 
-    btc_msg_t msg = {0};
+    btc_msg_t msg;
+    bt_status_t stat;
+    btc_sdp_args_t arg;
+
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_SDP;
     msg.act = BTC_SDP_ACT_REMOVE_RECORD;
 
-    btc_sdp_args_t arg = {0};
     arg.remove_record.record_handle = record_handle;
 
-    bt_status_t stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t), NULL, NULL);
+    /* Switch to BTC context */
+    stat = btc_transfer_context(&msg, &arg, sizeof(btc_sdp_args_t), NULL, NULL);
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t esp_sdp_get_protocol_status(esp_sdp_protocol_status_t *status)
 {
     ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
-
     if (status == NULL) {
         return ESP_ERR_INVALID_ARG;
     }

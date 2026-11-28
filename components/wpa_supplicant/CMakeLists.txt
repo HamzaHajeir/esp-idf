@@ -53,7 +53,6 @@ set(srcs "port/os_xtensa.c"
     "src/eap_peer/eap_mschapv2.c"
     "src/eap_peer/eap_peap.c"
     "src/eap_peer/eap_peap_common.c"
-    "src/eap_peer/eap_gtc.c"
     "src/eap_peer/eap_tls.c"
     "src/eap_peer/eap_tls_common.c"
     "src/eap_peer/eap_ttls.c"
@@ -80,13 +79,13 @@ set(srcs "port/os_xtensa.c"
     "src/wps/wps_enrollee.c")
 
 set(esp_srcs "esp_supplicant/src/esp_eap_client.c"
+    "esp_supplicant/src/esp_wpa2_api_port.c"
     "esp_supplicant/src/esp_wpa_main.c"
     "esp_supplicant/src/esp_wpas_glue.c"
     "esp_supplicant/src/esp_common.c"
     "esp_supplicant/src/esp_wps.c"
     "esp_supplicant/src/esp_wpa3.c"
-    "esp_supplicant/src/esp_owe.c"
-    "esp_supplicant/src/esp_nan_supplicant.c")
+    "esp_supplicant/src/esp_owe.c")
 if(CONFIG_ESP_WIFI_SOFTAP_SUPPORT)
     set(esp_srcs ${esp_srcs} "esp_supplicant/src/esp_hostap.c")
 endif()
@@ -119,12 +118,8 @@ if(CONFIG_ESP_WIFI_MBEDTLS_CRYPTO)
     "esp_supplicant/src/crypto/crypto_mbedtls-bignum.c"
     "esp_supplicant/src/crypto/crypto_mbedtls-rsa.c"
     "esp_supplicant/src/crypto/crypto_mbedtls-ec.c")
-    if(CONFIG_MBEDTLS_HARDWARE_SHA)
-        if(NOT CONFIG_SOC_SHA_SUPPORT_PARALLEL_ENG)
-            list(APPEND crypto_src "esp_supplicant/src/crypto/fastpsk.c")
-        else()
-            list(APPEND crypto_src "esp_supplicant/src/crypto/fastpbkdf2.c")
-        endif()
+    if(NOT CONFIG_IDF_TARGET_ESP32)
+        list(APPEND crypto_src "esp_supplicant/src/crypto/fastpsk.c")
     endif()
     # Add internal RC4 as RC4 has been removed from mbedtls
     set(crypto_src ${crypto_src} "src/crypto/rc4.c")
@@ -135,6 +130,8 @@ if(CONFIG_ESP_WIFI_MBEDTLS_CRYPTO)
         set(crypto_src ${crypto_src} "src/crypto/sha1-pbkdf2.c"
                        ${crypto_src} "src/crypto/sha1.c"
                        ${crypto_src} "src/crypto/sha1-internal.c")
+    else()
+        set(crypto_src ${crypto_src} "esp_supplicant/src/crypto/fastpbkdf2.c")
     endif()
     if(NOT CONFIG_MBEDTLS_SHA1_C AND CONFIG_MBEDTLS_HARDWARE_SHA)
         set(crypto_src ${crypto_src} "src/crypto/sha1.c")
@@ -251,36 +248,20 @@ else()
     set(usd_src "")
 endif()
 
-if(CONFIG_ESP_WIFI_PASN_SUPPORT)
-    set(pasn_src
-    "src/pasn/pasn_common.c"
-    "src/pasn/pasn_initiator.c"
-    "src/pasn/pasn_responder.c")
-else()
-    set(pasn_src "")
-endif()
-
-if(CONFIG_ESP_WIFI_NAN_PAIRING)
-    set(nan_pair_src
-    "esp_supplicant/src/esp_nan_supplicant.c")
-else()
-    set(nan_pair_src "")
-endif()
-
 idf_component_register(SRCS "${srcs}" "${esp_srcs}" "${tls_src}" "${roaming_src}"
-                            "${crypto_src}" "${mbo_src}" "${dpp_src}" "${wps_registrar_src}"
-                            "${usd_src}" "${pasn_src}" "${nan_pair_src}"
+                            "${crypto_src}" "${mbo_src}" "${dpp_src}" "${wps_registrar_src}" "${usd_src}"
                     INCLUDE_DIRS include port/include esp_supplicant/include
-                    PRIV_INCLUDE_DIRS src src/utils src/common esp_supplicant/src src/crypto
+                    PRIV_INCLUDE_DIRS src src/utils esp_supplicant/src src/crypto
+                                      ../esp_wifi/wifi_apps/roaming_app/include
+                                      ../esp_wifi/wifi_apps/roaming_app/src
                                       esp_supplicant/include/esp_private
                     LDFRAGMENTS   ${linker_fragments}
                     PRIV_REQUIRES mbedtls esp_timer esp_wifi)
 
-idf_component_get_property(esp_wifi_dir esp_wifi COMPONENT_DIR)
-target_include_directories(${COMPONENT_LIB} BEFORE PRIVATE
-    "${esp_wifi_dir}/wifi_apps/roaming_app/include")
-
-idf_define_esp_err_codes(HEADERS esp_supplicant/include/esp_dpp.h esp_supplicant/include/esp_wps.h)
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-strict-aliasing -Wno-write-strings -Werror)
+if(CONFIG_COMPILER_STATIC_ANALYZER AND CMAKE_C_COMPILER_ID STREQUAL "GNU") # TODO IDF-10090
+    target_compile_options(${COMPONENT_LIB} PRIVATE "-fno-analyzer")
+endif()
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     __ets__
@@ -291,7 +272,6 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     EAP_TTLS
     EAP_TLS
     EAP_PEAP
-    EAP_GTC
     USE_WPA2_TASK
     CONFIG_WPS
     ESPRESSIF_USE
@@ -301,12 +281,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CONFIG_NO_RADIUS
     )
 
-if(CONFIG_MBEDTLS_HARDWARE_SHA)
-    if(NOT CONFIG_SOC_SHA_SUPPORT_PARALLEL_ENG)
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_FAST_PSK)
-    else()
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_FAST_PBKDF2)
-    endif()
+if(CONFIG_MBEDTLS_SHA1_C OR CONFIG_MBEDTLS_HARDWARE_SHA)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_FAST_PBKDF2)
 endif()
 
 if(CONFIG_ESP_WIFI_ENABLE_WPA3_SAE)
@@ -318,11 +294,7 @@ endif()
 if(CONFIG_ESP_WIFI_ENABLE_SAE_H2E)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_SAE_H2E)
 endif()
-# PASN reuses the SAE module (PWE/crypto + comeback-token mechanism), so
-# CONFIG_SAE must be defined whenever SoftAP-SAE or PASN is enabled. AP-side SAE
-# authentication paths are additionally gated on CONFIG_ESP_WIFI_SOFTAP_SUPPORT
-# in the sources so they stay out of PASN-only (SoftAP-disabled) builds.
-if(CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT OR CONFIG_ESP_WIFI_PASN_SUPPORT)
+if(CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_SAE)
 endif()
 if(CONFIG_ESP_WIFI_WPA3_COMPATIBLE_SUPPORT)
@@ -389,39 +361,6 @@ endif()
 if(CONFIG_ESP_WIFI_NAN_USD_ENABLE)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_NAN_USD)
 endif()
-if(CONFIG_ESP_WIFI_PASN_SUPPORT)
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_PASN)
-endif()
-if(CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_SOFTAP)
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_OWE_SOFTAP)
-endif()
 set_property(TARGET ${COMPONENT_LIB} APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
 
-# TODO IDF-15784: remove
-# variables can be unused, need to patch submodule
-set_source_files_properties(
-    esp_supplicant/src/esp_common.c
-    PROPERTIES COMPILE_FLAGS
-    -Wno-unused-but-set-variable
-)
-
-if(CONFIG_COMPILER_STATIC_ANALYZER AND CONFIG_IDF_TOOLCHAIN_GCC)
-    set(eloop_analyzer_flags
-        -Wno-analyzer-out-of-bounds
-        -Wno-analyzer-null-dereference
-        -Wno-analyzer-use-of-uninitialized-value
-        -Wno-analyzer-free-of-non-heap
-    )
-    list(JOIN eloop_analyzer_flags " " eloop_analyzer_flags)
-
-    set_source_files_properties(
-        src/rsn_supp/wpa.c
-        PROPERTIES COMPILE_FLAGS
-        -Wno-analyzer-use-of-uninitialized-value
-    )
-    set_source_files_properties(
-        port/eloop.c
-        PROPERTIES COMPILE_FLAGS
-        "${eloop_analyzer_flags}"
-    )
-endif()
+target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")

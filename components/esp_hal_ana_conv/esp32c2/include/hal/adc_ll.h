@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,10 +9,9 @@
 #include <stdlib.h>
 #include "esp_attr.h"
 
+#include "hal/adc_periph.h"
 #include "soc/apb_saradc_struct.h"
 #include "soc/apb_saradc_reg.h"
-#include "soc/efuse_reg.h"
-#include "soc/soc.h"
 #include "soc/rtc_cntl_struct.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/clk_tree_defs.h"
@@ -28,52 +27,35 @@
 extern "C" {
 #endif
 
-/*---------------------------------------------------------------
- *                            common
- *-------------------------------------------------------------*/
-#define ADC_LL_EVENT_ADC1_ONESHOT_DONE              BIT(31)
-#define ADC_LL_EVENT_ADC2_ONESHOT_DONE              BIT(30)
+#define ADC_LL_EVENT_ADC1_ONESHOT_DONE    BIT(31)
+#define ADC_LL_EVENT_ADC2_ONESHOT_DONE    BIT(30)
 
 #define ADC_LL_NEED_APB_PERIPH_CLAIM(ADC_UNIT)      (1)
-#define ADC_LL_MAX_CHANNEL_NUM                      (5)
-#define ADC_LL_CHANNEL_NUM(unit_id)                 (5)
 
 /*---------------------------------------------------------------
- *                            oneshot
- *-------------------------------------------------------------*/
-#define ADC_LL_RTC_MIN_BITWIDTH                     (12)
-#define ADC_LL_RTC_MAX_BITWIDTH                     (12)
-#define ADC_LL_DATA_INVERT_DEFAULT(PERIPH_NUM)      (0)
-#define ADC_LL_DELAY_CYCLE_AFTER_DONE_SIGNAL        (0)
-#define ADC_LL_ONESHOT_START_PULSE                  1
+                    Oneshot
+---------------------------------------------------------------*/
+#define ADC_LL_DATA_INVERT_DEFAULT(PERIPH_NUM)         (0)
+#define ADC_LL_DELAY_CYCLE_AFTER_DONE_SIGNAL           (0)
 
 /*---------------------------------------------------------------
- *                          continuous
- *-------------------------------------------------------------*/
-/*!< F_sample = F_digi_con / 2 / interval. F_digi_con = 5M for now. 30 <= interval <= 4095 */
-#define ADC_LL_SAMPLE_FREQ_THRES_HIGH               83333
-#define ADC_LL_SAMPLE_FREQ_THRES_LOW                611
-#define ADC_LL_DIG_SUPPORTED_UNIT(UNIT)             1    //Digital controller supported ADC unit
-#define ADC_LL_DIGI_CONTROLLER_NUM                  (1U)
-#define ADC_LL_DIGI_IIR_FILTER_NUM                  (2)
-#define ADC_LL_DIGI_DATA_INVERT_DEFAULT(PERIPH_NUM) (0)
-#define ADC_LL_FSM_RSTB_WAIT_DEFAULT                (8)
-#define ADC_LL_FSM_START_WAIT_DEFAULT               (5)
-#define ADC_LL_FSM_STANDBY_WAIT_DEFAULT             (100)
-#define ADC_LL_SAMPLE_CYCLE_DEFAULT                 (2)
-#define ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT             (1)
+                    DMA
+---------------------------------------------------------------*/
+#define ADC_LL_DIGI_DATA_INVERT_DEFAULT(PERIPH_NUM)    (0)
+#define ADC_LL_FSM_RSTB_WAIT_DEFAULT                   (8)
+#define ADC_LL_FSM_START_WAIT_DEFAULT                  (5)
+#define ADC_LL_FSM_STANDBY_WAIT_DEFAULT                (100)
+#define ADC_LL_SAMPLE_CYCLE_DEFAULT                    (2)
+#define ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT                (1)
 
-#define ADC_LL_CLKM_DIV_NUM_DEFAULT                 15
-#define ADC_LL_CLKM_DIV_B_DEFAULT                   1
-#define ADC_LL_CLKM_DIV_A_DEFAULT                   0
+#define ADC_LL_CLKM_DIV_NUM_DEFAULT       15
+#define ADC_LL_CLKM_DIV_B_DEFAULT         1
+#define ADC_LL_CLKM_DIV_A_DEFAULT         0
 
 /*---------------------------------------------------------------
- *                          calibration
- *-------------------------------------------------------------*/
-#define ADC_LL_PWDET_CCT_DEFAULT                    (4)
-
-#define ADC_LL_ANA_CALI_REG_PD_WORKAROUND           1
-#define ADC_LL_ANA_CALI_REG_BYTE_NUM                8
+                    PWDET (Power Detect)
+---------------------------------------------------------------*/
+#define ADC_LL_PWDET_CCT_DEFAULT                       (4)
 
 typedef enum {
     ADC_LL_POWER_BY_FSM,   /*!< ADC XPD controlled by FSM. Used for polling mode */
@@ -663,15 +645,13 @@ static inline void adc_oneshot_ll_disable_channel(adc_unit_t adc_n)
 /**
  * Start oneshot conversion by software
  *
- * @param adc_n ADC unit. Unused on this chip.
- * @param en    Set to 1 to start the ADC conversion. The step signal should at least keep 3 ADC digital controller clock cycle,
+ * @param val Usage: set to 1 to start the ADC conversion. The step signal should at least keep 3 ADC digital controller clock cycle,
  *            otherwise the step signal may not be captured by the ADC digital controller when its frequency is slow.
  *            This hardware limitation will be removed in future versions.
  */
-static inline void adc_oneshot_ll_start(adc_unit_t adc_n, bool en)
+static inline void adc_oneshot_ll_start(bool val)
 {
-    (void)adc_n;
-    APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_start = en;
+    APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_start = val;
 }
 
 /**
@@ -792,23 +772,6 @@ static inline adc_atten_t adc_ll_get_atten(adc_unit_t adc_n, adc_channel_t chann
     (void)adc_n;
     (void)channel;
     return (adc_atten_t)(APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_atten);
-}
-
-__attribute__((always_inline)) static inline uint32_t adc_ll_get_efuse_init_code(uint32_t atten)
-{
-    return (atten == 0)
-           ? REG_GET_FIELD(EFUSE_RD_BLK2_DATA2_REG, EFUSE_ADC1_INIT_CODE_ATTEN0)
-           : REG_GET_FIELD(EFUSE_RD_BLK2_DATA2_REG, EFUSE_ADC1_INIT_CODE_ATTEN3);
-}
-
-__attribute__((always_inline)) static inline uint32_t adc_ll_get_efuse_cal_voltage(uint32_t atten)
-{
-    if (atten == 0) {
-        uint32_t low = REG_GET_FIELD(EFUSE_RD_BLK2_DATA2_REG, EFUSE_ADC1_CAL_VOL_ATTEN0);
-        uint32_t high = REG_GET_FIELD(EFUSE_RD_BLK2_DATA3_REG, EFUSE_ADC1_CAL_VOL_ATTEN0_1);
-        return low | (high << 5);
-    }
-    return REG_GET_FIELD(EFUSE_RD_BLK2_DATA3_REG, EFUSE_ADC1_CAL_VOL_ATTEN3);
 }
 
 #ifdef __cplusplus

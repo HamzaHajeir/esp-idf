@@ -7,7 +7,7 @@
 #pragma once
 
 #include <string.h>
-#include <errno.h>
+#include <sys/errno.h>
 
 #ifdef __XTENSA__
 #include "xtensa/semihosting.h"

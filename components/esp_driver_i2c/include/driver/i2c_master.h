@@ -236,7 +236,7 @@ esp_err_t i2c_master_receive(i2c_master_dev_handle_t i2c_dev, uint8_t *read_buff
 /**
  * @brief Probe I2C address, if address is correct and ACK is received, this function will return ESP_OK.
  *
- * @param[in] bus_handle I2C master bus handle, created by `i2c_new_master_bus`.
+ * @param[in] bus_handle I2C master device handle that created by `i2c_master_bus_add_device`.
  * @param[in] address I2C device address that you want to probe.
  * @param[in] xfer_timeout_ms Wait timeout, in ms. Note: -1 means wait forever (Not recommended in this function).
  *
@@ -279,8 +279,7 @@ esp_err_t i2c_master_probe(i2c_master_bus_handle_t bus_handle, uint16_t address,
  *  - ESP_ERR_TIMEOUT: Transaction timed out.
  *
  * @note The `ack_value` field in the READ operation must be set to `I2C_NACK_VAL` if the next
- *       operation is a STOP command. A READ operation with `I2C_NACK_VAL` must contain exactly
- *       one byte.
+ *       operation is a STOP command.
  */
 esp_err_t i2c_master_execute_defined_operations(i2c_master_dev_handle_t i2c_dev, i2c_operation_job_t *i2c_operation, size_t operation_list_num, int xfer_timeout_ms);
 

@@ -2,7 +2,6 @@
 
 - [IDF CI](#idf-ci)
   - [General Workflow](#general-workflow)
-  - [Dynamic build toolchains](#dynamic-build-toolchains)
   - [What if Expected Jobs ARE NOT Created?](#what-if-expected-jobs-are-not-created)
   - [MR labels for additional jobs](#mr-labels-for-additional-jobs)
     - [Supported MR Labels](#supported-mr-labels)
@@ -24,7 +23,12 @@
     - [Grammar](#grammar)
     - [Special Rules](#special-rules)
   - [Upload/Download Artifacts to Internal Minio Server](#uploaddownload-artifacts-to-internal-minio-server)
-  - [Revision Marker Naming Rules](#revision-marker-naming-rules)
+    - [Users Without Access to Minio](#users-without-access-to-minio)
+    - [Users With Access to Minio](#users-with-access-to-minio)
+      - [Env Vars for Minio](#env-vars-for-minio)
+      - [Artifacts Types and File Patterns](#artifacts-types-and-file-patterns)
+      - [Upload](#upload)
+      - [Download](#download)
 
 ## General Workflow
 
@@ -32,45 +36,6 @@
 2. Create an MR, choose related labels (not required)
 3. A `detached` pipeline will be created.
 4. if you push a new commit, a new pipeline will be created automatically.
-
-## Dynamic build toolchains
-
-`generate_build_child_pipeline` discovers apps separately for GCC and Clang. The
-normal `build_child_pipeline` uses the original GCC files and target tests;
-`build_child_pipeline_clang` uses `build_child_pipeline_clang.yml` and the
-`*_apps_clang.txt` lists. Clang builds use `IDF_TOOLCHAIN=clang` and the `clang`
-artifact namespace, so they cannot overwrite GCC firmware. Clang target tests
-are generated separately with `test_child_pipeline_clang.yml`. Only the normal
-GCC pipeline includes `tools/ci/dynamic_pipelines/templates/additional_jobs.yml`;
-Clang and buildv2 use the two shared YAML includes from `.idf_ci.toml`.
-The additional jobs generate `presigned.json` after all GCC build shards finish,
-including when a shard fails. A no-app child pipeline still runs only `fake_pass`.
-
-Manifest `supported_toolchains` controls which toolchains build an app:
-
-- Omitted or `[gcc]`: GCC only.
-- `[gcc, clang]`: both.
-- `[clang]`: Clang only.
-
-Automatic test collection checks manifest build and test eligibility, including
-`disable_test`; selecting all
-cases bypasses dependency-change selection only, not manifest eligibility.
-Consequently, unlisted apps disappear from Clang app lists and test jobs may
-shrink even when the old manifest-filter setting was not enabled.
-
-CI installs the released idf-ci 1.4.1 or newer (below 2.0) and its
-idf-build-apps dependency (3.1.1+ on Python 3.10+, 2.17.1+ on older Python).
-The custom `ci_python_constraint_branch` remains until the default v6.2
-constraints permit these idf-build-apps releases. Check the installed versions
-and generated GCC/Clang app lists and test YAML in the generator job before
-claiming GitLab CI validation.
-
-When the buildv2 child pipeline runs, `generate_build_child_pipeline` also runs
-GCC-only discovery with `IDF_BUILD_V2=1`. It creates `*_apps_buildv2.txt` and uses
-the `buildv2` artifact namespace. The generated build jobs depend on
-`generate_build_child_pipeline`. The buildv2 discovery therefore runs in
-`generate_build_child_pipeline`. The `buildv2` MR label or the `BOT_LABEL_BUILDV2`
-variable enables the buildv2 child pipeline.
 
 ## What if Expected Jobs ARE NOT Created?
 
@@ -84,9 +49,6 @@ variable enables the buildv2 child pipeline.
 
 ### Supported MR Labels
 
-- `app_size_metrics_full_report`, generates the HTML app size metrics report for all apps. Starts the blocked pipeline of the MR target branch (`master` / `release/v*`) on the commit the MR is based on, to get the size metrics to compare against
-- `auto-translate::full`, classifies MR doc changes (incremental vs include-only full); runs commit history check, `check_line_num`, then `translate`; see [.gitlab/ci/README_auto_translate.md](./README_auto_translate.md)
-- `auto-translate::incremental`, commit history check + line check + incremental doc translation only (no full translation; see [.gitlab/ci/README_auto_translate.md](./README_auto_translate.md))
 - `build`
 - `build_docs`
 - `component_ut[_esp32/esp32s2/...]`
@@ -294,11 +256,3 @@ In ESP-IDF CI, there's a few more special rules are additionally supported to di
 ## Upload/Download Artifacts to Internal Minio Server
 
 Please refer to the documentation [here](https://docs.espressif.com/projects/idf-ci/en/latest/guides/cli.html)
-
-## Revision Marker Naming Rules
-
-When specifying chip revisions for testing markers, configurations or filenames, strictly follow the format `esp32<series>_rev<number>` (or similarly `<series>_rev<number>` when brief).
-
-> e.g., `esp32_rev3`, `esp32c2_rev2`, `esp32c3_rev1`, `esp32p4_rev1`, `esp32c5_rev1`
-
-This convention replaces the legacy `eco` naming format (e.g., `esp32c2eco4`).

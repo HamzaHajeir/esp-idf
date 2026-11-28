@@ -66,6 +66,4 @@ esp_err_t peer_remove(uint16_t conn_id);
 
 Peer *find_peer(uint16_t conn_id);
 
-Peer *peer_lookup(uint16_t conn_id);
-
 #endif

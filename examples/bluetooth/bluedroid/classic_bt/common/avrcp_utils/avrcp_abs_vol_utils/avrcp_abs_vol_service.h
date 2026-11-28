@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -19,11 +19,6 @@ typedef enum {
  * @brief  open AVRCP absolute volume service
  */
 void avrc_abs_vol_srv_open(void);
-
-/**
- * @brief  AVRCP connection handle of the peer that registered volume notification.
- */
-void avrc_abs_vol_srv_set_conn_hdl(esp_avrc_conn_hdl_t conn_hdl);
 
 /**
  * @brief  close AVRCP absolute volume service

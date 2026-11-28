@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,20 +37,12 @@ esp_err_t esp_openthread_init(const esp_openthread_platform_config_t *init_confi
 /**
  * @brief   Starts the Thread protocol operation and attaches to a Thread network.
  *
- * When @p datasetTlvs is not NULL, that dataset is set as the active dataset.
- * When @p datasetTlvs is NULL, a dataset stored in settings is not restored. The active
- * dataset follows the "Auto-start dataset configuration" menuconfig choice and replaces
- * the saved Active Dataset: individual fields (network name, channel, PAN ID, and keys),
- * one hexadecimal TLV string, or a newly generated random dataset (FTD only).
- * In random mode each NULL call creates a new dataset. To keep that network across reboot,
- * read it with @c otDatasetGetActiveTlvs() and pass it here.
- *
- * @param[in]  datasetTlvs    The operational dataset (TLV encoded), or NULL to use the
- *                            configured dataset mode above.
+ * @param[in]  datasetTlvs    The operational dataset (TLV encoded), if it's NULL, the function will generate the dataset
+ *                            based on the configurations from kconfig.
  *
  * @return
  *      - ESP_OK on success
- *      - ESP_FAIL on other failures
+ *      - ESP_FAIL on failures
  *
  */
 esp_err_t esp_openthread_auto_start(otOperationalDatasetTlvs *datasetTlvs);
@@ -114,11 +106,6 @@ esp_err_t esp_openthread_start(const esp_openthread_config_t *config);
 
 /**
  * @brief This function performs OpenThread stack and platform driver deinitialization and delete the handle task.
- *
- * @note Thread must already be inactive (`otThreadSetEnabled(false)` and
- *       `otIp6SetEnabled(false)`). If border routing was initialized, call
- *       `esp_openthread_border_router_deinit()` first.
- *
  * @return
  *      - ESP_OK on success
  *      - ESP_ERR_INVALID_STATE if Thread is already active

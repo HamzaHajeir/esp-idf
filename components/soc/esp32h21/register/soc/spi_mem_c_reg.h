@@ -5,12 +5,11 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define DR_REG_SPI_MEM_BASE(i)                     (DR_REG_SPIMEM0_BASE + (i) * 0x1000)
 
 /** SPI_MEM_CMD_REG register
  *  SPI0 FSM status register

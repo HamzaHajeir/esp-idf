@@ -7,7 +7,7 @@ The tutorial is focused on how to implement the custom transport in the applicat
 Note: This walkthrough only covers the transport used by the application, for detailed explanation see the [bleprph_walkthrough](../../bleprph/tutorial/bleprph_walkthrough.md)
 ## Hardware Setup
 
-This example uses esp32 chip to run the example `bleprph_host_only` that runs the nimble-host and sends and receives the commands and events using uart. The another chip used is esp32c6 that runs the controller `esp-idf/examples/bluetooth/hci/controller_hci_uart` example that runs the controller and receives commands and sends events using UART. Below is the setup of esp32 and esp32c6.
+This example uses esp32 chip to run the example `bleprph_host_only` that runs the nimble-host and sends and receives the commands and events using uart. The another chip used is esp32c6 that runs the controller `esp-idf/examples/bluetooth/nimble/hci` example that runs the controller and receives commands and sends events using UART. Below is the setup of esp32 and esp32c6.
 
 ![Hardware Setup](hardware_setup.png)
 
@@ -56,6 +56,7 @@ app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    hci_uart_open();
     ret = nimble_port_init();
     if (ret != ESP_OK) {
         ESP_LOGE(tag, "Failed to init nimble %d ", ret);
@@ -65,7 +66,7 @@ app_main(void)
     ....
 }
 ```
-`nimble_port_init()` initializes the host, then calls `ble_transport_ll_init()`. That function calls `hci_uart_open()`, which configures the UART (baud rate, parity, and the other parameters) only after the host pools exist. The file [uart_driver.c](../main/uart_driver.c) has all the uart transport code along with the necessary apis mandated by nimble-host. `ble_transport_to_ll_acl_impl` is the api used to send the data to the controller. and `ble_transport_to_ll_cmd_impl` is used to send the command to the controller. These two apis are implemented as they are necessary. Along with these two apis, any data that is received in the rx direction is redirected to the host using `ble_transport_to_hs_evt` and `ble_transport_to_hs_acl` apis.
+In the main function `hci_uart_open()` configures the uart with necessary parameters like baud_rate, parity, etc. The file [uart_driver.c](../main/uart_driver.c) has all the uart transport code along with the necessary apis mandated by nimble-host. `ble_transport_to_ll_acl_impl` is the api used to send the data to the controller. and `ble_transport_to_ll_cmd_impl` is used to send the command to the controller. These two apis are implemented as they are necessary. Along with these two apis, any data that is received in the rx direction is redirected to the host using `ble_transport_to_hs_evt` and `ble_transport_to_hs_acl` apis.
 
 ## Conclusion
 1. This example covered how to write the custom transport layer and use it with nimble-host.

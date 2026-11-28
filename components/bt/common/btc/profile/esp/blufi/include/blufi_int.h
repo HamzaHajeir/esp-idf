@@ -17,7 +17,7 @@ extern "C" {
 #if (BLUFI_INCLUDED == TRUE)
 
 #define BTC_BLUFI_GREAT_VER   0x01  //Version + Subversion
-#define BTC_BLUFI_SUB_VER     0x04  //Version + Subversion
+#define BTC_BLUFI_SUB_VER     0x03  //Version + Subversion
 #define BTC_BLUFI_VERSION     ((BTC_BLUFI_GREAT_VER<<8)|BTC_BLUFI_SUB_VER)  //Version + Subversion
 
 typedef UINT8 tGATT_IF;
@@ -44,14 +44,12 @@ typedef struct {
     /* Control reference */
     esp_blufi_callbacks_t   *cbs;
     BOOLEAN                 enabled;
-    BOOLEAN                 notify_enabled;
     uint8_t                 send_seq;
     uint8_t                 recv_seq;
     uint8_t                 sec_mode;
     uint8_t                 *aggr_buf;
     uint16_t                 total_len;
     uint16_t                offset;
-    uint32_t                session_id;
 } tBLUFI_ENV;
 
 /* BLUFI protocol */
@@ -195,11 +193,6 @@ extern tBLUFI_ENV *blufi_env_ptr;
 void btc_blufi_protocol_handler(uint8_t type, uint8_t *data, int len);
 
 void btc_blufi_send_encap(uint8_t type, uint8_t *data, int data_len);
-
-void btc_blufi_env_lock(void);
-void btc_blufi_env_unlock(void);
-bool btc_blufi_on_btu_task(void);
-uint32_t btc_blufi_reset_session(void);
 
 void btc_blufi_set_callbacks(esp_blufi_callbacks_t *callbacks);
 

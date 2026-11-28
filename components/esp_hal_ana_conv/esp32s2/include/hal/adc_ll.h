@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,11 +8,11 @@
 
 #include <stdbool.h>
 #include "hal/misc.h"
+#include "hal/adc_periph.h"
 #include "hal/adc_types.h"
 #include "hal/adc_types_private.h"
 #include "hal/assert.h"
 #include "soc/apb_saradc_struct.h"
-#include "soc/efuse_reg.h"
 #include "soc/sens_struct.h"
 #include "soc/sens_reg.h"
 #include "soc/apb_saradc_reg.h"
@@ -23,67 +23,50 @@
 #include "hal/regi2c_ctrl.h"
 #include "soc/regi2c_saradc.h"
 #include "soc/system_reg.h"
-#include "soc/soc.h"
 #include "soc/dport_reg.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*---------------------------------------------------------------
- *                            common
- *-------------------------------------------------------------*/
-#define ADC_LL_EVENT_ADC1_ONESHOT_DONE              (1 << 0)
-#define ADC_LL_EVENT_ADC2_ONESHOT_DONE              (1 << 1)
+#define ADC_LL_EVENT_ADC1_ONESHOT_DONE    (1 << 0)
+#define ADC_LL_EVENT_ADC2_ONESHOT_DONE    (1 << 1)
 
-#define ADC_LL_THRES_ALL_INTR_ST_M                  (APB_SARADC_ADC1_THRES_INT_ST_M | APB_SARADC_ADC2_THRES_INT_ST_M)
-#define ADC_LL_GET_HIGH_THRES_MASK(monitor_id)      ((monitor_id == 0) ? APB_SARADC_ADC1_THRES_INT_ST_M : APB_SARADC_ADC2_THRES_INT_ST_M)
-#define ADC_LL_GET_LOW_THRES_MASK(monitor_id)       ((monitor_id == 0) ? APB_SARADC_ADC1_THRES_INT_ST_M : APB_SARADC_ADC2_THRES_INT_ST_M)
+#define ADC_LL_THRES_ALL_INTR_ST_M  (APB_SARADC_ADC1_THRES_INT_ST_M | APB_SARADC_ADC2_THRES_INT_ST_M)
+#define ADC_LL_GET_HIGH_THRES_MASK(monitor_id)    ((monitor_id == 0) ? APB_SARADC_ADC1_THRES_INT_ST_M : APB_SARADC_ADC2_THRES_INT_ST_M)
+#define ADC_LL_GET_LOW_THRES_MASK(monitor_id)     ((monitor_id == 0) ? APB_SARADC_ADC1_THRES_INT_ST_M : APB_SARADC_ADC2_THRES_INT_ST_M)
 
 #define ADC_LL_NEED_APB_PERIPH_CLAIM(ADC_UNIT)      (0)
 
-#define ADC_LL_UNIT2_CHANNEL_SUBSTRATION            0
-#define ADC_LL_MAX_CHANNEL_NUM                      (10)
-#define ADC_LL_CHANNEL_NUM(unit_id)                 (10)
+#define ADC_LL_UNIT2_CHANNEL_SUBSTRATION 0
 
 /*---------------------------------------------------------------
- *                            oneshot
- *-------------------------------------------------------------*/
-#define ADC_LL_RTC_MIN_BITWIDTH                     (13)
-#define ADC_LL_RTC_MAX_BITWIDTH                     (13)
-#define ADC_LL_DATA_INVERT_DEFAULT(PERIPH_NUM)      (0)
-#define ADC_LL_SAR_CLK_DIV_DEFAULT(PERIPH_NUM)      (1)
-#define ADC_LL_DELAY_CYCLE_AFTER_DONE_SIGNAL        (0)
+                    Oneshot
+---------------------------------------------------------------*/
+#define ADC_LL_DATA_INVERT_DEFAULT(PERIPH_NUM)         (0)
+#define ADC_LL_SAR_CLK_DIV_DEFAULT(PERIPH_NUM)         (1)
+#define ADC_LL_DELAY_CYCLE_AFTER_DONE_SIGNAL           (0)
 
 /*---------------------------------------------------------------
- *                          continuous
- *-------------------------------------------------------------*/
-/*!< F_sample = F_digi_con / 2 / interval. F_digi_con = 5M for now. 30 <= interval <= 4095 */
-#define ADC_LL_SAMPLE_FREQ_THRES_HIGH               83333
-#define ADC_LL_SAMPLE_FREQ_THRES_LOW                611
-#define ADC_LL_DIG_SUPPORTED_UNIT(UNIT)             1    //Digital controller supported ADC unit
-#define ADC_LL_DIGI_CONTROLLER_NUM                  (2)
-#define ADC_LL_DIGI_IIR_FILTER_NUM                  (2)
-#define ADC_LL_DIGI_DATA_INVERT_DEFAULT(PERIPH_NUM) (0)
-#define ADC_LL_FSM_RSTB_WAIT_DEFAULT                (8)
-#define ADC_LL_FSM_START_WAIT_DEFAULT               (5)
-#define ADC_LL_FSM_STANDBY_WAIT_DEFAULT             (100)
-#define ADC_LL_SAMPLE_CYCLE_DEFAULT                 (3)
-#define ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT             (2)
+                    DMA
+---------------------------------------------------------------*/
+#define ADC_LL_DIGI_DATA_INVERT_DEFAULT(PERIPH_NUM)    (0)
+#define ADC_LL_FSM_RSTB_WAIT_DEFAULT                   (8)
+#define ADC_LL_FSM_START_WAIT_DEFAULT                  (5)
+#define ADC_LL_FSM_STANDBY_WAIT_DEFAULT                (100)
+#define ADC_LL_SAMPLE_CYCLE_DEFAULT                    (3)
+#define ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT                (2)
 
-#define ADC_LL_CLKM_DIV_NUM_DEFAULT                 15
-#define ADC_LL_CLKM_DIV_B_DEFAULT                   1
-#define ADC_LL_CLKM_DIV_A_DEFAULT                   0
-#define ADC_LL_DEFAULT_CONV_LIMIT_EN                0
-#define ADC_LL_DEFAULT_CONV_LIMIT_NUM               255
+#define ADC_LL_CLKM_DIV_NUM_DEFAULT       15
+#define ADC_LL_CLKM_DIV_B_DEFAULT         1
+#define ADC_LL_CLKM_DIV_A_DEFAULT         0
+#define ADC_LL_DEFAULT_CONV_LIMIT_EN      0
+#define ADC_LL_DEFAULT_CONV_LIMIT_NUM     255
 
 /*---------------------------------------------------------------
- *                          calibration
- *-------------------------------------------------------------*/
-#define ADC_LL_PWDET_CCT_DEFAULT                    (4)
-
-#define ADC_LL_ANA_CALI_REG_PD_WORKAROUND           1
-#define ADC_LL_ANA_CALI_REG_BYTE_NUM                8
+                    PWDET (Power Detect)
+---------------------------------------------------------------*/
+#define ADC_LL_PWDET_CCT_DEFAULT                       (4)
 
 typedef enum {
     ADC_LL_POWER_BY_FSM,   /*!< ADC XPD controlled by FSM. Used for polling mode */
@@ -715,13 +698,9 @@ static inline void adc_oneshot_ll_disable_channel(adc_unit_t adc_n)
  * @note It may be block to wait conversion idle for ADC1.
  *
  * @param adc_n ADC unit.
- * @param en    Set true to trigger one conversion.
  */
-static inline void adc_oneshot_ll_start(adc_unit_t adc_n, bool en)
+static inline void adc_oneshot_ll_start(adc_unit_t adc_n)
 {
-    if (!en) {
-        return;
-    }
     if (adc_n == ADC_UNIT_1) {
         while (HAL_FORCE_READ_U32_REG_FIELD(SENS.sar_slave_addr1, meas_status) != 0) {}
         SENS.sar_meas1_ctrl2.meas1_start_sar = 0;
@@ -1365,18 +1344,6 @@ static inline void adc_ll_vref_output(adc_unit_t adc, adc_channel_t channel, boo
         //set en_pad for ADC2 channels (bits 0x380)
         SENS.sar_meas2_ctrl2.sar2_en_pad = 0;
     }
-}
-
-__attribute__((always_inline)) static inline uint32_t adc_ll_read_efuse_calibration_bits(uint32_t bit,
-                                                                                         uint32_t length)
-{
-    uint32_t word = bit / 32;
-    uint32_t shift = bit % 32;
-    uint64_t value = REG_READ(EFUSE_RD_SYS_PART1_DATA0_REG + word * sizeof(uint32_t));
-    if (shift + length > 32) {
-        value |= (uint64_t)REG_READ(EFUSE_RD_SYS_PART1_DATA0_REG + (word + 1) * sizeof(uint32_t)) << 32;
-    }
-    return (uint32_t)((value >> shift) & ((1U << length) - 1U));
 }
 
 #ifdef __cplusplus

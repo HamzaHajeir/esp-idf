@@ -31,7 +31,7 @@ The table below provides more information on pin usage, and please note the comm
 
     * - GPIO2
       - ADC1_CH2
-      - RTC
+      - Strapping pin；RTC
 
     * - GPIO3
       - ADC1_CH3
@@ -48,21 +48,27 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO6
       -
       -
+
     * - GPIO7
       -
       -
+
     * - GPIO8
       -
-      -
+      - Strapping pin
+
     * - GPIO9
       -
-      -
+      - Strapping pin
+
     * - GPIO10
       -
       -
+
     * - GPIO11
       -
       -
+
     * - GPIO12
       -
       - SPI0/1
@@ -98,12 +104,14 @@ The table below provides more information on pin usage, and please note the comm
     * - GPIO20
       -
       -
+
     * - GPIO21
       -
       -
+
 .. note::
 
-    - Strapping pin: Some pins are used as strapping pins. For more information, please refer to *{IDF_TARGET_NAME} datasheet* > *Boot Configurations* [`PDF <{IDF_TARGET_DATASHEET_EN_URL}#cd-pins-strap>`__].
+    - Strapping pin: GPIO2, GPIO8 and GPIO9 are strapping pins. For more information, please refer to `ESP32-C3 Datasheet <{IDF_TARGET_DATASHEET_EN_URL}>`_.
     - SPI0/1: GPIO12 ~ GPIO17 are usually used for SPI flash and are not recommended for other uses.
     - USB-JTAG: GPIO18 and GPIO19 are used by USB-JTAG by default. If they are reconfigured to operate as normal GPIOs, USB-JTAG functionality will be disabled.
     - RTC: GPIO0 ~ GPIO5 can be used to wake up the chip from Deep-sleep mode. Other GPIOs can only wake up the chip from Light-sleep mode. For more information, please refer to Section :ref:`Wakeup Sources<api-reference-wakeup-source>`.

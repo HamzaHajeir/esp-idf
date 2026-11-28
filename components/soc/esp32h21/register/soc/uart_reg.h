@@ -5,13 +5,11 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define DR_REG_UART_BASE(i)                        (DR_REG_UART0_BASE + (i) * 0x1000)
-#define REG_UART_BASE(i)                           DR_REG_UART_BASE(i)
 
 /** UART_FIFO_REG register
  *  FIFO data register

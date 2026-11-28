@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,9 +26,6 @@
 #include "btc_gap_ble.h"
 #include "btc_iso_ble.h"
 #include "btc_ble_cte.h"
-#if (BLE_L2CAP_COC_INCLUDED == TRUE)
-#include "btc_ble_l2cap.h"
-#endif
 #include "btc/btc_dm.h"
 #include "bta/bta_gatt_api.h"
 #if CLASSIC_BT_INCLUDED
@@ -44,9 +41,6 @@
 #if (BTC_SPP_INCLUDED == TRUE)
 #include "btc_spp.h"
 #endif /* #if (BTC_SPP_INCLUDED == TRUE) */
-#if (BTC_PAN_INCLUDED == TRUE)
-#include "btc_pan.h"
-#endif /* #if (BTC_PAN_INCLUDED == TRUE) */
 #if (BTC_L2CAP_INCLUDED == TRUE)
 #include "btc_l2cap.h"
 #endif /* #if (BTC_L2CAP_INCLUDED == TRUE) */
@@ -67,9 +61,6 @@
 #endif /* BTC_HH_INCLUDED */
 #if BTC_PBA_CLIENT_INCLUDED
 #include "btc_pba_client.h"
-#endif
-#if BTC_OPP_INCLUDED
-#include "btc_opp.h"
 #endif
 #endif /* #if CLASSIC_BT_INCLUDED */
 #endif
@@ -112,11 +103,6 @@
 
 osi_thread_t *btc_thread;
 
-struct btc_msg_ctx {
-    btc_arg_deep_free_t free_func;
-    btc_msg_t msg;
-};
-
 static const btc_func_t profile_tab[BTC_PID_NUM] = {
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
     [BTC_PID_MAIN_INIT]   = {btc_main_call_handler,       NULL                    },
@@ -157,9 +143,6 @@ static const btc_func_t profile_tab[BTC_PID_NUM] = {
 #if (BTC_SPP_INCLUDED == TRUE)
     [BTC_PID_SPP]         = {btc_spp_call_handler,        btc_spp_cb_handler      },
 #endif /* #if (BTC_SPP_INCLUDED == TRUE) */
-#if (BTC_PAN_INCLUDED == TRUE)
-    [BTC_PID_PAN]         = {btc_pan_call_handler,        btc_pan_cb_handler      },
-#endif /* #if (BTC_PAN_INCLUDED == TRUE) */
 #if (BTC_L2CAP_INCLUDED == TRUE)
     [BTC_PID_L2CAP]       = {btc_l2cap_call_handler,      btc_l2cap_cb_handler    },
 #endif /* #if (BTC_L2CAP_INCLUDED == TRUE) */
@@ -180,14 +163,6 @@ static const btc_func_t profile_tab[BTC_PID_NUM] = {
 #endif
 #if BTC_PBA_CLIENT_INCLUDED
     [BTC_PID_PBA_CLIENT]  = {btc_pba_client_call_handler,  btc_pba_client_cb_handler},
-#endif
-#if BTC_OPP_INCLUDED
-#if BTC_OPP_SERVER_INCLUDED
-    [BTC_PID_OPP_SERVER]  = {btc_opp_server_call_handler,  btc_opp_server_cb_handler},
-#endif
-#if BTC_OPP_CLIENT_INCLUDED
-    [BTC_PID_OPP_CLIENT]  = {btc_opp_client_call_handler,  btc_opp_client_cb_handler},
-#endif
 #endif
 #endif /* #if CLASSIC_BT_INCLUDED */
 #endif
@@ -304,9 +279,6 @@ static const btc_func_t profile_tab[BTC_PID_NUM] = {
 #if (BLE_FEAT_CTE_EN == TRUE)
     [BTC_PID_BLE_CTE]           = {btc_ble_cte_call_handler,                    btc_ble_cte_cb_handler                   },
 #endif // #if (BLE_FEAT_CTE_EN == TRUE)
-#if (BLE_L2CAP_COC_INCLUDED == TRUE)
-    [BTC_PID_BLE_L2CAP]         = {btc_ble_l2cap_call_handler,                  btc_ble_l2cap_cb_handler                 },
-#endif // #if (BLE_L2CAP_COC_INCLUDED == TRUE)
 };
 
 /*****************************************************************************
@@ -317,113 +289,79 @@ static const btc_func_t profile_tab[BTC_PID_NUM] = {
 ******************************************************************************/
 static void btc_thread_handler(void *arg)
 {
-    struct btc_msg_ctx *ctx = (struct btc_msg_ctx *)arg;
-    btc_msg_t *msg = &ctx->msg;
-    bool handled = false;
+    btc_msg_t *msg = (btc_msg_t *)arg;
 
     BTC_TRACE_DEBUG("%s msg %u %u %u %p\n", __func__, msg->sig, msg->pid, msg->act, msg->arg);
-    /* msg->pid is validated at btc_transfer_context() entry; any message that
-     * reaches this handler is guaranteed to carry a valid pid. */
     switch (msg->sig) {
     case BTC_SIG_API_CALL:
-        if (profile_tab[msg->pid].btc_call) {
-            profile_tab[msg->pid].btc_call(msg);
-            handled = true;
-        } else {
-            BTC_TRACE_WARNING("%s no call handler, pid %u\n", __func__, msg->pid);
-        }
+        profile_tab[msg->pid].btc_call(msg);
         break;
     case BTC_SIG_API_CB:
-        if (profile_tab[msg->pid].btc_cb) {
-            profile_tab[msg->pid].btc_cb(msg);
-            handled = true;
-        } else {
-            BTC_TRACE_WARNING("%s no cb handler, pid %u\n", __func__, msg->pid);
-        }
+        profile_tab[msg->pid].btc_cb(msg);
         break;
     default:
         break;
     }
 
-    /* No profile handler ran, so release the deep copy here. */
-    if (!handled && ctx->free_func) {
-        ctx->free_func(&ctx->msg);
-    }
-    osi_free(ctx);
+    osi_free(msg);
 }
 
-static void btc_msg_ctx_free_func(void *context)
+static bt_status_t btc_task_post(btc_msg_t *msg, uint32_t timeout)
 {
-    struct btc_msg_ctx *ctx = (struct btc_msg_ctx *)context;
-
-    if (ctx->free_func) {
-        ctx->free_func(&ctx->msg);
-    }
-
-    osi_free(ctx);
-}
-
-static bt_status_t btc_transfer_context_internal(btc_msg_t *msg, void *arg, int arg_len,
-                                                 btc_arg_deep_copy_t copy_func, btc_arg_deep_free_t free_func,
-                                                 uint32_t timeout)
-{
-    struct btc_msg_ctx* ctx;
-
-    if (btc_thread == NULL) {
-        BTC_TRACE_WARNING("%s btc_thread is NULL\n", __func__);
-        return BT_STATUS_NOT_READY;
-    }
-
-    //                              arg XOR arg_len
-    if ((msg == NULL) || ((arg == NULL) == !(arg_len == 0)) ||
-        (msg->pid >= BTC_PID_NUM)) {
-        /* Reject invalid pid here, before any deep_copy runs, so the caller's
-         * arg is not yet duplicated into ctx and there is nothing to free.
-         * This keeps the trust boundary at the single public entry point and
-         * makes the downstream handler unable to encounter an invalid pid. */
-        BTC_TRACE_WARNING("%s Invalid parameters\n", __func__);
-        return BT_STATUS_PARM_INVALID;
-    }
-
-    BTC_TRACE_DEBUG("%s msg %u %u %u %p\n", __func__, msg->sig, msg->pid, msg->act, arg);
-
-    ctx = (struct btc_msg_ctx *)osi_malloc(sizeof(struct btc_msg_ctx) + arg_len);
-    if (ctx == NULL) {
-        BTC_TRACE_WARNING("%s No memory\n", __func__);
-        return BT_STATUS_NOMEM;
-    }
-
-    memcpy(&ctx->msg, msg, sizeof(btc_msg_t));
-    /* Deep free only applies when this post owns a deep copy. */
-    ctx->free_func = (copy_func != NULL) ? free_func : NULL;
-    if (arg) {
-        /* memcpy covers arg_len bytes into the tail of ctx. Deep-copy
-         * callbacks must only read fields written by the caller-supplied arg. */
-        memcpy(ctx->msg.arg, arg, arg_len);
-        if (copy_func) {
-            copy_func(&ctx->msg, ctx->msg.arg, arg);
-        }
-    }
-
-    if (osi_thread_post(btc_thread, btc_thread_handler, ctx, (osi_thread_free_cb_t)btc_msg_ctx_free_func, 0,
-                        timeout) == false) {
-        btc_msg_ctx_free_func(ctx);
+    if (osi_thread_post(btc_thread, btc_thread_handler, msg, 0, timeout) == false) {
         return BT_STATUS_BUSY;
     }
 
     return BT_STATUS_SUCCESS;
 }
 
+/**
+ * transfer an message to another module in the different task.
+ * @param  msg       message
+ * @param  arg       parameter
+ * @param  arg_len   length of parameter
+ * @param  copy_func deep copy function
+ * @param  free_func deep free function
+ * @return           BT_STATUS_SUCCESS: success
+ *                   others: fail
+ */
 bt_status_t btc_transfer_context(btc_msg_t *msg, void *arg, int arg_len, btc_arg_deep_copy_t copy_func,
                                     btc_arg_deep_free_t free_func)
 {
-    return btc_transfer_context_internal(msg, arg, arg_len, copy_func, free_func, OSI_THREAD_MAX_TIMEOUT);
-}
+    btc_msg_t* lmsg;
+    bt_status_t ret;
+    //                              arg XOR arg_len
+    if ((msg == NULL) || ((arg == NULL) == !(arg_len == 0))) {
+        BTC_TRACE_WARNING("%s Invalid parameters\n", __func__);
+        return BT_STATUS_PARM_INVALID;
+    }
 
-bt_status_t btc_transfer_context_nb(btc_msg_t *msg, void *arg, int arg_len, btc_arg_deep_copy_t copy_func,
-                                    btc_arg_deep_free_t free_func)
-{
-    return btc_transfer_context_internal(msg, arg, arg_len, copy_func, free_func, 0);
+    BTC_TRACE_DEBUG("%s msg %u %u %u %p\n", __func__, msg->sig, msg->pid, msg->act, arg);
+
+    lmsg = (btc_msg_t *)osi_malloc(sizeof(btc_msg_t) + arg_len);
+    if (lmsg == NULL) {
+        BTC_TRACE_WARNING("%s No memory\n", __func__);
+        return BT_STATUS_NOMEM;
+    }
+
+    memcpy(lmsg, msg, sizeof(btc_msg_t));
+    if (arg) {
+        memset(lmsg->arg, 0x00, arg_len);    //important, avoid arg which have no length
+        memcpy(lmsg->arg, arg, arg_len);
+        if (copy_func) {
+            copy_func(lmsg, lmsg->arg, arg);
+        }
+    }
+
+    ret = btc_task_post(lmsg, OSI_THREAD_MAX_TIMEOUT);
+    if (ret != BT_STATUS_SUCCESS) {
+        if (copy_func && free_func) {
+            free_func(lmsg);
+        }
+        osi_free(lmsg);
+    }
+
+    return ret;
 }
 
 /**
@@ -434,21 +372,15 @@ bt_status_t btc_transfer_context_nb(btc_msg_t *msg, void *arg, int arg_len, btc_
  */
 bt_status_t btc_inter_profile_call(btc_msg_t *msg)
 {
-    if (msg == NULL || msg->pid >= BTC_PID_NUM) {
+    if (msg == NULL) {
         return BT_STATUS_PARM_INVALID;
     }
 
     switch (msg->sig) {
     case BTC_SIG_API_CALL:
-        if (profile_tab[msg->pid].btc_call == NULL) {
-            return BT_STATUS_UNSUPPORTED;
-        }
         profile_tab[msg->pid].btc_call(msg);
         break;
     case BTC_SIG_API_CB:
-        if (profile_tab[msg->pid].btc_cb == NULL) {
-            return BT_STATUS_UNSUPPORTED;
-        }
         profile_tab[msg->pid].btc_cb(msg);
         break;
     default:
@@ -509,14 +441,6 @@ static void btc_deinit_mem(void) {
     if (hf_client_local_param_ptr) {
         osi_free(hf_client_local_param_ptr);
         hf_client_local_param_ptr = NULL;
-    }
-#endif
-
-#if BTC_PAN_INCLUDED == TRUE && PAN_DYNAMIC_MEMORY == TRUE
-    if (btc_pan_local_param_ptr) {
-        btc_pan_free_cfg_strings();
-        osi_free(btc_pan_local_param_ptr);
-        btc_pan_local_param_ptr = NULL;
     }
 #endif
 
@@ -586,18 +510,11 @@ static bt_status_t btc_init_mem(void) {
     memset((void *)hf_client_local_param_ptr, 0, sizeof(hf_client_local_param_t));
 #endif
 
-#if BTC_PAN_INCLUDED == TRUE && PAN_DYNAMIC_MEMORY == TRUE
-    if ((btc_pan_local_param_ptr = (btc_pan_local_param_t *)osi_malloc(sizeof(btc_pan_local_param_t))) == NULL) {
-        goto error_exit;
-    }
-    memset((void *)btc_pan_local_param_ptr, 0, sizeof(btc_pan_local_param_t));
-#endif
-
 #if BTC_AV_INCLUDED == TRUE && AVRC_DYNAMIC_MEMORY == TRUE
-    if ((btc_rc_cb_ptr = (btc_rc_cb_t *)osi_malloc(sizeof(btc_rc_cb_t) * BTC_RC_MAX_CONN)) == NULL) {
+    if ((btc_rc_cb_ptr = (btc_rc_cb_t *)osi_malloc(sizeof(btc_rc_cb_t))) == NULL) {
         goto error_exit;
     }
-    memset((void *)btc_rc_cb_ptr, 0, sizeof(btc_rc_cb_t) * BTC_RC_MAX_CONN);
+    memset((void *)btc_rc_cb_ptr, 0, sizeof(btc_rc_cb_t));
     if ((bta_av_co_cb_ptr = (tBTA_AV_CO_CB *)osi_malloc(sizeof(tBTA_AV_CO_CB))) == NULL) {
         goto error_exit;
     }
@@ -615,26 +532,14 @@ error_exit:;
 bt_status_t btc_init(void)
 {
     const size_t workqueue_len[] = {BTC_TASK_WORKQUEUE0_LEN, BTC_TASK_WORKQUEUE1_LEN};
-
-    /* The osi_event subsystem must be ready before any osi_event_create()
-     * (e.g. btc_gap_ble_init() below). It cannot live in osi_init(), which
-     * runs later in the BTC task via bte_main_boot_entry(). */
-    if (osi_thread_event_init() != 0) {
-        return BT_STATUS_NOMEM;
-    }
-
     btc_thread = osi_thread_create(BTC_TASK_NAME, BTC_TASK_STACK_SIZE, BTC_TASK_PRIO, BTC_TASK_PINNED_TO_CORE,
-                                   BTC_TASK_WORKQUEUE_NUM, workqueue_len, false);
+                                   BTC_TASK_WORKQUEUE_NUM, workqueue_len);
     if (btc_thread == NULL) {
-        osi_thread_event_deinit();
         return BT_STATUS_NOMEM;
     }
 
 #if BTC_DYNAMIC_MEMORY
     if (btc_init_mem() != BT_STATUS_SUCCESS){
-        osi_thread_free(btc_thread);
-        btc_thread = NULL;
-        osi_thread_event_deinit();
         return BT_STATUS_NOMEM;
     }
 #endif
@@ -659,22 +564,6 @@ bt_status_t btc_init(void)
 
 void btc_deinit(void)
 {
-    if (!btc_thread) {
-        return;
-    }
-
-    /* Reverse order of btc_init():
-     *   1) BLE GAP deinit must run BEFORE btc_deinit_mem(), otherwise under
-     *      BTC_DYNAMIC_MEMORY the gl_bta_adv_data macro expands to
-     *      *(NULL) and btc_cleanup_adv_data() early-returns, leaking the
-     *      inner adv-data fields (p_manu / p_proprietary / p_services...).
-     *   2) BT classic GAP deinit follows.
-     *   3) Then release the dynamic-memory pool.
-     *   4) Finally tear down the BTC worker thread.
-     */
-#if (BLE_INCLUDED == TRUE)
-    btc_gap_ble_deinit();
-#endif  ///BLE_INCLUDED == TRUE
 #if BTC_GAP_BT_INCLUDED
     btc_gap_bt_deinit();
 #endif
@@ -684,17 +573,9 @@ void btc_deinit(void)
 
     osi_thread_free(btc_thread);
     btc_thread = NULL;
-
-#if (BTC_SPP_INCLUDED == TRUE)
-    /* Session events are freed below. Drop the cached pointer before that. */
-    btc_spp_clear_tx_drain_evt();
-#endif
-
-    /* Tear down the osi_event subsystem last: btc_gap_ble_deinit() above may
-     * still call osi_event_delete(), which needs the global event lock. This
-     * mirrors moving osi_thread_event_init() into btc_init(); osi_deinit()
-     * (run earlier via bte_main_shutdown()) no longer owns this lifecycle. */
-    osi_thread_event_deinit();
+#if (BLE_INCLUDED == TRUE)
+    btc_gap_ble_deinit();
+#endif  ///BLE_INCLUDED == TRUE
 }
 
 int get_btc_work_queue_size(void)

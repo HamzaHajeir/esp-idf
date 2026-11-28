@@ -1,7 +1,7 @@
 idf_build_get_property(target IDF_TARGET)
 
 set(srcs)
-set(priv_req esp_pm esp_driver_gpio esp_hal_clock esp_driver_dma)
+set(priv_req esp_pm esp_driver_gpio)
 
 if(${target} STREQUAL "linux")
     return() # This component is not supported by the POSIX/Linux simulator
@@ -21,15 +21,12 @@ if(CONFIG_SOC_DAC_SUPPORTED)
         list(APPEND srcs "esp32/dac_dma.c")
     elseif(${target} STREQUAL "esp32s2")
         list(APPEND srcs "esp32s2/dac_dma.c")
-    else()
-        list(APPEND srcs "generic/dac_dma.c")
     endif()
 
 endif()
 
 idf_component_register(SRCS ${srcs}
                     INCLUDE_DIRS "./include"
-                    PRIV_INCLUDE_DIRS "."
                     PRIV_REQUIRES ${priv_req}
                     REQUIRES esp_hal_ana_conv
                     LDFRAGMENTS "linker.lf"

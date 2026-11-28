@@ -1,15 +1,17 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
+#include <sys/lock.h>
 #include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
+#include "soc/lldesc.h"
 #include "soc/soc_caps.h"
 #include "hal/i2s_periph.h"
 #include "hal/i2s_hal.h"
@@ -17,7 +19,6 @@
 #if SOC_LP_I2S_SUPPORTED
 #include "hal/lp_i2s_ll.h"
 #endif
-#include "hal/i2s_types.h"
 #include "driver/i2s_types.h"
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp_clock_output.h"
@@ -25,12 +26,9 @@
 #if SOC_GDMA_SUPPORTED
 #include "esp_private/gdma.h"
 #endif
-#include "esp_private/gdma_link.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_gpio_reserve.h"
 #if SOC_HAS(PAU)
-#include "soc/regdma.h"
-#include "soc/retention_periph_defs.h"
 #include "esp_private/sleep_retention.h"
 #endif
 #include "esp_pm.h"
@@ -52,16 +50,22 @@ extern "C" {
 #endif //CONFIG_I2S_ISR_IRAM_SAFE
 #define I2S_DMA_ALLOC_CAPS      (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT)
 
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define I2S_CLOCK_SRC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define I2S_CLOCK_SRC_ATOMIC()
+#endif
+
+#if !SOC_RCC_IS_INDEPENDENT
+#define I2S_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define I2S_RCC_ATOMIC()
+#endif
+
 #define I2S_USE_RETENTION_LINK  (SOC_HAS(PAU) && CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
 
 #define I2S_NULL_POINTER_CHECK(tag, p)          ESP_RETURN_ON_FALSE((p), ESP_ERR_INVALID_ARG, tag, "input parameter '"#p"' is NULL")
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
-/**
- * @brief Whether this channel uses the DMA memory data path
- */
-#define I2S_CHANNEL_USES_DMA(handle)   ((handle)->destination == I2S_DESTINATION_DMA)
 
 /**
  * @brief i2s channel state for checking if the operation in under right driver state
@@ -70,7 +74,6 @@ typedef enum {
     I2S_CHAN_STATE_REGISTER,                /*!< i2s channel is registered (not initialized)  */
     I2S_CHAN_STATE_READY,                   /*!< i2s channel is disabled (initialized) */
     I2S_CHAN_STATE_RUNNING,                 /*!< i2s channel is idling (initialized and enabled) */
-    I2S_CHAN_STATE_STOPPING,                /*!< i2s channel is waiting for its data path to stop */
 } i2s_state_t;
 
 /**
@@ -93,9 +96,6 @@ typedef struct {
     i2s_isr_callback_t on_send_q_ovf;       /**< Callback of sending queue overflowed event, only for tx channel
                                              *   The event data includes buffer size that has been overwritten
                                              */
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-    i2s_tx_fifo_sync_callback_t on_tx_sync_evt;      /**< Callback when the TX sync difference count exceeds the manual threshold */
-#endif
 } i2s_event_callbacks_internal_t;
 
 /**
@@ -116,73 +116,16 @@ typedef struct {
 #else
     intr_handle_t           dma_chan;       /*!< interrupt channel handle */
 #endif
-    gdma_link_list_handle_t dma_link;       /*!< DMA descriptor link list */
-    uint32_t                link_index;      /*!< Index of the next completed DMA link item */
     uint32_t                desc_num;       /*!< I2S DMA buffer number, it is also the number of DMA descriptor */
     uint32_t                frame_num;      /*!< I2S frame number in one DMA buffer. One frame means one-time sample data in all slots */
-    uint32_t                burst_size;     /*!< Resolved DMA data burst size in bytes */
     uint32_t                buf_size;       /*!< dma buffer size */
-    size_t                  buf_alignment;  /*!< DMA buffer alignment required for address and size */
-    bool                    buffer_in_psram; /*!< Whether the DMA buffers are allocated in PSRAM */
-#if SOC_GDMA_SUPPORTED
-    bool                    connected;      /*!< Whether the GDMA channel is connected to I2S */
-#endif
     bool                    auto_clear_after_cb;     /*!< Set to auto clear DMA TX descriptor after callback, i2s will always send zero automatically if no data to send */
     bool                    auto_clear_before_cb;    /*!< Set to auto clear DMA TX descriptor before callback, i2s will always send zero automatically if no data to send */
     uint32_t                rw_pos;         /*!< reading/writing pointer position */
     void                    *curr_ptr;      /*!< Pointer to current dma buffer */
+    lldesc_t                **desc;         /*!< dma descriptor array */
     uint8_t                 **bufs;         /*!< dma buffer array */
 } i2s_dma_t;
-
-/**
- * @brief Duplex candidate information extracted from channel configuration
- * @note  Used by the generic duplex constitution function to check whether two channels can form duplex.
- *        Two channels can share the BCLK/WS lines only when the BCLK/WS configurations are identical
- *        and the per-frame bit count (sample_rate * total_frame_bits) is the same. The slot layout,
- *        clock source, external clock frequency and MCLK configuration are allowed to differ as long
- *        as the BCLK/WS frequency and frame timing match.
- */
-typedef struct {
-    int ws_pin;                 /*!< WS GPIO pin number, -1 if unused */
-    int bclk_pin;               /*!< BCLK GPIO pin number, -1 if unused */
-    uint32_t sample_rate_hz;    /*!< Sample rate in Hz */
-    uint32_t total_frame_bits;  /*!< Total bits per frame: total_slot * slot_bit_width */
-    i2s_clock_src_t clk_src;    /*!< Clock source (informational, not compared) */
-    bool bclk_inv;              /*!< Whether the BCLK is inverted */
-    bool ws_inv;                /*!< Whether the WS is inverted */
-} i2s_duplex_candidate_t;
-
-#if SOC_I2S_SUPPORTS_APLL
-/**
- * @brief Controller-owned state for adjustable APLL users
- *
- * Fixed APLL users keep independent clock-tree references. Adjustable APLL is
- * physically acquired once and can only have multiple logical users when the
- * channels constitute active duplex.
- */
-typedef struct {
-    uint8_t user_mask;          /*!< Bit mask of logical adjustable users, using i2s_dir_t values as bits */
-    uint8_t valid_user_mask;    /*!< Bit mask of users whose divider matches actual_hz */
-    uint8_t first_user;         /*!< Earliest remaining logical user. It decides the frequency when no internal master uses APLL */
-    bool acquired;              /*!< Whether the controller owns the physical adjustable APLL reference */
-    uint32_t target_hz;         /*!< Ideal frequency requested from the clock tree */
-    uint32_t actual_hz;         /*!< Frequency returned by the clock tree */
-} i2s_apll_state_t;
-#endif
-
-/**
- * @brief Try to constitute full-duplex between two channels on the same controller
- * @note  The two channels can constitute full-duplex only when they share the same valid WS/BCK pins,
- *        the same BCLK/WS invert flags, the same sample rate and the same total frame bits.
- *        The slot layout, clock source, external clock frequency and MCLK configuration may differ
- *        as long as the BCLK/WS frequency and frame timing match (e.g. STD 2ch/32bit can pair
- *        with TDM 4ch/16bit).
- *        If the conditions match, mark the controller as full-duplex. If both channels are master,
- *        the later one is forced to slave.
- * @param handle       Current channel being initialized
- * @param candidate    Duplex configuration of the current channel
- */
-void i2s_channel_try_to_constitute_duplex(i2s_chan_handle_t handle, const i2s_duplex_candidate_t *candidate);
 
 /**
  * @brief i2s controller level configurations
@@ -195,10 +138,7 @@ typedef struct {
     bool                    full_duplex;    /*!< is full_duplex */
     i2s_chan_handle_t       tx_chan;        /*!< tx channel handler */
     i2s_chan_handle_t       rx_chan;        /*!< rx channel handler */
-    SemaphoreHandle_t       mutex;          /*!< Control-plane mutex for the controller and both of its channels */
-#if SOC_I2S_SUPPORTS_APLL
-    i2s_apll_state_t        apll;           /*!< Controller-owned adjustable APLL state */
-#endif
+    _lock_t                 mutex;          /*!< mutex for controller */
 #if SOC_HAS(PAU)
     sleep_retention_module_t slp_retention_mod; /*!< Sleep retention module */
     bool                    retention_link_created;  /*!< Whether the retention link is created */
@@ -208,16 +148,6 @@ typedef struct {
     esp_clock_output_mapping_handle_t mclk_out_hdl; /*!< The handle of MCLK output signal */
 #endif
 } i2s_controller_t;
-
-#if SOC_HAS(PAU)
-typedef struct {
-    const periph_retention_module_t retention_module;
-    const regdma_entries_config_t *entry_array;
-    uint32_t array_size;
-} i2s_reg_retention_info_t;
-
-extern const i2s_reg_retention_info_t i2s_reg_retention_info[I2S_LL_GET(INST_NUM)];
-#endif
 
 struct i2s_channel_obj_t {
     /* Channel basic information */
@@ -237,48 +167,29 @@ struct i2s_channel_obj_t {
         bool                is_raw_pdm: 1;     /*!< Flag of whether send/receive PDM in raw data, i.e., no PCM2PDM/PDM2PCM filter enabled */
         bool                is_external: 1;    /*!< Whether use external clock */
         bool                full_duplex_slave: 1; /*!< whether the channel is forced to switch to slave role for full duplex */
+#if SOC_I2S_SUPPORTS_APLL
+        bool                apll_en: 1;        /*!< Flag of whether APLL enabled */
+#endif
     };
     uint32_t                active_slot;    /*!< Active slot number */
     uint32_t                total_slot;     /*!< Total slot number */
-    i2s_destination_t       destination;    /*!< Data path destination (DMA memory path vs Bluetooth controller where supported) */
     i2s_clock_src_t         clk_src;        /*!< Clock source */
-#if SOC_I2S_SUPPORTS_APLL
-    bool                    apll_adjustable; /*!< Whether the current APLL acquisition is adjustable */
-#endif
     uint32_t                sclk_hz;        /*!< Source clock frequency */
-    uint32_t                target_mclk_hz; /*!< Requested MCLK used by the adjustable APLL planner */
     uint32_t                origin_mclk_hz; /*!< Original mclk frequency */
     uint32_t                curr_mclk_hz;   /*!< Current mclk frequency */
-    uint32_t                bclk_hz;        /*!< BCLK frequency */
     /* Locks and queues */
+    SemaphoreHandle_t       mutex;          /*!< Mutex semaphore for the channel operations */
     SemaphoreHandle_t       binary;         /*!< Binary semaphore for writing / reading / enabling / disabling */
 #if CONFIG_PM_ENABLE
-    esp_pm_lock_handle_t    pm_lock;        /*!< Power management lock held while the channel is enabled */
+    esp_pm_lock_handle_t    pm_lock;        /*!< Power management lock, to avoid apb clock frequency changes while i2s is working */
 #endif
     QueueHandle_t           msg_queue;      /*!< Message queue handler, used for transporting data between interrupt and read/write task */
     uint64_t                reserve_gpio_mask; /*!< The gpio mask that has been reserved by I2S */
     i2s_event_callbacks_internal_t   callbacks;      /*!< Callback functions */
     void                    *user_data;     /*!< User data for callback functions */
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-    i2s_tx_fifo_sync_callback_t     on_tx_sync;        /*!< TX FIFO sync manual supplement threshold callback */
-    void                    *sync_user_data; /*!< User data for TX FIFO sync callback */
-    intr_handle_t           i2s_intr;       /*!< I2S peripheral interrupt handle */
-    bool                    tx_fifo_sync_configured; /*!< Whether TX FIFO sync has been configured */
-    bool                    tx_fifo_sync_enabled; /*!< Whether TX FIFO sync is enabled */
-#endif
     void (*start)(i2s_chan_handle_t);       /*!< start tx/rx channel */
     void (*stop)(i2s_chan_handle_t);        /*!< stop tx/rx channel */
 };
-
-/**
- * @brief Return the opposite-direction channel registered on the same controller
- *
- * @note The returned channel may be NULL and is not necessarily paired in full-duplex mode.
- */
-static inline i2s_chan_handle_t i2s_channel_get_peer(i2s_chan_handle_t handle)
-{
-    return handle->dir == I2S_DIR_TX ? handle->controller->rx_chan : handle->controller->tx_chan;
-}
 
 /**
  * @brief lp i2s controller type
@@ -336,47 +247,17 @@ extern i2s_platform_t g_i2s;  /*!< Global i2s instance for driver internal use *
 esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag);
 
 /**
- * @brief Release interrupts connected during a failed channel initialization
- *
- * @param handle I2S channel handle
- */
-void i2s_deinit_channel_intr(i2s_chan_handle_t handle);
-
-/**
- * @brief Prepare the DMA engine and query the memory alignment constraints
- *
- * @param handle I2S channel handle
- * @return
- *      - ESP_OK                DMA engine prepared
- *      - ESP_ERR_NOT_SUPPORTED External-memory DMA is unsupported
- *      - ESP_ERR_NOT_FOUND     DMA channel not found
- */
-esp_err_t i2s_prepare_dma(i2s_chan_handle_t handle);
-
-#if SOC_I2S_SUPPORTS_TX_FIFO_SYNC
-/**
- * @brief Initialize I2S peripheral interrupt
- *
- * @param handle        I2S channel handle
- * @return
- *      - ESP_OK                Initialize interrupt success
- *      - ESP_ERR_INVALID_ARG   Wrong port id or NULL pointer
- */
-esp_err_t i2s_init_i2s_intr(i2s_chan_handle_t handle);
-#endif
-
-/**
- * @brief Free I2S DMA buffers and the DMA link list
+ * @brief Free I2S DMA descriptor and DMA buffer
  *
  * @param handle        I2S channel handle
  * @return
  *      - ESP_OK                Free success
  *      - ESP_ERR_INVALID_ARG   NULL pointer
  */
-esp_err_t i2s_free_dma_resources(i2s_chan_handle_t handle);
+esp_err_t i2s_free_dma_desc(i2s_chan_handle_t handle);
 
 /**
- * @brief Allocate I2S DMA buffers and mount them to the DMA link list
+ * @brief Allocate memory for I2S DMA descriptor and DMA buffer
  *
  * @param handle        I2S channel handle
  * @param bufsize       The DMA buffer size
@@ -384,9 +265,9 @@ esp_err_t i2s_free_dma_resources(i2s_chan_handle_t handle);
  * @return
  *      - ESP_OK                Allocate memory success
  *      - ESP_ERR_INVALID_ARG   NULL pointer or bufsize is too big
- *      - ESP_ERR_NO_MEM        No memory for DMA buffers or DMA link list
+ *      - ESP_ERR_NO_MEM        No memory for DMA descriptor and DMA buffer
  */
-esp_err_t i2s_alloc_dma_resources(i2s_chan_handle_t handle, uint32_t bufsize);
+esp_err_t i2s_alloc_dma_desc(i2s_chan_handle_t handle, uint32_t bufsize);
 
 /**
  * @brief Get DMA buffer size
@@ -401,199 +282,14 @@ esp_err_t i2s_alloc_dma_resources(i2s_chan_handle_t handle, uint32_t bufsize);
 uint32_t i2s_get_buf_size(i2s_chan_handle_t handle, uint32_t data_bit_width, uint32_t dma_frame_num);
 
 /**
- * @brief Lock the control plane of the controller that the channel is bound to
+ * @brief Get the frequency of the source clock
  *
- * All control APIs hold this lock while accessing the channel, its peer or the
- * controller. Read/write data paths only use the channel binary semaphore.
- *
- * @return The locked controller. Pass this exact pointer to i2s_channel_unlock()
- *         because HW v1 initialization can migrate a REGISTER channel.
- */
-i2s_controller_t *i2s_channel_lock(i2s_chan_handle_t handle);
-
-/**
- * @brief Unlock the controller returned by i2s_channel_lock()
- */
-void i2s_channel_unlock(i2s_controller_t *locked_controller);
-
-/**
- * @brief Reject initialization while the peer is still stopping
- *
- * @note The caller must hold the controller lock.
- */
-esp_err_t i2s_channel_check_init_state(i2s_chan_handle_t handle);
-
-/**
- * @brief Check the common state requirements for a reconfiguration
- *
- * The channel must be READY. A duplex peer may be running, but must not be stopping.
- *
- * @note The caller must hold the controller lock.
- */
-esp_err_t i2s_channel_check_reconfig_state(i2s_chan_handle_t handle);
-
-#if SOC_I2S_SUPPORTS_APLL
-/**
- * @brief Remove a channel from controller-managed adjustable APLL ownership
- *
- * The current frequency is kept while another logical user remains. The
- * physical reference is released only after the last user leaves.
- *
- * @note The caller must hold the controller lock.
- */
-esp_err_t i2s_apll_remove_logical_user(i2s_chan_handle_t handle);
-
-/**
- * @brief Release controller-managed adjustable APLL ownership
- */
-esp_err_t i2s_apll_release_controller(i2s_controller_t *controller);
-
-/**
- * @brief Check whether this channel has a valid APLL hardware state for enable
- */
-esp_err_t i2s_apll_check_enable(i2s_chan_handle_t handle);
-#endif
-
-/**
- * @brief Roll back a failed initialization to a simplex REGISTER channel
- *
- * @note The caller must hold the controller lock.
- *
- * @param handle            I2S channel handle
- * @param clock_configured  Whether the channel clock has been applied and owns its clock source
- */
-void i2s_channel_rollback_init(i2s_chan_handle_t handle, bool clock_configured, bool restore_simplex);
-
-typedef enum {
-    I2S_APLL_OP_NONE,                   /*!< This transaction does not use APLL */
-    I2S_APLL_OP_CHANNEL_FIXED,          /*!< Per-channel fixed APLL ownership */
-    I2S_APLL_OP_CHANNEL_ADJUSTABLE,     /*!< Per-channel adjustable APLL ownership */
-    I2S_APLL_OP_CONTROLLER_ADJUSTABLE,  /*!< Controller-managed adjustable APLL ownership */
-} i2s_apll_operation_mode_t;
-
-typedef struct {
-    i2s_apll_operation_mode_t mode; /*!< APLL ownership and adjustment mode */
-    bool acquired_in_transaction;   /*!< Whether this transaction acquired the physical APLL reference */
-    bool frequency_changed;         /*!< Whether this transaction changed the physical APLL frequency */
-    bool keep_divider;              /*!< Whether to keep the current integer divider of the deciding user */
-    uint32_t frequency_hz;          /*!< Actual APLL frequency produced by this transaction */
-    uint32_t target_hz;             /*!< Ideal frequency requested from the clock tree */
-} i2s_apll_operation_t;
-
-/**
- * @brief Clock-source transaction state for channel clock configuration
- *
- * The mode-specific code calculates its requested MCLK/BCLK before starting
- * this transaction. The transaction then owns any newly acquired source
- * reference and APLL side effects until it is committed or aborted.
- */
-typedef struct {
-    i2s_clock_src_t clk_src;        /*!< Normalized target clock source */
-    bool source_acquired;           /*!< Whether this operation acquired a per-channel source reference */
-#if SOC_I2S_SUPPORTS_APLL
-    i2s_apll_operation_t apll;      /*!< APLL-specific transaction state */
-#endif
-} i2s_clock_src_transaction_t;
-
-/**
- * @brief Acquire the target source and begin a clock-source transaction
- */
-esp_err_t i2s_clock_src_acquire(i2s_chan_handle_t handle, i2s_clock_src_t clk_src,
-                                bool clk_src_adjustable, i2s_clock_src_transaction_t *transaction);
-
-/**
- * @brief Resolve the frequency of a prepared source clock, configuring APLL when selected and permitted
- *
- * @param handle        I2S channel handle
  * @param clk_src       clock source
- * @param clk_src_adjustable Whether the clock source frequency can be adjusted
  * @param mclk_freq_hz  Expected mclk frequency in Hz
- * @param transaction   Clock-source transaction containing any pending APLL side effects
- * @param clk_freq_hz   Actual source clock frequency
  * @return
- *      - ESP_OK: Source clock frequency obtained
- *      - ESP_ERR_INVALID_ARG: Invalid source clock frequency
- *      - ESP_ERR_INVALID_STATE: APLL resource conflict or access mode change
+ *      - Actual source clock frequency
  */
-esp_err_t i2s_resolve_source_clk_freq(i2s_chan_handle_t handle, i2s_clock_src_t clk_src,
-                                      bool clk_src_adjustable, uint32_t mclk_freq_hz,
-                                      i2s_clock_src_transaction_t *transaction, uint32_t *clk_freq_hz);
-
-/**
- * @brief Commit the clock-source transaction and retain its acquired source
- */
-void i2s_clock_src_commit(i2s_chan_handle_t handle, i2s_clock_src_transaction_t *transaction);
-
-/**
- * @brief Abort the clock-source transaction and release any source acquired by it
- */
-esp_err_t i2s_clock_src_abort(i2s_chan_handle_t handle, i2s_clock_src_transaction_t *transaction);
-
-/**
- * @brief Whether the channel currently owns its clock source as adjustable APLL
- */
-static inline bool i2s_channel_is_apll_adjustable(i2s_chan_handle_t handle)
-{
-#if SOC_I2S_SUPPORTS_APLL
-    return handle->apll_adjustable;
-#else
-    (void)handle;
-    return false;
-#endif
-}
-
-/**
- * @brief Release the clock source owned by a channel
- *
- * @param handle            I2S channel handle
- * @param clk_src           Clock source owned by the channel
- * @param apll_adjustable   Whether the channel owns the source as adjustable APLL
- */
-esp_err_t i2s_channel_release_clk_src(i2s_chan_handle_t handle, i2s_clock_src_t clk_src, bool apll_adjustable);
-
-/**
- * @brief Release the clock source of the replaced clock configuration
- *
- * @note Call it after the new clock configuration has been applied. APLL ownership is kept
- *       when the new configuration still uses APLL.
- *
- * @param handle                I2S channel handle
- * @param old_clk_src           Clock source of the replaced configuration
- * @param old_apll_adjustable   Whether the replaced configuration owned adjustable APLL
- */
-esp_err_t i2s_channel_release_replaced_clk_src(i2s_chan_handle_t handle, i2s_clock_src_t old_clk_src, bool old_apll_adjustable);
-
-#if SOC_I2S_SUPPORTS_APLL
-/**
- * @brief Check whether the channel uses controller-managed adjustable APLL
- *
- * @note STD and TDM channels share one controller-owned adjustable APLL reference.
- *       Other modes keep per-channel ownership.
- */
-bool i2s_apll_is_controller_managed(i2s_chan_handle_t handle);
-
-/**
- * @brief Begin a controller-managed adjustable APLL operation
- */
-esp_err_t i2s_apll_controller_operation_begin(i2s_chan_handle_t handle, i2s_apll_operation_t *operation);
-
-/**
- * @brief Resolve an APLL frequency according to the selected access mode
- */
-esp_err_t i2s_apll_resolve_freq(i2s_chan_handle_t handle, bool clk_src_adjustable,
-                                uint32_t mclk_freq_hz, i2s_apll_operation_t *operation,
-                                uint32_t *real_freq_hz);
-
-/**
- * @brief Commit an APLL operation after applying a valid I2S clock configuration
- */
-void i2s_apll_operation_commit(i2s_chan_handle_t handle, i2s_apll_operation_t *operation);
-
-/**
- * @brief Abort an APLL operation after an I2S clock configuration fails
- */
-void i2s_apll_operation_abort(i2s_chan_handle_t handle, i2s_apll_operation_t *operation);
-#endif
+uint32_t i2s_get_source_clk_freq(i2s_clock_src_t clk_src, uint32_t mclk_freq_hz);
 
 /**
  * @brief Check gpio validity and attach to corresponding signal
@@ -652,41 +348,11 @@ void i2s_output_gpio_revoke(i2s_chan_handle_t handle, uint64_t gpio_mask);
  *
  * @param handle        I2S channel handle
  * @param id            I2S port id
- * @param locked_controller Pointer to the controller currently locked by the caller.
- *                          On success, the lock is transferred to the target controller.
  * @return
  *      - ESP_OK                Change port success
  *      - ESP_ERR_NOT_FOUND     No available I2S port found
  */
-esp_err_t i2s_channel_change_port(i2s_chan_handle_t handle, int id, i2s_controller_t **locked_controller);
-#endif
-
-#if CONFIG_PM_ENABLE
-/**
- * @brief Check whether the clock source requires the APB frequency to remain fixed
- *
- * @param clk_src I2S clock source
- * @return True if an APB frequency lock is required while the clock source is in use
- */
-bool i2s_clk_src_requires_apb_lock(i2s_clock_src_t clk_src);
-
-/**
- * @brief Check whether the clock source requires the CPU frequency to remain fixed
- *
- * @param clk_src I2S clock source
- * @return True if a maximum CPU frequency lock is required while the clock source is in use
- */
-bool i2s_clk_src_requires_cpu_lock(i2s_clock_src_t clk_src);
-
-/**
- * @brief Select the power-management lock held while an I2S channel is enabled.
- *
- * A DMA buffer in PSRAM, or a clock source which requires a fixed CPU frequency,
- * uses a maximum CPU frequency lock. A clock source which requires a fixed APB
- * frequency uses an APB frequency lock. Other clock sources only need to be kept
- * active by blocking light sleep.
- */
-esp_pm_lock_type_t i2s_select_pm_lock_type(bool dma_buf_in_psram, i2s_clock_src_t clk_src);
+esp_err_t i2s_channel_change_port(i2s_chan_handle_t handle, int id);
 #endif
 
 #ifdef __cplusplus

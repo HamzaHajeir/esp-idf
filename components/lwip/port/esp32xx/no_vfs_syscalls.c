@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdarg.h>
-#include <errno.h>
+#include <sys/errno.h>
 #include <sys/lock.h>
 #include <sys/fcntl.h>
 #include <sys/ioctl.h>

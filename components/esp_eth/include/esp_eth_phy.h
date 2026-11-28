@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -267,40 +267,6 @@ struct esp_eth_phy_s {
     *
     */
     esp_err_t (*del)(esp_eth_phy_t *phy);
-
-    /**
-    * @brief Sets PHY master/slave mode for 1000BASE-T
-    *
-    * @note This configuration is required before forcing 1000 Mbps speed mode when auto-negotiation
-    *       is disabled. One link partner must be configured as master and the other as slave.
-    * @note This function pointer may be set to NULL when the PHY does not support 1000BASE-T.
-    *
-    * @param[in] phy: Ethernet PHY instance
-    * @param[in] master: set true to configure as master; set false to configure as slave
-    *
-    * @return
-    *      - ESP_OK: PHY instance master/slave mode has been configured successfully
-    *      - ESP_ERR_NOT_SUPPORTED: PHY does not support 1000BASE-T
-    *      - ESP_FAIL: PHY instance master/slave mode configuration failed because some error occurred
-    *
-    */
-    esp_err_t (*set_master_mode)(esp_eth_phy_t *phy, bool master);
-
-    /**
-    * @brief Gets PHY master/slave mode for 1000BASE-T
-    *
-    * @note This function pointer may be set to NULL when the PHY does not support 1000BASE-T.
-    *
-    * @param[in] phy: Ethernet PHY instance
-    * @param[out] master: set to true if PHY is configured as master; false if configured as slave
-    *
-    * @return
-    *      - ESP_OK: PHY instance master/slave mode has been read successfully
-    *      - ESP_ERR_NOT_SUPPORTED: PHY does not support 1000BASE-T
-    *      - ESP_FAIL: PHY instance master/slave mode read failed because some error occurred
-    *
-    */
-    esp_err_t (*get_master_mode)(esp_eth_phy_t *phy, bool *master);
 };
 
 /**
@@ -314,7 +280,6 @@ typedef struct {
     int reset_gpio_num;               /*!< Reset GPIO number, -1 means no hardware reset */
     int32_t hw_reset_assert_time_us;  /*!< Time the reset pin is asserted (Unit: us), 0 to use chip specific default */
     int32_t post_hw_reset_delay_ms;   /*!< Time to wait after the HW reset (Unit: ms), 0 to use chip specific default, -1 means no wait */
-    bool hold_reset_gpio;             /*!< Latch PHY nRST high after hardware reset so the PHY stays out of reset when GPIO/IOMUX is powered down (e.g. Light-sleep) */
 } eth_phy_config_t;
 
 /**
@@ -327,9 +292,8 @@ typedef struct {
         .reset_timeout_ms = 100,               \
         .autonego_timeout_ms = 4000,           \
         .reset_gpio_num = 5,                   \
-        .hw_reset_assert_time_us = 0,          \
-        .post_hw_reset_delay_ms = 0,           \
-        .hold_reset_gpio = false               \
+        .hw_reset_assert_time_us = 0,         \
+        .post_hw_reset_delay_ms = 0           \
     }
 
 /**

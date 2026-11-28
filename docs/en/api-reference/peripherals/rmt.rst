@@ -146,12 +146,6 @@ Once the :cpp:type:`rmt_rx_channel_config_t` structure is populated with mandato
 
     When multiple RMT channels are allocated at the same time, the group’s prescale is determined based on the resolution of the first channel. The driver then selects the appropriate prescale from low to high. To avoid prescale conflicts when allocating multiple channels, allocate channels in order of their target resolution, either from highest to lowest or lowest to highest.
 
-.. only:: SOC_HP_CPU_HAS_MULTIPLE_CORES
-
-    .. note::
-
-        All RMT channels in a group share one interrupt, which stays on the CPU core that installed the first channel. Later :cpp:func:`rmt_new_tx_channel` / :cpp:func:`rmt_new_rx_channel` calls from another core still succeed; they join that group instead of moving the ISR. To run RMT interrupts on a specific core, create the first channel from a task pinned to that core.
-
 Uninstall RMT Channel
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -577,7 +571,7 @@ A full sample code can be found in :example:`peripherals/rmt/ir_nec_transceiver`
 Power Management
 ^^^^^^^^^^^^^^^^
 
-When power management is enabled, i.e., :menuitem:`CONFIG_PM_ENABLE` is on, the system may adjust or disable the clock source before going to sleep. As a result, the time base inside the RMT can't work as expected.
+When power management is enabled, i.e., :ref:`CONFIG_PM_ENABLE` is on, the system may adjust or disable the clock source before going to sleep. As a result, the time base inside the RMT can't work as expected.
 
 The driver can prevent the above issue by creating a power management lock. The lock type is set based on different clock sources. The driver will acquire the lock in :cpp:func:`rmt_enable`, and release it in :cpp:func:`rmt_disable`. That means, any RMT transactions in between these two functions are guaranteed to work correctly and stable.
 
@@ -592,7 +586,7 @@ Cache Safe
 
 By default, the RMT interrupt is deferred when the Cache is disabled for reasons like writing or erasing the main Flash. Thus the transaction-done interrupt does not get handled in time, which is not acceptable in a real-time application. What is worse, when the RMT transaction relies on **ping-pong** interrupt to successively encode or copy RMT symbols, a delayed interrupt can lead to an unpredictable result.
 
-There is a Kconfig option :menuitem:`CONFIG_RMT_TX_ISR_CACHE_SAFE` and :menuitem:`CONFIG_RMT_RX_ISR_CACHE_SAFE` that has the following features:
+There is a Kconfig option :ref:`CONFIG_RMT_TX_ISR_CACHE_SAFE` and :ref:`CONFIG_RMT_RX_ISR_CACHE_SAFE` that has the following features:
 
 1. Enable the interrupt being serviced even when the cache is disabled
 2. Place all functions used by the ISR into IRAM [2]_
@@ -600,9 +594,9 @@ There is a Kconfig option :menuitem:`CONFIG_RMT_TX_ISR_CACHE_SAFE` and :menuitem
 
 This Kconfig option allows the interrupt handler to run while the cache is disabled but comes at the cost of increased IRAM consumption.
 
-Please note, when :menuitem:`CONFIG_RMT_TX_ISR_CACHE_SAFE` is enabled, you must also place the encoder functions (mainly the :cpp:member:`rmt_encoder_t::encode` and :cpp:member:`rmt_encoder_t::reset`) into IRAM. You can use :c:macro:`RMT_ENCODER_FUNC_ATTR` to decorate your encoder functions.
+Please note, when :ref:`CONFIG_RMT_TX_ISR_CACHE_SAFE` is enabled, you must also place the encoder functions (mainly the :cpp:member:`rmt_encoder_t::encode` and :cpp:member:`rmt_encoder_t::reset`) into IRAM. You can use :c:macro:`RMT_ENCODER_FUNC_ATTR` to decorate your encoder functions.
 
-Another Kconfig option :menuitem:`CONFIG_RMT_RECV_FUNC_IN_IRAM` can place :cpp:func:`rmt_receive` into the IRAM as well. So that the receive function can be used even when the flash cache is disabled.
+Another Kconfig option :ref:`CONFIG_RMT_RECV_FUNC_IN_IRAM` can place :cpp:func:`rmt_receive` into the IRAM as well. So that the receive function can be used even when the flash cache is disabled.
 
 .. _rmt-thread-safety:
 
@@ -621,9 +615,9 @@ The following functions are allowed to use under ISR context as well.
 Kconfig Options
 ^^^^^^^^^^^^^^^
 
-- :menuitem:`CONFIG_RMT_TX_ISR_CACHE_SAFE` and :menuitem:`CONFIG_RMT_RX_ISR_CACHE_SAFE` control whether the default ISR handler can work when cache is disabled, see also :ref:`rmt-cache-safe` for more information.
-- :menuitem:`CONFIG_RMT_ENABLE_DEBUG_LOG` is used to enable the debug log at the cost of increased firmware binary size.
-- :menuitem:`CONFIG_RMT_RECV_FUNC_IN_IRAM` controls where to place the RMT receive function (IRAM or Flash), see :ref:`rmt-cache-safe` for more information.
+- :ref:`CONFIG_RMT_TX_ISR_CACHE_SAFE` and :ref:`CONFIG_RMT_RX_ISR_CACHE_SAFE` control whether the default ISR handler can work when cache is disabled, see also :ref:`rmt-cache-safe` for more information.
+- :ref:`CONFIG_RMT_ENABLE_DEBUG_LOG` is used to enable the debug log at the cost of increased firmware binary size.
+- :ref:`CONFIG_RMT_RECV_FUNC_IN_IRAM` controls where to place the RMT receive function (IRAM or Flash), see :ref:`rmt-cache-safe` for more information.
 
 Application Examples
 --------------------
@@ -649,7 +643,7 @@ FAQ
         - Increase the :cpp:member:`rmt_tx_channel_config_t::mem_block_symbols`, in steps of {IDF_TARGET_SOC_RMT_MEM_WORDS_PER_CHANNEL}.
         - Place the encoding function in the IRAM with ``IRAM_ATTR`` attribute.
         - Enable the :cpp:member:`rmt_tx_channel_config_t::with_dma` if DMA is available.
-        - Install the first RMT channel from a task pinned to a separate CPU core, so the shared RMT interrupt runs there instead of competing with interrupt-heavy peripherals (e.g. WiFi, Bluetooth). Later channels join that group even if they are installed from another core.
+        - Install the RMT driver on a separate CPU core to avoid competing for the same CPU resources with other interrupt heavy peripherals (e.g. WiFi, Bluetooth).
 
 API Reference
 -------------
@@ -663,7 +657,7 @@ API Reference
 
 
 .. [1]
-   Different ESP chip series might have different numbers of RMT channels. Please refer to [`TRM <{IDF_TARGET_TRM_EN_URL}#rmt>`__] for details. The driver does not forbid you from applying for more RMT channels, but it returns an error when there are no hardware resources available. Please always check the return value when doing :ref:`rmt-resource-allocation`.
+   Different ESP chip series might have different numbers of RMT channels. Please refer to [`TRM <{IDF_TARGET_TRM_EN_URL}#rmt>`__] for details. The driver does not forbid you from applying for more RMT channels, but it returns an error when there are no hardware resources available. Please always check the return value when doing `Resource Allocation <#resource-allocation>`__.
 
 .. [2]
    The callback function, e.g., :cpp:member:`rmt_tx_event_callbacks_t::on_trans_done`, and the functions invoked by itself should also reside in IRAM, users need to take care of this by themselves.

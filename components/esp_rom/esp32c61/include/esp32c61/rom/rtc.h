@@ -51,8 +51,8 @@ extern "C" {
   *     LP_AON_STORE5_REG       FAST_RTC_MEMORY_LENGTH
   *     LP_AON_STORE6_REG       FAST_RTC_MEMORY_ENTRY
   *     LP_AON_STORE7_REG       RTC fix us, low 32 bits
-  *     LP_AON_STORE8_REG       Store light sleep wake stub addr (mask bit[1:0])
-  *     LP_AON_STORE8_REG       Store the sleep mode at bit[0]  (0:light sleep 1:deep sleep)
+  *     LP_AON_STORE8_REG       Store light sleep wake stub addr
+  *     LP_AON_STORE9_REG       Store the sleep mode at bit[0]  (0:light sleep 1:deep sleep)
   *************************************************************************************
   *
   * Since esp32c61 does not support RTC mem, so use LP_AON store regs to record rtc time:
@@ -123,7 +123,7 @@ ESP_STATIC_ASSERT((soc_reset_reason_t)EFUSE_RESET == RESET_REASON_CORE_EFUSE_CRC
 ESP_STATIC_ASSERT((soc_reset_reason_t)USB_UART_CHIP_RESET == RESET_REASON_CORE_USB_UART, "USB_UART_CHIP_RESET != RESET_REASON_CORE_USB_UART");
 ESP_STATIC_ASSERT((soc_reset_reason_t)USB_JTAG_CHIP_RESET == RESET_REASON_CORE_USB_JTAG, "USB_JTAG_CHIP_RESET != RESET_REASON_CORE_USB_JTAG");
 ESP_STATIC_ASSERT((soc_reset_reason_t)JTAG_RESET == RESET_REASON_CPU0_JTAG, "JTAG_RESET != RESET_REASON_CPU0_JTAG");
-ESP_STATIC_ASSERT((soc_reset_reason_t)RTC_PWR_GLITCH_RESET == RESET_REASON_SYS_PWR_GLITCH, "RTC_PWR_GLITCH_RESET != RESET_REASON_SYS_PWR_GLITCH");
+ESP_STATIC_ASSERT((soc_reset_reason_t)RTC_PWR_GLITCH_RESET == RESET_REASON_RTC_BROWN_OUT, "RTC_PWR_GLITCH_RESET != RESET_REASON_RTC_BROWN_OUT");
 ESP_STATIC_ASSERT((soc_reset_reason_t)CPU_LOCKUP_RESET == RESET_REASON_CPU_LOCKUP, "CPU_LOCKUP_RESET != RESET_REASON_CPU_LOCKUP");
 
 typedef enum {

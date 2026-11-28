@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -72,8 +72,8 @@ static esp_ble_scan_params_t ble_scan_params = {
     .scan_type              = BLE_SCAN_TYPE_ACTIVE,
     .own_addr_type          = BLE_ADDR_TYPE_PUBLIC,
     .scan_filter_policy     = BLE_SCAN_FILTER_ALLOW_ALL,
-    .scan_interval          = ESP_BLE_GAP_SCAN_ITVL_MS(50),
-    .scan_window            = ESP_BLE_GAP_SCAN_WIN_MS(30),
+    .scan_interval          = 0x50,
+    .scan_window            = 0x30,
     .scan_duplicate         = BLE_SCAN_DUPLICATE_DISABLE
 };
 
@@ -204,7 +204,6 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                 }
                 /* free char_elem_result */
                 free(char_elem_result);
-                char_elem_result = NULL;
             }else{
                 ESP_LOGE(GATTC_TAG, "no char found");
             }
@@ -263,7 +262,6 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
 
                     /* free descr_elem_result */
                     free(descr_elem_result);
-                    descr_elem_result = NULL;
                 }
             }
             else{
@@ -470,12 +468,9 @@ void app_main(void)
     }
     ESP_ERROR_CHECK( ret );
 
-#if CONFIG_EXAMPLE_CI_PIPELINE_ID
+    #if CONFIG_EXAMPLE_CI_PIPELINE_ID
     memcpy(remote_device_name, esp_bluedroid_get_example_name(), sizeof(remote_device_name));
-    ble_scan_params.scan_interval = ESP_BLE_GAP_SCAN_ITVL_MS(50);
-    ble_scan_params.scan_window = ESP_BLE_GAP_SCAN_WIN_MS(50);
-    ble_scan_params.scan_duplicate = BLE_SCAN_DUPLICATE_ENABLE;
-#endif
+    #endif
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 
@@ -493,7 +488,7 @@ void app_main(void)
     }
 
     esp_bluedroid_config_t cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-    ret = esp_bluedroid_init_with_cfg(&cfg);
+    ret = esp_bluedroid_init_with_cfg(&cfg);;
     if (ret) {
         ESP_LOGE(GATTC_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;

@@ -97,8 +97,7 @@ static void bta_create_mns_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
         record->mns.supported_features = p_attr->attr_value.v.u32;
     }
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->mns.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->mns.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -185,8 +184,7 @@ static void bta_create_mas_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
         record->mas.supported_features = p_attr->attr_value.v.u32;
     }
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->mas.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->mas.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -226,8 +224,7 @@ static void bta_create_pse_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
         record->pse.supported_features = p_attr->attr_value.v.u32;
     }
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->pse.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->pse.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -257,8 +254,7 @@ static void bta_create_pce_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
     record->pce.hdr.l2cap_psm = -1;             // unused
     record->pce.hdr.profile_version = 0;
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->pce.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->pce.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -282,8 +278,7 @@ static void bta_create_ops_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
     record->ops.hdr.profile_version = 0;
     record->ops.supported_formats_list_len = 0;
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->ops.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->ops.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -356,8 +351,7 @@ static void bta_create_sap_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
     record->sap.hdr.l2cap_psm = -1;
     record->sap.hdr.profile_version = 0;
 
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->sap.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->sap.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -384,8 +378,7 @@ static void bta_create_raw_sdp_record(bluetooth_sdp_record *record, tSDP_DISC_RE
     record->raw.hdr.profile_version = -1;
 
     /* Try to extract a service name */
-    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-            SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+    if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL) {
         record->raw.hdr.service_name_length = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
         record->raw.hdr.service_name = (char *)p_attr->attr_value.v.array;
     }
@@ -432,10 +425,7 @@ static void bta_sdp_search_cback(UINT16 result, void *user_data)
 
     bta_sdp_cb.sdp_active = BTA_SDP_ACTIVE_NONE;
 
-    if ((bta_sdp_cb.p_dm_cback == NULL) || (user_data == NULL)) {
-        if (user_data) {
-            osi_free(user_data);
-        }
+    if (bta_sdp_cb.p_dm_cback == NULL) {
         return;
     }
 
@@ -527,19 +517,10 @@ void bta_sdp_enable(tBTA_SDP_MSG *p_data)
 void bta_sdp_search(tBTA_SDP_MSG *p_data)
 {
     int x = 0;
+    // TODO: Leaks!!! but needed as user-data pointer
+    tBT_UUID *bta_sdp_search_uuid = osi_malloc(sizeof(tBT_UUID));
     if (p_data == NULL) {
         APPL_TRACE_DEBUG("SDP control block handle is null\n");
-        return;
-    }
-
-    if (bta_sdp_cb.p_dm_cback == NULL) {
-        APPL_TRACE_DEBUG("SDP is not active\n");
-        return;
-    }
-
-    tBT_UUID *bta_sdp_search_uuid = osi_malloc(sizeof(tBT_UUID));
-    if (bta_sdp_search_uuid == NULL) {
-        APPL_TRACE_DEBUG("SDP search param malloc failed\n");
         return;
     }
     tBTA_SDP_STATUS status = BTA_SDP_FAILURE;
@@ -556,7 +537,6 @@ void bta_sdp_search(tBTA_SDP_MSG *p_data)
             result.status = status;
             bta_sdp_cb.p_dm_cback(BTA_SDP_SEARCH_COMP_EVT, (tBTA_SDP *)&result, NULL);
         }
-        osi_free(bta_sdp_search_uuid);
         return;
     }
 
@@ -580,7 +560,6 @@ void bta_sdp_search(tBTA_SDP_MSG *p_data)
 
     if (!SDP_ServiceSearchAttributeRequest2(p_data->get_search.bd_addr, p_bta_sdp_cfg->p_sdp_db,
                                             bta_sdp_search_cback, (void *)bta_sdp_search_uuid)) {
-        osi_free(bta_sdp_search_uuid);
         bta_sdp_cb.sdp_active = BTA_SDP_ACTIVE_NONE;
 
         /* failed to start SDP. report the failure right away */
@@ -641,7 +620,7 @@ void bta_sdp_remove_record(tBTA_SDP_MSG *p_data)
 **
 ** Function     bta_sdp_disable
 **
-** Description  Disable SDP
+** Description  Removes an SDP record
 **
 ** Returns      void
 **
@@ -651,19 +630,8 @@ void bta_sdp_disable(tBTA_SDP_MSG *p_data)
     APPL_TRACE_DEBUG("%s()\n", __func__);
     tBTA_SDP bta_sdp;
     bta_sdp.status = BTA_SDP_SUCCESS;
-    tBTA_SDP_DM_CBACK *dm_cbk = bta_sdp_cb.p_dm_cback;
-
-    bta_sdp_cb.p_dm_cback = NULL;
-    if (p_bta_sdp_cfg->p_sdp_db && (bta_sdp_cb.sdp_active != BTA_SDP_ACTIVE_NONE)) {
-        if (!SDP_CancelServiceSearch(p_bta_sdp_cfg->p_sdp_db)) {
-            bta_sdp_cb.sdp_active = BTA_SDP_ACTIVE_NONE;
-        }
-    }
-
-    bta_sys_deregister(BTA_ID_SDP);
-
-    if (dm_cbk) {
-        dm_cbk(BTA_SDP_DISABLE_EVT, &bta_sdp, NULL);
+    if (bta_sdp_cb.p_dm_cback) {
+        bta_sdp_cb.p_dm_cback(BTA_SDP_DISABLE_EVT, &bta_sdp, NULL);
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,14 +19,16 @@
 #include "hal/usb_utmi_hal.h"
 #include "hal/gpio_ll.h"
 #include "soc/soc_caps.h"
-#if USB_WRAP_LL_DEPENDS_ON_BBPLL
-#include "esp_private/rtc_clk.h"
+
+#if SOC_USB_UTMI_PHY_NO_POWER_OFF_ISO
+#include "esp_private/sleep_usb.h"
+#include "esp_sleep.h"
 #endif
 
-#if (SOC_USB_FSLS_PHY_NUM > 0)
-#define USB_PHY_FSLS_EXT_PHY_SUPPORTED USB_WRAP_LL_EXT_PHY_SUPPORTED
+#if !SOC_RCC_IS_INDEPENDENT
+#define USB_PHY_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #else
-#define USB_PHY_FSLS_EXT_PHY_SUPPORTED 0
+#define USB_PHY_RCC_ATOMIC()
 #endif
 
 static const char *USBPHY_TAG = "usb_phy";
@@ -41,9 +43,7 @@ struct phy_context_t {
     usb_phy_status_t status;                      /**< PHY status */
     usb_otg_mode_t otg_mode;                      /**< USB OTG mode */
     usb_phy_ext_io_conf_t *iopins;                /**< external PHY I/O pins */
-#if (SOC_USB_FSLS_PHY_NUM > 0)
     usb_wrap_hal_context_t wrap_hal;              /**< USB WRAP HAL context */
-#endif
 };
 
 typedef struct {
@@ -144,15 +144,24 @@ esp_err_t usb_phy_otg_set_mode(usb_phy_handle_t handle, usb_otg_mode_t mode)
     // we support only fixed PHY to USB-DWC mapping:
     // USB-DWC2.0 <-> UTMI PHY
     // USB-DWC1.1 <-> FSLS PHY
-#if (SOC_USB_UTMI_PHY_NUM > 0)
     if (handle->target == USB_PHY_TARGET_UTMI) {
-        // On some targets, the 15k pulldown resistors on D+/D- are not controlled
-        // by the USB-OTG peripheral, but must be controlled by software.
-        // Host mode: connect pulldowns; Device mode: disconnect pulldowns.
-        usb_utmi_hal_enable_data_pulldowns(mode == USB_OTG_MODE_HOST);
+        // ESP32-P4 v3 changed connection between USB-OTG peripheral and UTMI PHY.
+        // On v3 the 15k pulldown resistors on D+/D- are no longer controlled by USB-OTG,
+        // but must be controlled directly by this software driver.
+#if CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#include "soc/lp_system_struct.h"
+        if (mode == USB_OTG_MODE_HOST) {
+            // Host must connect 15k pulldown resistors on D+ / D-
+            LP_SYS.hp_usb_otghs_phy_ctrl.hp_utmiotg_dppulldown = 1;
+            LP_SYS.hp_usb_otghs_phy_ctrl.hp_utmiotg_dmpulldown = 1;
+        } else {
+            // Device must not connect any pulldown resistors on D+ / D-
+            LP_SYS.hp_usb_otghs_phy_ctrl.hp_utmiotg_dppulldown = 0;
+            LP_SYS.hp_usb_otghs_phy_ctrl.hp_utmiotg_dmpulldown = 0;
+        }
+#endif // !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
         return ESP_OK;
     }
-#endif
 
     const usb_otg_signal_conn_t *otg_sig = usb_dwc_info.controllers[otg11_index].otg_signals;
     assert(otg_sig);
@@ -161,7 +170,6 @@ esp_err_t usb_phy_otg_set_mode(usb_phy_handle_t handle, usb_otg_mode_t mode)
         gpio_ll_set_input_signal_matrix_source(GPIO_LL_GET_HW(0), otg_sig->bvalid, GPIO_MATRIX_CONST_ZERO_INPUT, false);
         gpio_ll_set_input_signal_matrix_source(GPIO_LL_GET_HW(0), otg_sig->vbusvalid, GPIO_MATRIX_CONST_ONE_INPUT, false);  // receiving a valid Vbus from host
         gpio_ll_set_input_signal_matrix_source(GPIO_LL_GET_HW(0), otg_sig->avalid, GPIO_MATRIX_CONST_ONE_INPUT, false);     // HIGH to force USB host mode
-#if (SOC_USB_FSLS_PHY_NUM > 0)
         if (handle->target == USB_PHY_TARGET_INT) {
             // Configure pull resistors for host
             usb_wrap_pull_override_vals_t vals = {
@@ -172,7 +180,6 @@ esp_err_t usb_phy_otg_set_mode(usb_phy_handle_t handle, usb_otg_mode_t mode)
             };
             usb_wrap_hal_phy_enable_pull_override(&handle->wrap_hal, &vals);
         }
-#endif
     } else if (mode == USB_OTG_MODE_DEVICE) {
         gpio_ll_set_input_signal_matrix_source(GPIO_LL_GET_HW(0), otg_sig->iddig, GPIO_MATRIX_CONST_ONE_INPUT, false);      // connected connector is mini-B side
         gpio_ll_set_input_signal_matrix_source(GPIO_LL_GET_HW(0), otg_sig->bvalid, GPIO_MATRIX_CONST_ONE_INPUT, false);     // HIGH to force USB device mode
@@ -181,22 +188,6 @@ esp_err_t usb_phy_otg_set_mode(usb_phy_handle_t handle, usb_otg_mode_t mode)
     }
 
     return ESP_OK;
-}
-
-void usb_phy_set_otg_suspend_state(bool in_suspend)
-{
-#if SOC_USB_UTMI_PHY_NUM
-    usb_utmi_hal_set_suspend_state(in_suspend);
-#else
-    (void)in_suspend;
-#endif
-}
-
-void usb_phy_clear_otg_wakeup_status(void)
-{
-#if SOC_USB_UTMI_PHY_NUM
-    usb_utmi_hal_clear_wakeup_status();
-#endif
 }
 
 static esp_err_t usb_phy_install(void)
@@ -248,15 +239,9 @@ esp_err_t usb_new_phy(const usb_phy_config_t *config, usb_phy_handle_t *handle_r
     }
 #endif
 
-#if CONFIG_IDF_TARGET_ESP32S31
-    /*
-     * ESP32-S31 exposes only the UTMI PHY to the USB OTG controller.
-     * Keep backward compatibility with applications that still request
-     * the legacy internal PHY target by aliasing it to UTMI.
-     */
-    if (config->controller == USB_PHY_CTRL_OTG && phy_target == USB_PHY_TARGET_INT) {
-        ESP_LOGW(USBPHY_TAG, "Using UTMI PHY instead of requested internal PHY");
-        phy_target = USB_PHY_TARGET_UTMI;
+#if SOC_USB_UTMI_PHY_NO_POWER_OFF_ISO
+    if (phy_target == USB_PHY_TARGET_UTMI) {
+        esp_deep_sleep_register_hook(&sleep_usb_suppress_deepsleep_leakage);
     }
 #endif
 
@@ -264,10 +249,7 @@ esp_err_t usb_new_phy(const usb_phy_config_t *config, usb_phy_handle_t *handle_r
     ESP_RETURN_ON_FALSE(phy_target < USB_PHY_TARGET_MAX, ESP_ERR_INVALID_ARG, USBPHY_TAG, "specified PHY argument is invalid");
     ESP_RETURN_ON_FALSE(config->controller < USB_PHY_CTRL_MAX, ESP_ERR_INVALID_ARG, USBPHY_TAG, "specified source argument is invalid");
     ESP_RETURN_ON_FALSE(phy_target != USB_PHY_TARGET_EXT || config->ext_io_conf, ESP_ERR_INVALID_ARG, USBPHY_TAG, "ext_io_conf must be provided for ext PHY");
-#if !SOC_USB_FSLS_PHY_NUM
-    ESP_RETURN_ON_FALSE(phy_target != USB_PHY_TARGET_INT, ESP_ERR_NOT_SUPPORTED, USBPHY_TAG, "Internal FSLS PHY not supported on this target");
-    ESP_RETURN_ON_FALSE(phy_target != USB_PHY_TARGET_EXT, ESP_ERR_NOT_SUPPORTED, USBPHY_TAG, "Ext PHY not supported on this target");
-#elif !USB_PHY_FSLS_EXT_PHY_SUPPORTED
+#if !USB_WRAP_LL_EXT_PHY_SUPPORTED
     ESP_RETURN_ON_FALSE(phy_target != USB_PHY_TARGET_EXT, ESP_ERR_NOT_SUPPORTED, USBPHY_TAG, "Ext PHY not supported on this target");
 #endif
 #if !SOC_USB_UTMI_PHY_NUM
@@ -300,26 +282,20 @@ esp_err_t usb_new_phy(const usb_phy_config_t *config, usb_phy_handle_t *handle_r
     phy_context->controller = config->controller;
     phy_context->status = USB_PHY_STATUS_IN_USE;
 
-#if (SOC_USB_FSLS_PHY_NUM > 0)
     if (phy_target != USB_PHY_TARGET_UTMI) {
-        PERIPH_RCC_ATOMIC() {
+        USB_PHY_RCC_ATOMIC() {
             usb_wrap_hal_init(&phy_context->wrap_hal);
         }
     } else {
-#endif
-        if (phy_target == USB_PHY_TARGET_UTMI) {
 #if (SOC_USB_UTMI_PHY_NUM > 0)
-            usb_utmi_hal_context_t utmi_hal_context; // Unused for now
-            PERIPH_RCC_ATOMIC() {
-                usb_utmi_hal_init(&utmi_hal_context);
-            }
-#endif
+        usb_utmi_hal_context_t utmi_hal_context; // Unused for now
+        USB_PHY_RCC_ATOMIC() {
+            usb_utmi_hal_init(&utmi_hal_context);
         }
-#if (SOC_USB_FSLS_PHY_NUM > 0)
-    }
 #endif
+    }
     if (config->controller == USB_PHY_CTRL_OTG) {
-#if USB_PHY_FSLS_EXT_PHY_SUPPORTED
+#if USB_WRAP_LL_EXT_PHY_SUPPORTED
         usb_wrap_hal_phy_set_external(&phy_context->wrap_hal, (phy_target == USB_PHY_TARGET_EXT));
 #endif
     }
@@ -329,6 +305,13 @@ esp_err_t usb_new_phy(const usb_phy_config_t *config, usb_phy_handle_t *handle_r
         phy_context->otg_mode = USB_OTG_MODE_DEVICE;
     }
 #endif
+
+    // For FSLS PHY that shares pads with GPIO peripheral, we must set drive capability to 3 (40mA)
+    if (phy_target == USB_PHY_TARGET_INT) {
+        assert(usb_dwc_info.controllers[otg11_index].internal_phy_io);
+        gpio_ll_set_drive_capability(GPIO_LL_GET_HW(0), usb_dwc_info.controllers[otg11_index].internal_phy_io->dm, GPIO_DRIVE_CAP_3);
+        gpio_ll_set_drive_capability(GPIO_LL_GET_HW(0), usb_dwc_info.controllers[otg11_index].internal_phy_io->dp, GPIO_DRIVE_CAP_3);
+    }
 
     *handle_ret = (usb_phy_handle_t) phy_context;
     if (phy_target == USB_PHY_TARGET_EXT) {
@@ -344,16 +327,6 @@ esp_err_t usb_new_phy(const usb_phy_config_t *config, usb_phy_handle_t *handle_r
     if (config->otg_io_conf && (phy_context->controller == USB_PHY_CTRL_OTG)) {
         const usb_otg_signal_conn_t *otg_sig = usb_dwc_info.controllers[otg11_index].otg_signals;
         ESP_ERROR_CHECK(phy_otg_iopins_configure(config->otg_io_conf, otg_sig));
-    }
-    if (phy_target == USB_PHY_TARGET_INT) {
-#if USB_WRAP_LL_DEPENDS_ON_BBPLL
-        // PHY clock is derived from BBPLL. Do not turn off BBPLL during low-power modes
-        rtc_clk_bbpll_add_consumer();
-#endif
-        // For FSLS internal PHY that shares pads with GPIO peripheral, we must set drive capability to 3 (40mA)
-        assert(usb_dwc_info.controllers[otg11_index].internal_phy_io);
-        gpio_ll_set_drive_capability(GPIO_LL_GET_HW(0), usb_dwc_info.controllers[otg11_index].internal_phy_io->dm, GPIO_DRIVE_CAP_3);
-        gpio_ll_set_drive_capability(GPIO_LL_GET_HW(0), usb_dwc_info.controllers[otg11_index].internal_phy_io->dp, GPIO_DRIVE_CAP_3);
     }
     return ESP_OK;
 
@@ -376,11 +349,9 @@ static void phy_uninstall(void)
     if (p_phy_ctrl_obj->ref_count == 0) {
         p_phy_ctrl_obj_free = p_phy_ctrl_obj;
         p_phy_ctrl_obj = NULL;
-        PERIPH_RCC_ATOMIC() {
+        USB_PHY_RCC_ATOMIC() {
             // Disable USB peripheral without reset the module
-#if (SOC_USB_FSLS_PHY_NUM > 0)
             usb_wrap_hal_disable();
-#endif
 #if (SOC_USB_UTMI_PHY_NUM > 0)
             usb_utmi_hal_disable();
 #endif
@@ -398,15 +369,10 @@ esp_err_t usb_del_phy(usb_phy_handle_t handle)
     p_phy_ctrl_obj->ref_count--;
     if (handle->target == USB_PHY_TARGET_EXT) {
         p_phy_ctrl_obj->external_phy = NULL;
-#if (SOC_USB_FSLS_PHY_NUM > 0)
     } else if (handle->target == USB_PHY_TARGET_INT) {
         // Clear pullup and pulldown loads on D+ / D-, and disable the pads
         usb_wrap_hal_phy_disable_pull_override(&handle->wrap_hal);
         p_phy_ctrl_obj->fsls_phy = NULL;
-#if USB_WRAP_LL_DEPENDS_ON_BBPLL
-        rtc_clk_bbpll_remove_consumer();
-#endif
-#endif
     } else { // USB_PHY_TARGET_UTMI
         p_phy_ctrl_obj->utmi_phy = NULL;
     }

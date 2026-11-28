@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,7 +17,6 @@
 #include "esp_system.h"
 #include "esp_intr_alloc.h"
 #include "esp_private/rtc_ctrl.h"
-#include "esp_private/esp_sleep_internal.h"
 
 /* As the RTC slow clock used by RWDT is derived using RC oscillator by default,
  * the timing accuracy is not very precise, and may vary from chip to chip.
@@ -126,27 +125,14 @@ TEST_CASE("RTC WDT triggers interrupt at expected time for all stages", "[rtc_wd
     esp_intr_free(ret_handle);
 #endif
 
-    /* Check that wdt interrupts for various stages occurred within a reasonable window (WDT_TIMEOUT_MARGIN_MS)
-     * Do not abort on first failure: print all stage results and report aggregate failure at the end so later
-     * stage timings can be inspected even if earlier stages are out of tolerance.
-     */
+    /* Check that wdt interrupts for various stages occurred within a reasonable window (WDT_TIMEOUT_MARGIN_MS) */
     int64_t elapsed_us[4], expected_us[4];
-    int failures = 0;
     for (stage = WDT_STAGE0; stage <= WDT_STAGE3; stage++) {
         elapsed_us[stage] = wdt_stage_int_time[stage] - wdt_start_time[stage];
         expected_us[stage] = wdt_stage_timeout_ms[stage] * 1000;
         printf("Stage-%d: interrupt time %lld us, start time %lld us\n", stage, wdt_stage_int_time[stage], wdt_start_time[stage]);
         printf("Stage-%d: expected %lld us, elapsed %lld us\n", stage, expected_us[stage], elapsed_us[stage]);
-        int64_t margin_us = (int64_t)WDT_TIMEOUT_MARGIN_MS(wdt_stage_timeout_ms[stage]) * 1000;
-        if (llabs(expected_us[stage] - elapsed_us[stage]) > margin_us) {
-            failures++;
-            printf("Stage-%d: OUT OF TOLERANCE (expected %lld +/- %lld, got %lld)\n", stage, expected_us[stage], margin_us, elapsed_us[stage]);
-        } else {
-            printf("Stage-%d: within tolerance\n", stage);
-        }
-    }
-    if (failures) {
-        TEST_FAIL_MESSAGE("One or more WDT stages timed out outside allowed margin. See logs for details.");
+        TEST_ASSERT_INT_WITHIN(WDT_TIMEOUT_MARGIN_MS(wdt_stage_timeout_ms[stage]) * 1000, expected_us[stage], elapsed_us[stage]);
     }
 }
 
@@ -192,54 +178,10 @@ static void rtc_wdt_setup_then_reset_RTC(void)
     }
 }
 
-#if SOC_LIGHT_SLEEP_SUPPORTED && CONFIG_ESP_SLEEP_ENABLE_RTC_WDT_IN_SLEEP
-/* MULTI test case for light sleep prepare timeout then RTC WDT resets RTC */
-static void rtc_wdt_light_sleep_prepare_timeout(void)
-{
-    uint32_t stage_timeout_ticks = (uint32_t)(1000 * rtc_clk_slow_freq_get_hz() / 1000ULL);   /* 1000ms for interrupt */
-    esp_sleep_enable_timer_wakeup(3000000);
-
-    /* Setup RTC WDT */
-    // Here enable RTC_WDT then the setup in sleep flow will be skipped
-    wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, true);
-    wdt_hal_write_protect_disable(&rtc_wdt_ctx);
-    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE0, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_RTC);
-    wdt_hal_enable(&rtc_wdt_ctx);
-    wdt_hal_write_protect_enable(&rtc_wdt_ctx);
-    TEST_ASSERT_TRUE(wdt_hal_is_enabled(&rtc_wdt_ctx));
-    printf("RTC WDT setup stage-0 RESET (1000ms)\n");
-
-    esp_light_sleep_start();
-    /* Wait for RTC WDT to reset the main system and RTC */
-    esp_restart();
-}
-#endif
-
-#if SOC_DEEP_SLEEP_SUPPORTED && CONFIG_ESP_SLEEP_ENABLE_RTC_WDT_IN_SLEEP
-/* MULTI test case for deep sleep prepare timeout then RTC WDT resets RTC */
-static void rtc_wdt_deep_sleep_prepare_timeout(void)
-{
-    uint32_t stage_timeout_ticks = (uint32_t)(1000 * rtc_clk_slow_freq_get_hz() / 1000ULL);   /* 1000ms for interrupt */
-    esp_sleep_enable_timer_wakeup(3000000);
-
-    /* Setup RTC WDT */
-    // Here enable RTC_WDT then the setup in sleep flow will be skipped
-    wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, true);
-    wdt_hal_write_protect_disable(&rtc_wdt_ctx);
-    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE0, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_RTC);
-    wdt_hal_enable(&rtc_wdt_ctx);
-    wdt_hal_write_protect_enable(&rtc_wdt_ctx);
-    TEST_ASSERT_TRUE(wdt_hal_is_enabled(&rtc_wdt_ctx));
-    printf("RTC WDT setup stage-0 RESET (1000ms)\n");
-
-    esp_deep_sleep_start();
-}
-#endif
-
 static void rtc_wdt_verify_SYSTEM_reset(void)
 {
     printf("Confirming if reset reason matches 0x9 (main system reset)\n");
-#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
+#if CONFIG_IDF_TARGET_ESP32P4
     TEST_ASSERT_EQUAL(RESET_REASON_CORE_RWDT, esp_rom_get_reset_reason(CONFIG_ESP_MAIN_TASK_AFFINITY));
 #else
     TEST_ASSERT_EQUAL(RESET_REASON_CORE_RTC_WDT, esp_rom_get_reset_reason(CONFIG_ESP_MAIN_TASK_AFFINITY));
@@ -249,7 +191,7 @@ static void rtc_wdt_verify_SYSTEM_reset(void)
 static void rtc_wdt_verify_RTC_reset(void)
 {
     printf("Confirming if reset reason matches 0x10 (main system + RTC reset)\n");
-#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
+#if CONFIG_IDF_TARGET_ESP32P4
     TEST_ASSERT_EQUAL(RESET_REASON_SYS_RWDT, esp_rom_get_reset_reason(CONFIG_ESP_MAIN_TASK_AFFINITY));
 #else
     TEST_ASSERT_EQUAL(RESET_REASON_SYS_RTC_WDT, esp_rom_get_reset_reason(CONFIG_ESP_MAIN_TASK_AFFINITY));
@@ -269,21 +211,3 @@ TEST_CASE_MULTIPLE_STAGES(
     rtc_wdt_setup_then_reset_RTC,
     rtc_wdt_verify_RTC_reset
 )
-
-#if SOC_LIGHT_SLEEP_SUPPORTED && CONFIG_ESP_SLEEP_ENABLE_RTC_WDT_IN_SLEEP
-TEST_CASE_MULTIPLE_STAGES(
-    "Light sleep prepare timeout then RTC WDT resets RTC",
-    "[rtc_wdt][lightsleep][reset]",
-    rtc_wdt_light_sleep_prepare_timeout,
-    rtc_wdt_verify_RTC_reset
-)
-#endif
-
-#if SOC_DEEP_SLEEP_SUPPORTED && CONFIG_ESP_SLEEP_ENABLE_RTC_WDT_IN_SLEEP
-TEST_CASE_MULTIPLE_STAGES(
-    "Deep sleep prepare timeout then RTC WDT resets RTC",
-    "[rtc_wdt][deepsleep][reset]",
-    rtc_wdt_deep_sleep_prepare_timeout,
-    rtc_wdt_verify_RTC_reset
-)
-#endif

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,7 +24,6 @@
 #include "soc/regi2c_dig_reg.h"
 #include "soc/regi2c_lp_bias.h"
 #include "hal/efuse_hal.h"
-#include "hal/rwdt_ll.h"
 #if SOC_SLEEP_SYSTIMER_STALL_WORKAROUND
 #include "soc/systimer_reg.h"
 #endif
@@ -167,12 +166,6 @@ void rtc_sleep_get_default_config(uint32_t sleep_flags, rtc_sleep_config_t *out_
         out_config->bias_sleep_slp = RTC_CNTL_BIASSLP_SLEEP_DEFAULT;
         out_config->pd_cur_slp = RTC_CNTL_PD_CUR_SLEEP_DEFAULT;
     }
-
-    if (sleep_flags & RTC_SLEEP_USE_RTC_WDT) {
-        out_config->rtc_wdt_en = 1;
-    } else {
-        out_config->rtc_wdt_en = 0;
-    }
 }
 
 void rtc_sleep_init(rtc_sleep_config_t cfg)
@@ -206,13 +199,9 @@ void rtc_sleep_init(rtc_sleep_config_t cfg)
     }
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_MONITOR, RTC_CNTL_DBG_ATTEN_MONITOR_DEFAULT);
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_BIAS_SLEEP_MONITOR, RTC_CNTL_BIASSLP_MONITOR_DEFAULT);
-    _Static_assert(!RTC_CNTL_PD_CUR_MONITOR_DEFAULT || RTC_CNTL_BIASSLP_MONITOR_DEFAULT,
-                   "pd_cur=1 with bias_sleep=0 is illegal");
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_PD_CUR_MONITOR, RTC_CNTL_PD_CUR_MONITOR_DEFAULT);
 
-    if (cfg.pd_cur_slp && !cfg.bias_sleep_slp) {
-        abort();
-    }
+    assert(!cfg.pd_cur_slp || cfg.bias_sleep_slp);
     REGI2C_WRITE_MASK(I2C_DIG_REG, I2C_DIG_REG_EXT_RTC_DREG_SLEEP, cfg.rtc_dbias_slp);
     REGI2C_WRITE_MASK(I2C_DIG_REG, I2C_DIG_REG_EXT_DIG_DREG_SLEEP, cfg.dig_dbias_slp);
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_DEEP_SLP, cfg.dbg_atten_slp);
@@ -243,11 +232,6 @@ void rtc_sleep_init(rtc_sleep_config_t cfg)
         CLEAR_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_PU);
         CLEAR_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_NOGATING);
     }
-
-    /* enable rtc wdt during sleep */
-    rwdt_ll_write_protect_disable(RWDT_DEV_GET());
-    rwdt_ll_set_pause_in_sleep_en(RWDT_DEV_GET(), !cfg.rtc_wdt_en);
-    rwdt_ll_write_protect_enable(RWDT_DEV_GET());
 
     /* enable VDDSDIO control by state machine */
     REG_CLR_BIT(RTC_CNTL_SDIO_CONF_REG, RTC_CNTL_SDIO_FORCE);

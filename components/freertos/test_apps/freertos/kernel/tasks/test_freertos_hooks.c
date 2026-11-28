@@ -12,7 +12,6 @@ a definition for vApplicationTickHook(). Thus this test cannot be run.
 */
 #include <stdio.h>
 #include <stdlib.h>
-#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <freertos/semphr.h>
@@ -48,7 +47,7 @@ Test the FreeRTOS tick hook. Only compiled in if FreeRTOS tick hooks are enabled
 
 static volatile unsigned tick_count;
 
-void IRAM_ATTR vApplicationTickHook(void)
+void vApplicationTickHook(void)
 {
     tick_count++;
 }

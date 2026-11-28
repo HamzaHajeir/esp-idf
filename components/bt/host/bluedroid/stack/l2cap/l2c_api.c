@@ -37,10 +37,6 @@
 #include "stack/btm_api.h"
 #include "osi/allocator.h"
 #include "gatt_int.h"
-#if (BLE_EATT_INCLUDED == TRUE)
-#include "gatt_eatt_int.h"
-#endif
-#include "device/controller.h"
 #if (CLASSIC_BT_INCLUDED == TRUE)
 /*******************************************************************************
 **
@@ -289,14 +285,8 @@ UINT16 L2CA_ErtmConnectReq (UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_ERTM_INFO *p_e
             p_ccb->ertm_info.user_tx_buf_size = L2CAP_USER_TX_BUF_SIZE;
         }
 
-        UINT16 overhead = L2CAP_MIN_OFFSET + L2CAP_SDU_LEN_OFFSET + L2CAP_FCS_LEN;
-        if (p_ccb->ertm_info.user_rx_buf_size > overhead) {
-            p_ccb->max_rx_mtu = p_ccb->ertm_info.user_rx_buf_size - overhead;
-        } else {
-            L2CAP_TRACE_ERROR ("L2CAP - Req rx mtu (0) invalid");
-            l2cu_release_ccb(p_ccb);
-            return (0);
-        }
+        p_ccb->max_rx_mtu = p_ertm_info->user_rx_buf_size -
+            (L2CAP_MIN_OFFSET + L2CAP_SDU_LEN_OFFSET + L2CAP_FCS_LEN);
     }
 
 
@@ -314,11 +304,6 @@ UINT16 L2CA_ErtmConnectReq (UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_ERTM_INFO *p_e
      */
     else if (p_lcb->link_state == LST_DISCONNECTING) {
         L2CAP_TRACE_DEBUG ("L2CAP API - link disconnecting: RETRY LATER");
-
-        /* This LCB is being reused for a new connection. A close still in
-         * progress may have forced idle_timeout to 0; put back the default
-         * so the ACL stays up across the SDP-to-RFCOMM gap. */
-        p_lcb->idle_timeout = l2cb.idle_timeout;
 
         /* Save ccb so it can be started after disconnect is finished */
         p_lcb->p_pending_ccb = p_ccb;
@@ -449,13 +434,8 @@ BOOLEAN L2CA_ErtmConnectRsp (BD_ADDR p_bd_addr, UINT8 id, UINT16 lcid, UINT16 re
             p_ccb->ertm_info.user_tx_buf_size = L2CAP_USER_TX_BUF_SIZE;
         }
 
-        UINT16 overhead = L2CAP_MIN_OFFSET + L2CAP_SDU_LEN_OFFSET + L2CAP_FCS_LEN;
-        if (p_ccb->ertm_info.user_rx_buf_size > overhead) {
-            p_ccb->max_rx_mtu = p_ccb->ertm_info.user_rx_buf_size - overhead;
-        } else {
-            L2CAP_TRACE_ERROR ("L2CAP - Rsp rx mtu invalid");
-            return (FALSE);
-        }
+        p_ccb->max_rx_mtu = p_ertm_info->user_rx_buf_size -
+            (L2CAP_MIN_OFFSET + L2CAP_SDU_LEN_OFFSET + L2CAP_FCS_LEN);
     }
 
     if (result == L2CAP_CONN_OK) {
@@ -704,8 +684,7 @@ BOOLEAN  L2CA_Ping (BD_ADDR p_bd_addr, tL2CA_ECHO_RSP_CB *p_callback)
 BOOLEAN  L2CA_Echo (BD_ADDR p_bd_addr, BT_HDR *p_data, tL2CA_ECHO_DATA_CB *p_callback)
 {
     tL2C_LCB    *p_lcb;
-    UINT8       *pp = NULL;
-    UINT16      len = 0;
+    UINT8       *pp;
 
     L2CAP_TRACE_API ("L2CA_Echo() BDA: %08X%04X",
                      ((p_bd_addr[0] << 24) + (p_bd_addr[1] << 16) + (p_bd_addr[2] <<  8) + (p_bd_addr[3])),
@@ -737,12 +716,9 @@ BOOLEAN  L2CA_Echo (BD_ADDR p_bd_addr, BT_HDR *p_data, tL2CA_ECHO_DATA_CB *p_cal
     l2cb.p_echo_data_cb = p_callback;
 
     /* Set the pointer to the beginning of the data */
-    if (p_data) {
-        pp = (UINT8 *)(p_data + 1) + p_data->offset;
-        len = p_data->len;
-    }
+    pp = (UINT8 *)(p_data + 1) + p_data->offset;
     l2cu_adj_id(p_lcb, L2CAP_ADJ_BRCM_ID);  /* Make sure not using Broadcom ID */
-    l2cu_send_peer_echo_req (p_lcb, pp, len);
+    l2cu_send_peer_echo_req (p_lcb, pp, p_data->len);
 
     return (TRUE);
 
@@ -754,7 +730,7 @@ BOOLEAN  L2CA_Echo (BD_ADDR p_bd_addr, BT_HDR *p_data, tL2CA_ECHO_DATA_CB *p_cal
 bool L2CA_GetIdentifiers(uint16_t lcid, uint16_t *rcid, uint16_t *handle)
 {
     tL2C_CCB *control_block = l2cu_find_ccb_by_cid(NULL, lcid);
-    if (!control_block || !control_block->p_lcb) {
+    if (!control_block) {
         return false;
     }
 
@@ -853,7 +829,7 @@ BOOLEAN L2CA_SetIdleTimeoutByBdAddr(BD_ADDR bd_addr, UINT16 timeout, tBT_TRANSPO
     } else {
 	for (p_node = list_begin(l2cb.p_lcb_pool); p_node; p_node = list_next(p_node)) {
 	    p_lcb = list_node(p_node);
-            if ((p_lcb->in_use) && (p_lcb->link_state == LST_CONNECTED) && p_lcb->transport == transport) {
+            if ((p_lcb->in_use) && (p_lcb->link_state == LST_CONNECTED)) {
                 p_lcb->idle_timeout = timeout;
 
                 if (!p_lcb->ccb_queue.p_first_ccb) {
@@ -887,7 +863,7 @@ UINT8 L2CA_SetTraceLevel (UINT8 new_level)
     return (l2cb.l2cap_trace_level);
 }
 
-#if (CLASSIC_BT_INCLUDED == TRUE)
+
 /*******************************************************************************
 **
 ** Function     L2CA_SetDesireRole
@@ -925,7 +901,6 @@ UINT8 L2CA_SetDesireRole (UINT8 new_role)
 
     return (l2cb.desire_role);
 }
-#endif // (CLASSIC_BT_INCLUDED == TRUE)
 
 #if (CLASSIC_BT_INCLUDED == TRUE)
 
@@ -969,8 +944,6 @@ UINT16 L2CA_LocalLoopbackReq (UINT16 psm, UINT16 handle, BD_ADDR p_bd_addr)
     /* Allocate a channel control block */
     if ((p_ccb = l2cu_allocate_ccb (p_lcb, 0)) == NULL) {
         L2CAP_TRACE_WARNING ("L2CAP - no CCB for L2CA_conn_req");
-        p_lcb->link_state = LST_DISCONNECTED;
-        l2cu_release_lcb(p_lcb);
         return (0);
     }
 
@@ -1072,7 +1045,7 @@ BOOLEAN L2CA_SendTestSFrame (UINT16 cid, UINT8 sup_type, UINT8 back_track)
         return (FALSE);
     }
 
-    p_ccb->fcrb.next_seq_expected = (p_ccb->fcrb.next_seq_expected - back_track) & L2CAP_FCR_SEQ_MODULO;
+    p_ccb->fcrb.next_seq_expected -= back_track;
 
     l2c_fcr_send_S_frame (p_ccb, (UINT16)(sup_type & 3), (UINT16)(sup_type & (L2CAP_FCR_P_BIT | L2CAP_FCR_F_BIT)));
 
@@ -1197,13 +1170,14 @@ BOOLEAN L2CA_SetFlushTimeout (BD_ADDR bd_addr, UINT16 flush_tout)
 
         if ((p_lcb) && (p_lcb->in_use) && (p_lcb->link_state == LST_CONNECTED)) {
             if (p_lcb->link_flush_tout != flush_tout) {
+                p_lcb->link_flush_tout = flush_tout;
+
                 L2CAP_TRACE_API ("L2CA_SetFlushTimeout 0x%04x ms for bd_addr [...;%02x%02x%02x]",
                                  flush_tout, bd_addr[3], bd_addr[4], bd_addr[5]);
 
                 if (!btsnd_hcic_write_auto_flush_tout (p_lcb->handle, hci_flush_to)) {
                     return (FALSE);
                 }
-                p_lcb->link_flush_tout = flush_tout;
             }
         } else {
             L2CAP_TRACE_WARNING ("WARNING L2CA_SetFlushTimeout No lcb for bd_addr [...;%02x%02x%02x]",
@@ -1216,6 +1190,8 @@ BOOLEAN L2CA_SetFlushTimeout (BD_ADDR bd_addr, UINT16 flush_tout)
 	    p_lcb = list_node(p_node);
             if ((p_lcb->in_use) && (p_lcb->link_state == LST_CONNECTED)) {
                 if (p_lcb->link_flush_tout != flush_tout) {
+                    p_lcb->link_flush_tout = flush_tout;
+
                     L2CAP_TRACE_API ("L2CA_SetFlushTimeout 0x%04x ms for bd_addr [...;%02x%02x%02x]",
                                      flush_tout, p_lcb->remote_bd_addr[3],
                                      p_lcb->remote_bd_addr[4], p_lcb->remote_bd_addr[5]);
@@ -1223,7 +1199,6 @@ BOOLEAN L2CA_SetFlushTimeout (BD_ADDR bd_addr, UINT16 flush_tout)
                     if (!btsnd_hcic_write_auto_flush_tout(p_lcb->handle, hci_flush_to)) {
                         return (FALSE);
                     }
-                    p_lcb->link_flush_tout = flush_tout;
                 }
             }
         }
@@ -1463,12 +1438,6 @@ void L2CA_DeregisterLECoc(UINT16 psm)
 *******************************************************************************/
 UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p_cfg)
 {
-#if (BLE_L2CAP_COC_CLIENT_INCLUDED != TRUE)
-    UNUSED(psm);
-    UNUSED(p_bd_addr);
-    UNUSED(p_cfg);
-    return 0;
-#else
     L2CAP_TRACE_API("%s PSM: 0x%04x BDA: %02x:%02x:%02x:%02x:%02x:%02x", __func__, psm,
         p_bd_addr[0], p_bd_addr[1], p_bd_addr[2], p_bd_addr[3], p_bd_addr[4], p_bd_addr[5]);
 
@@ -1476,17 +1445,6 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
     if (!BTM_IsDeviceUp())
     {
         L2CAP_TRACE_WARNING("%s BTU not ready", __func__);
-        return 0;
-    }
-
-    /* Bail out before allocating an LCB if the controller has no BLE support:
-     * l2cu_create_conn()'s !supports_ble() path returns FALSE WITHOUT releasing
-     * the LCB (it must not change its ownership contract), so allocating here and
-     * relying on that path would leak the LCB. Pre-check at the API entry as the
-     * function header of l2cu_create_conn recommends. */
-    if (!controller_get_interface()->supports_ble())
-    {
-        L2CAP_TRACE_WARNING("%s controller has no BLE support", __func__);
         return 0;
     }
 
@@ -1499,22 +1457,17 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
     }
 
     /* First, see if we already have a le link to the remote */
-    BOOLEAN lcb_allocated = FALSE;
     tL2C_LCB *p_lcb = l2cu_find_lcb_by_bd_addr(p_bd_addr, BT_TRANSPORT_LE);
     if (p_lcb == NULL)
     {
         /* No link. Get an LCB and start link establishment */
         p_lcb = l2cu_allocate_lcb(p_bd_addr, FALSE, BT_TRANSPORT_LE);
-        if (p_lcb == NULL) {
-            L2CAP_TRACE_WARNING("%s conn not started for PSM: 0x%04x  p_lcb: NULL",
-                __func__, psm);
-            return 0;
-        }
-        lcb_allocated = TRUE;
-        if (l2cu_create_conn(p_lcb, BT_TRANSPORT_LE) == FALSE) {
-            L2CAP_TRACE_WARNING("%s conn not started for PSM: 0x%04x  p_lcb: %p",
+        if ((p_lcb == NULL)
+             /* currently use BR/EDR for ERTM mode l2cap connection */
+         || (l2cu_create_conn(p_lcb, BT_TRANSPORT_LE) == FALSE) )
+        {
+            L2CAP_TRACE_WARNING("%s conn not started for PSM: 0x%04x  p_lcb: 0x%p",
                 __func__, psm, p_lcb);
-            l2cu_release_lcb(p_lcb);
             return 0;
         }
     }
@@ -1524,21 +1477,11 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
     if (p_ccb == NULL)
     {
         L2CAP_TRACE_WARNING("%s no CCB, PSM: 0x%04x", __func__, psm);
-        if (lcb_allocated) {
-            l2cble_cleanup_alloc_ccb_failed_conn(p_lcb);
-        }
         return 0;
     }
 
     /* Save registration info */
     p_ccb->p_rcb = p_rcb;
-    p_ccb->le_coc_active = TRUE;
-    /* A pooled CCB reused from a released non-CoC channel keeps its stale
-     * remote_cid (l2cu_allocate_ccb does not clear it, and l2cu_release_ccb only
-     * runs cleanup_ccb for le_coc_active CCBs). Clear it now so the DCID dedup
-     * check in l2c_ble_le_coc_handle_credit_conn_res cannot false-match this
-     * channel-in-setup before its real remote_cid is assigned. */
-    p_ccb->remote_cid = 0;
 
     /* Save the configuration */
     if (p_cfg) {
@@ -1551,7 +1494,7 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
         if (p_ccb->p_lcb->transport == BT_TRANSPORT_LE)
         {
             L2CAP_TRACE_DEBUG("%s LE Link is up", __func__);
-            l2c_ble_le_coc_connect_req(p_ccb);
+            l2c_csm_execute(p_ccb, L2CEVT_L2CA_CONNECT_REQ, NULL);
         }
     }
 
@@ -1573,7 +1516,6 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
 
     /* Return the local CID as our handle */
     return p_ccb->local_cid;
-#endif /* BLE_L2CAP_COC_CLIENT_INCLUDED */
 }
 
 /*******************************************************************************
@@ -1590,16 +1532,6 @@ UINT16 L2CA_ConnectLECocReq(UINT16 psm, BD_ADDR p_bd_addr, tL2CAP_LE_CFG_INFO *p
 BOOLEAN L2CA_ConnectLECocRsp (BD_ADDR p_bd_addr, UINT8 id, UINT16 lcid, UINT16 result,
                              UINT16 status, tL2CAP_LE_CFG_INFO *p_cfg)
 {
-#if (BLE_L2CAP_COC_SERVER_INCLUDED != TRUE)
-    UNUSED(p_bd_addr);
-    UNUSED(id);
-    UNUSED(lcid);
-    UNUSED(result);
-    UNUSED(status);
-    UNUSED(p_cfg);
-    return FALSE;
-#else
-    UNUSED(status);
     L2CAP_TRACE_API("%s CID: 0x%04x Result: %d Status: %d BDA: %02x:%02x:%02x:%02x:%02x:%02x",
         __func__, lcid, result, status,
         p_bd_addr[0], p_bd_addr[1], p_bd_addr[2], p_bd_addr[3], p_bd_addr[4], p_bd_addr[5]);
@@ -1633,77 +1565,18 @@ BOOLEAN L2CA_ConnectLECocRsp (BD_ADDR p_bd_addr, UINT8 id, UINT16 lcid, UINT16 r
         memcpy(&p_ccb->local_conn_cfg, p_cfg, sizeof(tL2CAP_LE_CFG_INFO));
     }
 
-#if (BLE_L2CAP_ENHANCED_COC_INCLUDED == TRUE)
-    if (p_ccb->le_ecfc_channel) {
-        /* Forward the caller's specific result so a security reject
-         * (0x0005-0x0008) reaches the peer intact (Core Spec v6.2 Vol 3 Part A
-         * 10.2 mandates the exact "insufficient authentication/encryption" code).
-         * l2c_ble_ecfc_connect_rsp records it for the aggregate 0x18 response. */
-        l2c_ble_ecfc_connect_rsp(p_ccb, result);
-        return TRUE;
+    if (result == L2CAP_CONN_OK)
+        l2c_csm_execute (p_ccb, L2CEVT_L2CA_CONNECT_RSP, NULL);
+    else
+    {
+        tL2C_CONN_INFO conn_info;
+        memcpy(conn_info.bd_addr, p_bd_addr, BD_ADDR_LEN);
+        conn_info.l2cap_result = result;
+        conn_info.l2cap_status = status;
+        l2c_csm_execute(p_ccb, L2CEVT_L2CA_CONNECT_RSP_NEG, &conn_info);
     }
-#endif
-
-    /* Legacy single-channel LE CoC: forward the caller's specific result so the
-     * peer sees the real reject reason (mapped to a valid LE result code). */
-    l2c_ble_le_coc_connect_rsp(p_ccb, result);
 
     return TRUE;
-#endif /* BLE_L2CAP_COC_SERVER_INCLUDED */
-}
-
-/*******************************************************************************
-**
-** Function         L2CA_LECocDataWrite
-**
-** Description      Write an SDU on an LE CoC channel.
-**
-** Returns          L2CAP_DW_SUCCESS, L2CAP_DW_CONGESTED, or L2CAP_DW_FAILED
-**
-*******************************************************************************/
-UINT8 L2CA_LECocDataWrite(UINT16 lcid, BT_HDR *p_data)
-{
-    L2CAP_TRACE_API("L2CA_LECocDataWrite() CID: 0x%04x", lcid);
-    return l2c_ble_le_coc_data_write(lcid, p_data);
-}
-
-BOOLEAN L2CA_LECocIsCongested(UINT16 lcid)
-{
-    return l2c_ble_le_coc_is_congested(lcid);
-}
-
-/*******************************************************************************
-**
-** Function         L2CA_LECocGiveCredits
-**
-** Description      Return RX credits to peer after processing an SDU.
-**
-** Returns          TRUE if credits were sent
-**
-*******************************************************************************/
-BOOLEAN L2CA_LECocGiveCredits(UINT16 lcid, UINT16 credits)
-{
-    L2CAP_TRACE_API("L2CA_LECocGiveCredits() CID: 0x%04x credits: %u", lcid, credits);
-    return l2c_ble_le_coc_give_credits(lcid, credits);
-}
-
-BOOLEAN L2CA_LECocSetAutoCredit(UINT16 lcid, BOOLEAN enable)
-{
-    L2CAP_TRACE_API("L2CA_LECocSetAutoCredit() CID: 0x%04x enable=%u", lcid, enable);
-    return l2c_ble_le_coc_set_auto_credit(lcid, enable);
-}
-
-/*******************************************************************************
-**
-** Description      Disconnect an LE CoC channel.
-**
-** Returns          TRUE if disconnect request was sent
-**
-*******************************************************************************/
-BOOLEAN L2CA_LECocDisconnect(UINT16 lcid)
-{
-    L2CAP_TRACE_API("L2CA_LECocDisconnect() CID: 0x%04x", lcid);
-    return l2c_ble_le_coc_disconnect(lcid);
 }
 
 /*******************************************************************************
@@ -1817,11 +1690,11 @@ BOOLEAN L2CA_ConnectFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda, tBLE_ADDR_TYPE
         } else
 #endif
         {
-            peer_channel_mask = p_lcb->peer_chnl_mask[fixed_cid / 8];
+            peer_channel_mask = p_lcb->peer_chnl_mask[0];
         }
 
         // Check for supported channel
-        if (!(peer_channel_mask & (1U << (fixed_cid % 8)))) {
+        if (!(peer_channel_mask & (1 << fixed_cid))) {
             L2CAP_TRACE_EVENT  ("%s() CID:0x%04x  BDA: %08x%04x not supported", __func__,
                                 fixed_cid, (rem_bda[0] << 24) + (rem_bda[1] << 16) + (rem_bda[2] << 8) + rem_bda[3],
                                 (rem_bda[4] << 8) + rem_bda[5]);
@@ -1941,10 +1814,10 @@ UINT16 L2CA_SendFixedChnlData (UINT16 fixed_cid, BD_ADDR rem_bda, BT_HDR *p_buf)
     } else
 #endif
     {
-        peer_channel_mask = p_lcb->peer_chnl_mask[fixed_cid / 8];
+        peer_channel_mask = p_lcb->peer_chnl_mask[0];
     }
 
-    if ((peer_channel_mask & (1U << (fixed_cid % 8))) == 0) {
+    if ((peer_channel_mask & (1 << fixed_cid)) == 0) {
         L2CAP_TRACE_WARNING ("L2CA_SendFixedChnlData() - peer does not support fixed chnl: 0x%04x", fixed_cid);
         osi_free (p_buf);
         return (L2CAP_DW_FAILED);
@@ -1989,11 +1862,6 @@ UINT16 L2CA_SendFixedChnlData (UINT16 fixed_cid, BD_ADDR rem_bda, BT_HDR *p_buf)
 
 BOOLEAN L2CA_CheckIsCongest(UINT16 fixed_cid, BD_ADDR addr)
 {
-    if ((fixed_cid < L2CAP_FIRST_FIXED_CHNL) || (fixed_cid > L2CAP_LAST_FIXED_CHNL)) {
-        L2CAP_TRACE_ERROR ("L2CA_CheckIsCongest()  Invalid CID: 0x%04x", fixed_cid);
-        return TRUE;
-    }
-
     tL2C_LCB *p_lcb;
     p_lcb = l2cu_find_lcb_by_bd_addr(addr, BT_TRANSPORT_LE);
 
@@ -2146,7 +2014,7 @@ BOOLEAN L2CA_SetFixedChannelTout (BD_ADDR rem_bda, UINT16 fixed_cid, UINT16 idle
         transport = BT_TRANSPORT_LE;
     }
 #endif
-    if ((fixed_cid < L2CAP_FIRST_FIXED_CHNL) || (fixed_cid > L2CAP_LAST_FIXED_CHNL)) {
+    if (fixed_cid<L2CAP_FIRST_FIXED_CHNL) {
         return (FALSE);
     }
 
@@ -2191,11 +2059,6 @@ BOOLEAN L2CA_GetCurrentConfig (UINT16 lcid,
     tL2C_CCB    *p_ccb;
 
     L2CAP_TRACE_API ("L2CA_GetCurrentConfig()  CID: 0x%04x", lcid);
-
-    if (!pp_our_cfg || !p_our_cfg_bits || !pp_peer_cfg || !p_peer_cfg_bits) {
-        L2CAP_TRACE_ERROR ("L2CA_GetCurrentConfig() - NULL output pointer");
-        return FALSE;
-    }
 
     p_ccb = l2cu_find_ccb_by_cid(NULL, lcid);
 
@@ -2297,7 +2160,7 @@ void l2cap_bqb_write_data(UINT16 cid)
     BT_HDR *p_buf;
     uint8_t *p;
 
-    if ((p_buf = (BT_HDR *)osi_calloc(SDP_DATA_BUF_SIZE)) != NULL) {
+    if ((p_buf = (BT_HDR *)osi_malloc(SDP_DATA_BUF_SIZE)) != NULL) {
         p_buf->len = 30;
         p_buf->offset = L2CAP_MIN_OFFSET;
         p = (UINT8 *)(p_buf + 1) + p_buf->offset;
@@ -2386,8 +2249,6 @@ UINT16 L2CA_FlushChannel (UINT16 lcid, UINT16 num_to_flush)
                     num_flushed1 = 0,
                     num_flushed2 = 0;
 
-    UNUSED(num_flushed1);
-
     p_ccb = l2cu_find_ccb_by_cid(NULL, lcid);
 
     if ( !p_ccb || ((p_lcb = p_ccb->p_lcb) == NULL) ) {
@@ -2423,22 +2284,18 @@ UINT16 L2CA_FlushChannel (UINT16 lcid, UINT16 num_to_flush)
 
         // Iterate though list and flush the amount requested from
         // the transmit data queue that satisfy the layer and event conditions.
-        l2c_link_xmit_lock();
-        if (p_lcb->link_xmit_data_q != NULL) {
-            for (const list_node_t *node = list_begin(p_lcb->link_xmit_data_q);
-                    (num_to_flush > 0) && node != list_end(p_lcb->link_xmit_data_q);) {
-                BT_HDR *p_buf = (BT_HDR *)list_node(node);
-                node = list_next(node);
-                if ((p_buf->layer_specific == 0) && (p_buf->event == lcid)) {
-                    num_to_flush--;
-                    num_flushed1++;
+        for (const list_node_t *node = list_begin(p_lcb->link_xmit_data_q);
+                (num_to_flush > 0) && node != list_end(p_lcb->link_xmit_data_q);) {
+            BT_HDR *p_buf = (BT_HDR *)list_node(node);
+            node = list_next(node);
+            if ((p_buf->layer_specific == 0) && (p_buf->event == lcid)) {
+                num_to_flush--;
+                num_flushed1++;
 
-                    list_remove(p_lcb->link_xmit_data_q, p_buf);
-                    osi_free(p_buf);
-                }
+                list_remove(p_lcb->link_xmit_data_q, p_buf);
+                osi_free(p_buf);
             }
         }
-        l2c_link_xmit_unlock();
     }
 
     /* If needed, flush buffers in the CCB xmit hold queue */
@@ -2457,19 +2314,15 @@ UINT16 L2CA_FlushChannel (UINT16 lcid, UINT16 num_to_flush)
     }
 
     /* Now count how many are left */
-    l2c_link_xmit_lock();
-    if (p_lcb->link_xmit_data_q != NULL) {
-        for (const list_node_t *node = list_begin(p_lcb->link_xmit_data_q);
-                node != list_end(p_lcb->link_xmit_data_q);
-                node = list_next(node)) {
+    for (const list_node_t *node = list_begin(p_lcb->link_xmit_data_q);
+            node != list_end(p_lcb->link_xmit_data_q);
+            node = list_next(node)) {
 
-            BT_HDR *p_buf = (BT_HDR *)list_node(node);
-            if (p_buf->event == lcid) {
-                num_left++;
-            }
+        BT_HDR *p_buf = (BT_HDR *)list_node(node);
+        if (p_buf->event == lcid) {
+            num_left++;
         }
     }
-    l2c_link_xmit_unlock();
 
     /* Add in the number in the CCB xmit queue */
     num_left += fixed_queue_length(p_ccb->xmit_hold_q);
@@ -2493,29 +2346,11 @@ UINT16 L2CA_FlushChannel (UINT16 lcid, UINT16 num_to_flush)
 **
 *******************************************************************************/
 #if BLE_INCLUDED == TRUE
-/* In-flight no-response ATT PDUs that are not yet in an L2CAP queue, per GATT
- * tcb index. Indexed rather than global so one connection's pending count does
- * not shrink every other connection's esp_ble_get_cur_sendable_packets_num().
- * Not cleared when the TCB is freed: a message already counted may still be
- * dequeued and decremented, and zeroing early would let that decrement hit the
- * next connection that reuses the index. */
-static INT16 att_btc_pending[GATT_MAX_PHY_CHANNEL];
-static INT16 att_btu_pending[GATT_MAX_PHY_CHANNEL];
-
-static BOOLEAN l2c_att_pending_index(UINT16 tcb_idx, INT16 **btc, INT16 **btu)
-{
-    if (tcb_idx >= GATT_MAX_PHY_CHANNEL) {
-        L2CAP_TRACE_ERROR("att pending: tcb_idx %u out of range", tcb_idx);
-        return FALSE;
-    }
-    *btc = &att_btc_pending[tcb_idx];
-    *btu = &att_btu_pending[tcb_idx];
-    return TRUE;
-}
-
 void l2ble_update_att_acl_pkt_num(UINT8 type, tl2c_buff_param_t *param)
 {
     static SemaphoreHandle_t buff_semaphore = NULL ;
+    static INT16 btc_buf;
+    static INT16 btu_buf;
 
     if(buff_semaphore == NULL && type != L2CA_BUFF_INI){
         L2CAP_TRACE_ERROR("%s buff_semaphore not init", __func__);
@@ -2523,24 +2358,27 @@ void l2ble_update_att_acl_pkt_num(UINT8 type, tl2c_buff_param_t *param)
     }
     switch (type)
     {
-    case L2CA_ADD_BTC_NUM:
-    case L2CA_DECREASE_BTC_NUM:
-    case L2CA_ADD_BTU_NUM:
-    case L2CA_DECREASE_BTU_NUM: {
-        INT16 *btc = NULL;
-        INT16 *btu = NULL;
-        INT16 delta = (type == L2CA_ADD_BTC_NUM || type == L2CA_ADD_BTU_NUM) ? 1 : -1;
-        BOOLEAN is_btc = (type == L2CA_ADD_BTC_NUM || type == L2CA_DECREASE_BTC_NUM);
-
-        if (param == NULL || !l2c_att_pending_index(param->conn_id, &btc, &btu)) {
-            break;
-        }
+    case L2CA_ADD_BTC_NUM:{
         xSemaphoreTake(buff_semaphore, portMAX_DELAY);
-        if (is_btc) {
-            *btc = (INT16)(*btc + delta);
-        } else {
-            *btu = (INT16)(*btu + delta);
-        }
+        btc_buf ++;
+        xSemaphoreGive(buff_semaphore);
+        break;
+    }
+    case L2CA_DECREASE_BTC_NUM:{
+        xSemaphoreTake(buff_semaphore, portMAX_DELAY);
+        btc_buf --;
+        xSemaphoreGive(buff_semaphore);
+        break;
+    }
+    case L2CA_ADD_BTU_NUM:{
+        xSemaphoreTake(buff_semaphore, portMAX_DELAY);
+        btu_buf ++;
+        xSemaphoreGive(buff_semaphore);
+        break;
+    }
+    case L2CA_DECREASE_BTU_NUM:{
+        xSemaphoreTake(buff_semaphore, portMAX_DELAY);
+        btu_buf --;
         xSemaphoreGive(buff_semaphore);
         break;
     }
@@ -2585,52 +2423,17 @@ void l2ble_update_att_acl_pkt_num(UINT8 type, tl2c_buff_param_t *param)
             break;
         }
         att_acl_pkt_num = fixed_queue_length(queue);
-        /* Count only this connection. Floor at zero so a negative balance can
-         * never inflate the reported headroom. */
-        INT16 att_pending = 0;
-        if (p_tcb->tcb_idx < GATT_MAX_PHY_CHANNEL) {
-            att_pending = (INT16)(att_btc_pending[p_tcb->tcb_idx] +
-                                  att_btu_pending[p_tcb->tcb_idx]);
-        }
-        if (att_pending < 0) {
-            att_pending = 0;
-        }
         if(att_acl_pkt_num < att_max_num){
-            if(att_pending < att_max_num - att_acl_pkt_num){
-                *(param->get_num) = att_max_num - att_acl_pkt_num - att_pending;
+            if(btc_buf + btu_buf < att_max_num - att_acl_pkt_num){
+                *(param->get_num) = att_max_num - att_acl_pkt_num - (btc_buf + btu_buf);
             }
         }
-
-#if (BLE_EATT_SERVER_INCLUDED == TRUE)
-        /* Server notifications and indications are routed onto an EATT bearer
-         * once the peer has one (GATTS_HandleValueNotification), so they leave
-         * through a dynamic CoC channel and the fixed-channel queue measured
-         * above stays empty no matter how much is in flight. Clamp with the
-         * bearers' own headroom so the caller is not told to keep sending while
-         * the real backlog grows there.
-         *
-         * Clamp rather than replace: a client's write-without-response still
-         * goes out on the fixed channel, because attp_cl_send_cmd() excludes
-         * GATT_CMD_WRITE from EATT bearer selection. A dual-role application
-         * shares this counter for both, so the answer has to bound both paths. */
-        UINT16 eatt_num = 0;
-        if (gatt_eatt_get_sendable_num(p_tcb->peer_bda, &eatt_num)) {
-            INT16 eatt_avail = (INT16)eatt_num - att_pending;
-
-            if (eatt_avail < 0) {
-                eatt_avail = 0;
-            }
-            if ((UINT16)eatt_avail < *(param->get_num)) {
-                *(param->get_num) = (UINT16)eatt_avail;
-            }
-        }
-#endif
         xSemaphoreGive(buff_semaphore);
         break;
     }
     case L2CA_BUFF_INI:{
-        memset(att_btc_pending, 0, sizeof(att_btc_pending));
-        memset(att_btu_pending, 0, sizeof(att_btu_pending));
+        btc_buf = 0;
+        btu_buf = 0;
         buff_semaphore = xSemaphoreCreateBinary();
         if (buff_semaphore == NULL) {
             L2CAP_TRACE_ERROR("%s NO MEMORY", __func__);
@@ -2641,8 +2444,8 @@ void l2ble_update_att_acl_pkt_num(UINT8 type, tl2c_buff_param_t *param)
     }
     case L2CA_BUFF_DEINIT:{
         xSemaphoreTake(buff_semaphore, portMAX_DELAY);
-        memset(att_btc_pending, 0, sizeof(att_btc_pending));
-        memset(att_btu_pending, 0, sizeof(att_btu_pending));
+        btc_buf = 0;
+        btu_buf = 0;
         xSemaphoreGive(buff_semaphore);
         vSemaphoreDelete(buff_semaphore);
         buff_semaphore = NULL;

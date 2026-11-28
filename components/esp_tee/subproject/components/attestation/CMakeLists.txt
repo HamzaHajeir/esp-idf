@@ -10,7 +10,7 @@ set(priv_include_dirs "private_include")
 set(priv_requires bootloader_support efuse esp_app_format esp_bootloader_format json_generator log mbedtls spi_flash)
 
 if(esp_tee_build)
-    list(APPEND priv_requires tee_sec_storage tee_flash_mgr esp_tee)
+    list(APPEND priv_requires tee_sec_storage tee_flash_mgr)
 else()
     list(APPEND priv_requires app_update esp_partition)
 endif()

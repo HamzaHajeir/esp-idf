@@ -131,7 +131,7 @@ Running the utility
 
 **Usage**::
 
-        python mfg_gen.py [OPTIONS] COMMAND [ARGS]...
+        python mfg_gen.py [-h] {generate,generate-key} ...
 
 **Optional Arguments**:
 
@@ -157,7 +157,11 @@ Running the utility
 
 **Usage**::
 
-    python mfg_gen.py generate [OPTIONS] CONF VALUES PREFIX SIZE
+    python mfg_gen.py generate [-h] [--prefix_num start length] [--fileid FILEID] [--version {1,2}] [--keygen]
+                                    [--inputkey INPUTKEY] [--outdir OUTDIR]
+                                    [--key_protect_hmac] [--kp_hmac_keygen]
+                                    [--kp_hmac_keyfile KP_HMAC_KEYFILE] [--kp_hmac_inputkey KP_HMAC_INPUTKEY]
+                                    conf values prefix size
 
 **Positional Arguments**:
 
@@ -247,7 +251,7 @@ You can run the utility to encrypt factory images for each device using the comm
 **To generate only encryption keys:**
 
 **Usage**::
-    python mfg_gen.py generate-key [OPTIONS]
+    python mfg_gen.py generate-key [-h] [--keyfile KEYFILE] [--outdir OUTDIR]
 
 **Optional Arguments**:
     +---------------------------------------------+-----------------------------------------------------------------------------------+

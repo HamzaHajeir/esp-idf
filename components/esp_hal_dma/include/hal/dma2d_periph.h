@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,7 +20,6 @@ extern "C" {
 #if SOC_HAS(DMA2D)
 typedef struct {
     struct {
-        const char *module_name; // module name
         const int tx_irq_id[DMA2D_LL_GET(TX_CHANS_PER_INST)];
         const int rx_irq_id[DMA2D_LL_GET(RX_CHANS_PER_INST)];
     } groups[DMA2D_LL_GET(INST_NUM)];

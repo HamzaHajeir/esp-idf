@@ -13,9 +13,8 @@ void btc_alarm_handler(btc_msg_t *msg)
     btc_alarm_args_t *arg = (btc_alarm_args_t *)msg->arg;
 
     BTC_TRACE_DEBUG("%s act %d", __func__, msg->act);
-    if (arg == NULL || arg->alarm == NULL) {
-        return;
-    }
 
-    alarm_invoke(arg->alarm, arg->generation);
+    if (arg->cb) {
+        arg->cb(arg->cb_data);
+    }
 }

@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-P4 | ESP32-S2 | ESP32-S3 | ESP32-S31 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- | --------- |
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
 
 # OpenThread Border Router Example
 
@@ -22,7 +22,7 @@ By default, two SoCs are required to run this example:
 * Another IEEE 802.15.4 SoC (ESP32-H2) loaded with [ot_cli](../ot_cli) example.
 
 Connect the two SoCs via UART, below is an example setup with ESP32 DevKitC and ESP32-H2 DevKitC:
-![thread_br](image/thread-border-router-esp32-esp32h2.webp)
+![thread_br](image/thread-border-router-esp32-esp32h2.jpg)
 
 ESP32 pin | ESP32-H2 pin
 ----------|-------------
@@ -36,7 +36,7 @@ The example could also run on a single SoC which supports both Wi-Fi and Thread 
 Similar to the previous Wi-Fi based Thread Border Route setup, but a device with Ethernet interface is required, such as [ESP32-Ethernet-Kit](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/hw-reference/esp32/get-started-ethernet-kit.html) or [ESP32-P4-Function-EV-Board](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4-function-ev-board/index.html).
 
 #### **ESP32-P4 using Wi-Fi Co-Processor**
-This example can also be run using Wi-Fi using the ESP32-P4, which does not natively support Wi-Fi, by incorporating the ESP-Hosted component to enable Wi-Fi connectivity for the ESP32-P4 through a ESP32-C6 co-processor. You may refer to the [ESP-Hosted-MCU documentation](https://github.com/espressif/esp-hosted-mcu/blob/main/docs/getting-started-mcu.md) for more information about ESP-Hosted.
+This example can also be run using Wi-Fi using the ESP32-P4, which does not natively support Wi-Fi, by incorporating the ESP-Hosted component to enable Wi-Fi connectivity for the ESP32-P4 through a ESP32-C6 co-processor. You may refer to the [ESP-Hosted-MCU documentation](https://github.com/espressif/esp-hosted-mcu/blob/main/docs/esp32_p4_function_ev_board.md) for more information about ESP-Hosted.
 
 If you are using the ESP32-P4-Function-EV-Board, you may refer to the [OpenThread Border Router Example](https://github.com/espressif/esp-thread-br/tree/main/examples/basic_thread_border_router) for running a Wi-Fi based Thread Border Router.
 
@@ -45,9 +45,6 @@ If you are using the ESP32-P4-Function-EV-Board, you may refer to the [OpenThrea
 ```
 idf.py menuconfig
 ```
-
-This example enables PSRAM by default, which is recommended for production Thread Border Routers to improve performance. If your board does not have PSRAM, disable this option.
-
 OpenThread Command Line is enabled with UART as the default interface. Additionally, USB JTAG is also supported and can be activated through the menuconfig:
 
 ```

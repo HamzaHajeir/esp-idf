@@ -66,8 +66,6 @@ static void a2d_sdp_cback(UINT16 status)
 
     A2D_TRACE_API("a2d_sdp_cback status: %d", status);
 
-    memset(&a2d_svc, 0, sizeof(tA2D_Service));
-
     if (status == SDP_SUCCESS) {
         /* loop through all records we found */
         do {
@@ -76,17 +74,18 @@ static void a2d_sdp_cback(UINT16 status)
                                              a2d_cb.find.service_uuid, p_rec)) == NULL) {
                 break;
             }
+            memset(&a2d_svc, 0, sizeof(tA2D_Service));
 
             /* get service name */
-            if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_SERVICE_NAME)) != NULL &&
-                    SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+            if ((p_attr = SDP_FindAttributeInRec(p_rec,
+                                                 ATTR_ID_SERVICE_NAME)) != NULL) {
                 a2d_svc.p_service_name = (char *) p_attr->attr_value.v.array;
                 a2d_svc.service_len    = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
             }
 
             /* get provider name */
-            if ((p_attr = SDP_FindAttributeInRec(p_rec, ATTR_ID_PROVIDER_NAME)) != NULL &&
-                    SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == TEXT_STR_DESC_TYPE) {
+            if ((p_attr = SDP_FindAttributeInRec(p_rec,
+                                                 ATTR_ID_PROVIDER_NAME)) != NULL) {
                 a2d_svc.p_provider_name = (char *) p_attr->attr_value.v.array;
                 a2d_svc.provider_len    = SDP_DISC_ATTR_LEN(p_attr->attr_len_type);
             }

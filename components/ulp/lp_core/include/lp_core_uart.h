@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,9 +14,6 @@ extern "C" {
 #include "esp_err.h"
 #include "hal/uart_types.h"
 #include "hal/gpio_types.h"
-#include "soc/soc_caps.h"
-
-#if SOC_ULP_LP_UART_SUPPORTED
 
 /**
  * Default LP_IO Mux pins for LP UART
@@ -24,18 +21,13 @@ extern "C" {
 #if CONFIG_IDF_TARGET_ESP32P4
 #define LP_UART_DEFAULT_TX_GPIO_NUM GPIO_NUM_14
 #define LP_UART_DEFAULT_RX_GPIO_NUM GPIO_NUM_15
-#define LP_UART_DEFAULT_RTS_GPIO_NUM ((gpio_num_t)(-1))
-#define LP_UART_DEFAULT_CTS_GPIO_NUM ((gpio_num_t)(-1))
+#define LP_UART_DEFAULT_RTS_GPIO_NUM (-1)
+#define LP_UART_DEFAULT_CTS_GPIO_NUM (-1)
 #elif (CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32C5)
 #define LP_UART_DEFAULT_TX_GPIO_NUM GPIO_NUM_5
 #define LP_UART_DEFAULT_RX_GPIO_NUM GPIO_NUM_4
 #define LP_UART_DEFAULT_RTS_GPIO_NUM GPIO_NUM_2
 #define LP_UART_DEFAULT_CTS_GPIO_NUM GPIO_NUM_3
-#elif CONFIG_IDF_TARGET_ESP32S31
-#define LP_UART_DEFAULT_TX_GPIO_NUM GPIO_NUM_6
-#define LP_UART_DEFAULT_RX_GPIO_NUM GPIO_NUM_7
-#define LP_UART_DEFAULT_RTS_GPIO_NUM GPIO_NUM_4
-#define LP_UART_DEFAULT_CTS_GPIO_NUM GPIO_NUM_5
 #else
 #error "LP IO Mux pins undefined for LP UART"
 #endif /* CONFIG_IDF_TARGET_ESP32P4 */
@@ -72,40 +64,6 @@ typedef struct {
 } lp_core_uart_cfg_t;
 
 /* Default LP UART GPIO settings */
-#ifdef __cplusplus
-#define LP_UART_DEFAULT_GPIO_CONFIG() (__extension__({ \
-    lp_core_uart_pin_cfg_t __lp_uart_pin_cfg; \
-    __lp_uart_pin_cfg.tx_io_num = LP_UART_DEFAULT_TX_GPIO_NUM; \
-    __lp_uart_pin_cfg.rx_io_num = LP_UART_DEFAULT_RX_GPIO_NUM; \
-    __lp_uart_pin_cfg.rts_io_num = LP_UART_DEFAULT_RTS_GPIO_NUM; \
-    __lp_uart_pin_cfg.cts_io_num = LP_UART_DEFAULT_CTS_GPIO_NUM; \
-    __lp_uart_pin_cfg; \
-}))
-
-/* Default LP UART protocol config */
-#define LP_UART_DEFAULT_PROTO_CONFIG() (__extension__({ \
-    lp_core_uart_proto_cfg_t __lp_uart_proto_cfg; \
-    __lp_uart_proto_cfg.baud_rate = 115200; \
-    __lp_uart_proto_cfg.data_bits = UART_DATA_8_BITS; \
-    __lp_uart_proto_cfg.parity = UART_PARITY_DISABLE; \
-    __lp_uart_proto_cfg.stop_bits = UART_STOP_BITS_1; \
-    __lp_uart_proto_cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE; \
-    __lp_uart_proto_cfg.rx_flow_ctrl_thresh = 0; \
-    __lp_uart_proto_cfg; \
-}))
-
-/* Default LP UART source clock config */
-#define LP_UART_DEFAULT_CLOCK_CONFIG()              LP_UART_SCLK_DEFAULT
-
-/* Default LP UART GPIO settings and protocol parameters */
-#define LP_CORE_UART_DEFAULT_CONFIG() (__extension__({ \
-    lp_core_uart_cfg_t __lp_uart_cfg; \
-    __lp_uart_cfg.uart_pin_cfg = LP_UART_DEFAULT_GPIO_CONFIG(); \
-    __lp_uart_cfg.uart_proto_cfg = LP_UART_DEFAULT_PROTO_CONFIG(); \
-    __lp_uart_cfg.lp_uart_source_clk = LP_UART_DEFAULT_CLOCK_CONFIG(); \
-    __lp_uart_cfg; \
-}))
-#else
 #define LP_UART_DEFAULT_GPIO_CONFIG()                               \
         .uart_pin_cfg.tx_io_num = LP_UART_DEFAULT_TX_GPIO_NUM,      \
         .uart_pin_cfg.rx_io_num = LP_UART_DEFAULT_RX_GPIO_NUM,      \
@@ -132,7 +90,6 @@ typedef struct {
         LP_UART_DEFAULT_PROTO_CONFIG()              \
         LP_UART_DEFAULT_CLOCK_CONFIG()              \
     }
-#endif /* __cplusplus */
 
 /**
  * @brief Initialize and configure the LP UART to be used from the LP core
@@ -143,8 +100,6 @@ typedef struct {
  * @return esp_err_t    ESP_OK when successful
  */
 esp_err_t lp_core_uart_init(const lp_core_uart_cfg_t *cfg);
-
-#endif /* SOC_ULP_LP_UART_SUPPORTED */
 
 #ifdef __cplusplus
 }

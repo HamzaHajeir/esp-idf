@@ -9,7 +9,7 @@ idf_build_get_property(target IDF_TARGET)
 # ESP-TEE is currently supported only on the ESP32-C6, H2, C5 and C61 SoCs
 set(SUPPORTED_TARGETS "esp32c6" "esp32h2" "esp32c5" "esp32c61")
 if(NOT target IN_LIST SUPPORTED_TARGETS)
-    # ESP-TEE Kconfig is gated on the supported targets; nothing to register elsewhere.
+    message(STATUS "ESP-TEE is currently supported only on the ${SUPPORTED_TARGETS} SoCs")
     return()
 endif()
 
@@ -19,7 +19,6 @@ elseif(esp_tee_build)
     # TEE build currently only uses the shared headers.
     idf_component_register(INCLUDE_DIRS include)
 else()
-    set(srcs)
     if(CONFIG_SECURE_ENABLE_TEE)
         if(NOT CMAKE_BUILD_EARLY_EXPANSION)
             # Add custom flash target for TEE binary
@@ -81,8 +80,8 @@ else()
 
     idf_component_register(INCLUDE_DIRS include
                            SRCS ${srcs}
-                           PRIV_REQUIRES efuse esp_hal_wdt esp_security esp_stdio
-                                         esp_system esptool_py mbedtls spi_flash esp_mspi esp_hal_cache)
+                           PRIV_REQUIRES efuse esp_security esp_system esp_stdio spi_flash esptool_py esp_hal_wdt)
+
     if(CONFIG_SECURE_ENABLE_TEE)
         set(EXTRA_LINK_FLAGS)
         list(APPEND EXTRA_LINK_FLAGS "-u esp_tee_app_config")
@@ -90,12 +89,14 @@ else()
     endif()
 endif()
 
-# NOTE: TEE image has no Zcmp (see project_include.cmake) but still gets Zcb
-if(esp_tee_build AND CMAKE_C_COMPILER_ID MATCHES "GNU" AND
-   (CONFIG_IDF_TARGET_ESP32C5 OR CONFIG_IDF_TARGET_ESP32C61))
-    set(march_option "-march=rv32imac_zicsr_zifencei_zcb")
-    idf_build_set_property(COMPILE_OPTIONS "${march_option}" APPEND)
-    idf_build_set_property(LINK_OPTIONS "${march_option}" APPEND)
+# TODO: IDF-14145
+if((CONFIG_SECURE_ENABLE_TEE OR esp_tee_build) AND CMAKE_C_COMPILER_ID MATCHES "GNU")
+    if(CONFIG_IDF_TARGET_ESP32C5 OR CONFIG_IDF_TARGET_ESP32C61)
+        # Disable zcmp extension to avoid hardware issue with interrupts (DIG-661)
+        set(march_option "-march=rv32imac_zicsr_zifencei_zaamo_zalrsc")
+        idf_build_set_property(COMPILE_OPTIONS "${march_option}" APPEND)
+        idf_build_set_property(LINK_OPTIONS "${march_option}" APPEND)
+    endif()
 endif()
 
 if(BOOTLOADER_BUILD)
@@ -122,26 +123,18 @@ if(CONFIG_SECURE_ENABLE_TEE AND NOT esp_tee_build)
         list(APPEND exclude_srv "attestation")
     endif()
 
-    # The parser uses OptionEatAll, so each flag consumes all following values and
-    # the CMake lists can be passed directly. --exclude behaves like nargs='+', so
-    # omit it entirely when empty (a bare --exclude would error / swallow --wrap).
-    set(exclude_args)
-    if(exclude_srv)
-        set(exclude_args "--exclude" ${exclude_srv})
-    endif()
-
     idf_build_get_property(secure_service_headers_dir SECURE_SERVICE_HEADERS_DIR)
     execute_process(
         COMMAND python ${secure_service_yml_parser_py}
         "--sec_srv" ${secure_service_yml}
-        ${exclude_args}
+        "--exclude" ${exclude_srv}
         WORKING_DIRECTORY ${secure_service_headers_dir}
     )
 
     execute_process(
         COMMAND python ${secure_service_yml_parser_py}
         "--sec_srv" ${secure_service_yml}
-        ${exclude_args} "--wrap"
+        "--exclude" ${exclude_srv} "--wrap"
         OUTPUT_VARIABLE wrap_list
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         OUTPUT_STRIP_TRAILING_WHITESPACE

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,10 +32,8 @@
 #include "esp_clk_tree.h"
 #include "esp_private/gpio.h"
 #include "esp_adc/adc_continuous.h"
-#include "hal/adc_periph.h"
 #include "hal/adc_types.h"
 #include "hal/adc_hal.h"
-#include "hal/adc_ll.h"
 #include "hal/dma_types.h"
 #include "soc/soc_caps.h"
 #include "esp_memory_utils.h"
@@ -44,7 +42,6 @@
 #include "adc_dma_internal.h"
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
 #include "esp_cache.h"
-#include "esp_macros.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
 #include "esp_private/esp_cache_private.h"
@@ -80,10 +77,7 @@ static IRAM_ATTR bool adc_dma_intr(adc_continuous_ctx_t *adc_digi_ctx)
         }
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
         else {
-            uintptr_t sync_start = ESP_ALIGN_DOWN((uintptr_t)finished_buffer, adc_digi_ctx->cache_line_size);
-            uintptr_t sync_end = ESP_ALIGN_UP((uintptr_t)finished_buffer + finished_size, adc_digi_ctx->cache_line_size);
-
-            esp_err_t msync_ret = esp_cache_msync((void *)sync_start, sync_end - sync_start, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+            esp_err_t msync_ret = esp_cache_msync((void *)finished_buffer, finished_size, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
             assert(msync_ret == ESP_OK);
             (void)msync_ret;
         }
@@ -172,13 +166,7 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     esp_log_level_set(ADC_TAG, ESP_LOG_DEBUG);
 #endif
     esp_err_t ret = ESP_OK;
-    ESP_RETURN_ON_FALSE(hdl_config && ret_handle, ESP_ERR_INVALID_ARG, ADC_TAG, "invalid argument");
-
-    ESP_RETURN_ON_FALSE(
-        hdl_config->conv_frame_size != 0 &&
-        hdl_config->conv_frame_size % SOC_ADC_DIGI_DATA_BYTES_PER_CONV == 0,
-        ESP_ERR_INVALID_ARG, ADC_TAG,
-        "conv_frame_size should be a non-zero multiple of SOC_ADC_DIGI_DATA_BYTES_PER_CONV");
+    ESP_RETURN_ON_FALSE((hdl_config->conv_frame_size % SOC_ADC_DIGI_DATA_BYTES_PER_CONV == 0), ESP_ERR_INVALID_ARG, ADC_TAG, "conv_frame_size should be in multiples of `SOC_ADC_DIGI_DATA_BYTES_PER_CONV`");
 
     adc_continuous_ctx_t *adc_ctx = heap_caps_calloc(1, sizeof(adc_continuous_ctx_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (adc_ctx == NULL) {
@@ -203,12 +191,6 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     }
 
     //malloc internal buffer used by DMA
-#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
-    uint32_t cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
-    adc_ctx->cache_line_size = cache_line_size;
-    adc_ctx->rx_dma_buf_size = ESP_ALIGN_UP((size_t)INTERNAL_BUF_NUM * hdl_config->conv_frame_size, cache_line_size);
-#endif
-
     adc_ctx->rx_dma_buf = heap_caps_calloc(INTERNAL_BUF_NUM, hdl_config->conv_frame_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     if (!adc_ctx->rx_dma_buf) {
         ret = ESP_ERR_NO_MEM;
@@ -221,7 +203,9 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     adc_ctx->hal.rx_desc = heap_caps_aligned_calloc(ADC_DMA_DESC_ALIGN, dma_desc_max_num, sizeof(dma_descriptor_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
 
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
-    adc_ctx->adc_desc_size = ESP_ALIGN_UP(dma_desc_max_num * sizeof(dma_descriptor_t), cache_line_size);
+    //adc_desc_size should be aligned with cache line size
+    uint32_t cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
+    adc_ctx->adc_desc_size = ((dma_desc_max_num * sizeof(dma_descriptor_t) + cache_line_size - 1) / cache_line_size) * cache_line_size;
 #endif
 
     if (!adc_ctx->hal.rx_desc) {
@@ -262,12 +246,6 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     *ret_handle = adc_ctx;
 
     adc_apb_periph_claim();
-
-#if ADC_LL_SW_WEIGHT_CALIBRATION_SUPPORTED
-    for (int i = 0; i < SOC_ADC_PERIPH_NUM; i++) {
-        adc_cal_sw_weight((adc_unit_t)i, ADC_DIGI_CLK_SRC_DEFAULT);
-    }
-#endif
 
     return ret;
 
@@ -344,19 +322,10 @@ esp_err_t adc_continuous_start(adc_continuous_handle_t handle)
     }
 
 #if !CONFIG_IDF_TARGET_ESP32
-    ESP_ERROR_CHECK(esp_clk_tree_acquire_src((soc_module_clk_t)(handle->hal_digi_ctrlr_cfg.clk_src), NULL));
+    ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)(handle->hal_digi_ctrlr_cfg.clk_src), true));
 #endif
     adc_hal_digi_init(&handle->hal);
     adc_hal_digi_controller_config(&handle->hal, &handle->hal_digi_ctrlr_cfg);
-#if ADC_LL_SW_WEIGHT_CALIBRATION_SUPPORTED
-    // ADC power release and reset will clear the calibration done flag, need to set it back to true.
-    if (handle->use_adc1) {
-        adc_ll_set_cal_done(ADC_UNIT_1, true);
-    }
-    if (handle->use_adc2) {
-        adc_ll_set_cal_done(ADC_UNIT_2, true);
-    }
-#endif
     adc_hal_digi_enable(false);
 
     adc_dma_stop(handle->adc_dma);
@@ -369,27 +338,10 @@ esp_err_t adc_continuous_start(adc_continuous_handle_t handle)
     esp_err_t ret = esp_cache_msync(handle->hal.rx_desc, handle->adc_desc_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
     assert(ret == ESP_OK);
     (void)ret;
-
-    // Discard dirty cache lines left by calloc before DMA writes to the RX buffer.
-    ret = esp_cache_msync(handle->rx_dma_buf, handle->rx_dma_buf_size, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
-    assert(ret == ESP_OK);
-    (void)ret;
 #endif
 
     adc_dma_start(handle->adc_dma, handle->hal.rx_desc);
     adc_hal_digi_connect(true);
-
-#if ADC_LL_SW_WEIGHT_CALIBRATION_SUPPORTED
-    /* Data path, not a cal step: bypass the HW weight accumulator so DMA
-     * samples are the 17-bit comparator vector. */
-    if (handle->use_adc1) {
-        adc_ll_weight_accumulator_bypass(ADC_UNIT_1, true);
-    }
-    if (handle->use_adc2) {
-        adc_ll_weight_accumulator_bypass(ADC_UNIT_2, true);
-    }
-#endif
-
     adc_hal_digi_enable(true);
 
 #if ADC_LL_DEFAULT_CONV_LIMIT_EN
@@ -416,7 +368,7 @@ esp_err_t adc_continuous_stop(adc_continuous_handle_t handle)
 
     adc_hal_digi_deinit();
 #if !CONFIG_IDF_TARGET_ESP32
-    ESP_ERROR_CHECK(esp_clk_tree_release_src((soc_module_clk_t)(handle->hal_digi_ctrlr_cfg.clk_src)));
+    ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)(handle->hal_digi_ctrlr_cfg.clk_src), false));
 #endif
     if (handle->use_adc2) {
         adc_lock_release(ADC_UNIT_2);
@@ -515,7 +467,7 @@ esp_err_t adc_continuous_config(adc_continuous_handle_t handle, const adc_contin
     for (int i = 0; i < config->pattern_num; i++) {
 #if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
         //we add this error log to hint users what happened
-        if (ADC_LL_DIG_SUPPORTED_UNIT(config->adc_pattern[i].unit) == 0) {
+        if (SOC_ADC_DIG_SUPPORTED_UNIT(config->adc_pattern[i].unit) == 0) {
             ESP_LOGE(ADC_TAG, "ADC2 continuous mode is no longer supported, please use ADC1. Search for errata on espressif website for more details. You can enable CONFIG_ADC_CONTINUOUS_FORCE_USE_ADC2_ON_C3_S3 to force use ADC2");
         }
 #endif  //CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
@@ -525,11 +477,11 @@ esp_err_t adc_continuous_config(adc_continuous_handle_t handle, const adc_contin
          * On all continuous mode supported chips, we will always check the unit to see if it's a continuous mode supported unit.
          * However, on ESP32C3 and ESP32S3, we will jump this check, if `CONFIG_ADC_CONTINUOUS_FORCE_USE_ADC2_ON_C3_S3` is enabled.
          */
-        ESP_RETURN_ON_FALSE(ADC_LL_DIG_SUPPORTED_UNIT(config->adc_pattern[i].unit), ESP_ERR_INVALID_ARG, ADC_TAG, "Only support using ADC1 DMA mode");
+        ESP_RETURN_ON_FALSE(SOC_ADC_DIG_SUPPORTED_UNIT(config->adc_pattern[i].unit), ESP_ERR_INVALID_ARG, ADC_TAG, "Only support using ADC1 DMA mode");
 #endif  //#if !CONFIG_ADC_CONTINUOUS_FORCE_USE_ADC2_ON_C3_S3
     }
 
-    ESP_RETURN_ON_FALSE(config->sample_freq_hz <= ADC_LL_SAMPLE_FREQ_THRES_HIGH && config->sample_freq_hz >= ADC_LL_SAMPLE_FREQ_THRES_LOW, ESP_ERR_INVALID_ARG, ADC_TAG, "ADC sampling frequency out of range");
+    ESP_RETURN_ON_FALSE(config->sample_freq_hz <= SOC_ADC_SAMPLE_FREQ_THRES_HIGH && config->sample_freq_hz >= SOC_ADC_SAMPLE_FREQ_THRES_LOW, ESP_ERR_INVALID_ARG, ADC_TAG, "ADC sampling frequency out of range");
 #if CONFIG_IDF_TARGET_ESP32
     handle->format = ADC_DIGI_OUTPUT_FORMAT_TYPE1;
 #elif CONFIG_IDF_TARGET_ESP32S2
@@ -560,7 +512,6 @@ esp_err_t adc_continuous_config(adc_continuous_handle_t handle, const adc_contin
     uint32_t adc1_chan_mask = 0;
     uint32_t adc2_chan_mask = 0;
     for (int i = 0; i < config->pattern_num; i++) {
-        ESP_RETURN_ON_FALSE(config->adc_pattern[i].atten < SOC_ADC_ATTEN_NUM, ESP_ERR_INVALID_ARG, ADC_TAG, "invalid pattern attenuation");
         const adc_digi_pattern_config_t *pat = &config->adc_pattern[i];
         if (pat->unit == ADC_UNIT_1) {
             handle->use_adc1 = 1;
@@ -663,18 +614,18 @@ esp_err_t adc_continuous_parse_data(adc_continuous_handle_t handle,
         parsed_data[i].unit = ADC_UNIT_1;
         parsed_data[i].channel = p->type1.channel;
         parsed_data[i].raw_data = p->type1.data;
-        parsed_data[i].valid = (parsed_data[i].channel < ADC_LL_CHANNEL_NUM(parsed_data[i].unit));
+        parsed_data[i].valid = (parsed_data[i].channel < SOC_ADC_CHANNEL_NUM(parsed_data[i].unit));
 #elif CONFIG_IDF_TARGET_ESP32S2
         if (handle->format == ADC_DIGI_OUTPUT_FORMAT_TYPE2) {
             parsed_data[i].unit = p->type2.unit ? ADC_UNIT_2 : ADC_UNIT_1;
             parsed_data[i].channel = p->type2.channel;
             parsed_data[i].raw_data = p->type2.data;
-            parsed_data[i].valid = (parsed_data[i].channel < ADC_LL_CHANNEL_NUM(parsed_data[i].unit));
+            parsed_data[i].valid = (parsed_data[i].channel < SOC_ADC_CHANNEL_NUM(parsed_data[i].unit));
         } else if (handle->format == ADC_DIGI_OUTPUT_FORMAT_TYPE1) {
             parsed_data[i].unit = handle->use_adc1 ? ADC_UNIT_1 : ADC_UNIT_2;
             parsed_data[i].channel = p->type1.channel;
             parsed_data[i].raw_data = p->type1.data;
-            parsed_data[i].valid = (parsed_data[i].channel < ADC_LL_CHANNEL_NUM(parsed_data[i].unit));
+            parsed_data[i].valid = (parsed_data[i].channel < SOC_ADC_CHANNEL_NUM(parsed_data[i].unit));
         }
 #else
 #if CONFIG_SOC_ADC_PERIPH_NUM == 1
@@ -684,7 +635,7 @@ esp_err_t adc_continuous_parse_data(adc_continuous_handle_t handle,
 #endif
         parsed_data[i].channel = (parsed_data[i].unit == ADC_UNIT_2) ? p->type2.channel - ADC_LL_UNIT2_CHANNEL_SUBSTRATION : p->type2.channel;
         parsed_data[i].raw_data = p->type2.data;
-        parsed_data[i].valid = (parsed_data[i].channel < ADC_LL_CHANNEL_NUM(parsed_data[i].unit));
+        parsed_data[i].valid = (parsed_data[i].channel < SOC_ADC_CHANNEL_NUM(parsed_data[i].unit));
 #endif
     }
 

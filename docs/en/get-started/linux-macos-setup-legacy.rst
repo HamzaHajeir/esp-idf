@@ -101,9 +101,9 @@ Then you need to install Apple Rosetta 2 by running
 Installing Python 3
 ~~~~~~~~~~~~~~~~~~~
 
-Ensure that you have Python 3.11 or newer installed, as this is the minimum version supported by ESP-IDF.
+Ensure that you have Python 3.10 or newer installed, as this is the minimum version supported by ESP-IDF.
 
-Note that most of the recent versions of macOS include Python 3.9 (or older) by default, which is no longer supported. You will need to install Python 3.11 or later.
+Note that most of the recent versions of macOS include Python 3.9 (or older) by default, which is no longer supported. You will need to install Python 3.10 or later.
 
 To install supported Python 3 on macOS:
 
@@ -211,13 +211,11 @@ To prefer the Espressif download server when installing tools, use the following
 
 .. note::
     For users in China, we recommend using our download server located in China for faster download speed.
-    Alternatively, you can set as well the environment variable ``PIP_INDEX_URL`` to the China mirror of PyPI.
 
     .. code-block:: bash
 
         cd ~/esp/esp-idf
         export IDF_GITHUB_ASSETS="dl.espressif.cn/github_assets"
-        export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
         ./install.sh
 
 Customizing the Tools Installation Path

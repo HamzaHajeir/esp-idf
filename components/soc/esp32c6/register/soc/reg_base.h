@@ -56,6 +56,8 @@
 #define DR_REG_LP_APM0_BASE                     0x60099800
 #define DR_REG_MISC_BASE                        0x6009F000
 
+#define DR_REG_I2C_ANA_MST_BASE                 0x600AF800
+
 #define DR_REG_PMU_BASE                         0x600B0000
 #define DR_REG_LP_CLKRST_BASE                   0x600B0400
 #define DR_REG_EFUSE_BASE                       0x600B0800
@@ -70,7 +72,7 @@
 #define DR_REG_LP_ANALOG_PERI_BASE              0x600B2C00
 #define DR_REG_LP_TEE_BASE                      0x600B3400
 #define DR_REG_LP_APM_BASE                      0x600B3800
-#define DR_REG_OTP_DEBUG_BASE                   0x600B3C00
+#define DR_REG_OPT_DEBUG_BASE                   0x600B3C00
 
 #define DR_REG_TRACE_BASE                       0x600C0000
 #define DR_REG_ASSIST_DEBUG_BASE                0x600C2000

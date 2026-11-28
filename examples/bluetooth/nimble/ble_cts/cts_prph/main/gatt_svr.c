@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,6 @@
 #include <time.h>
 #include "sys/time.h"
 
-static const char *TAG = "CTS_GATT_SVR";
 
 void
 gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
@@ -71,8 +70,9 @@ int fetch_current_time(struct ble_svc_cts_curr_time *ctime) {
         ctime->et_256.d_d_t.d_t.seconds = timeinfo.tm_sec;
 
         /* day of week */
-        /* tm_wday: 0=Sunday..6=Saturday; CTS: 1=Monday..7=Sunday */
-        ctime->et_256.d_d_t.day_of_week = (timeinfo.tm_wday == 0) ? 7 : timeinfo.tm_wday;
+        /* time gives day range of [0, 6], current_time_sevice
+           has day range of [1,7] */
+        ctime->et_256.d_d_t.day_of_week = timeinfo.tm_wday + 1;
 
         /* fractions_256 */
         ctime->et_256.fractions_256 = (((uint64_t)tv_now.tv_usec * 256L )/ 1000000L);
@@ -85,21 +85,7 @@ int fetch_current_time(struct ble_svc_cts_curr_time *ctime) {
 int set_current_time(struct ble_svc_cts_curr_time ctime) {
     time_t now;
     struct tm timeinfo;
-    struct timeval tv_now = {0};
-
-    /* Basic sanity validation for incoming time fields */
-    if (ctime.et_256.d_d_t.d_t.year < 1900 ||
-        ctime.et_256.d_d_t.d_t.year > 9999 ||
-        ctime.et_256.d_d_t.d_t.month < 1 || ctime.et_256.d_d_t.d_t.month > 12 ||
-        ctime.et_256.d_d_t.d_t.day < 1 || ctime.et_256.d_d_t.d_t.day > 31 ||
-        ctime.et_256.d_d_t.d_t.hours > 23 ||
-        ctime.et_256.d_d_t.d_t.minutes > 59 ||
-        ctime.et_256.d_d_t.d_t.seconds > 59 ||
-        ctime.et_256.d_d_t.day_of_week < 1 || ctime.et_256.d_d_t.day_of_week > 7) {
-        ESP_LOGE(TAG, "Invalid current time parameters");
-        return -1;
-    }
-
+    struct timeval tv_now;
     /* fill date_time */
     timeinfo.tm_year= ctime.et_256.d_d_t.d_t.year - 1900 ;
     timeinfo.tm_mon = ctime.et_256.d_d_t.d_t.month - 1;
@@ -107,16 +93,9 @@ int set_current_time(struct ble_svc_cts_curr_time ctime) {
     timeinfo.tm_hour = ctime.et_256.d_d_t.d_t.hours;
     timeinfo.tm_min = ctime.et_256.d_d_t.d_t.minutes;
     timeinfo.tm_sec = ctime.et_256.d_d_t.d_t.seconds;
-    /* CTS day_of_week: 1=Monday..7=Sunday; tm_wday: 0=Sunday..6=Saturday */
-    timeinfo.tm_wday = (ctime.et_256.d_d_t.day_of_week == 7) ? 0 : ctime.et_256.d_d_t.day_of_week;
-    timeinfo.tm_isdst = -1;
+    timeinfo.tm_wday = ctime.et_256.d_d_t.day_of_week - 1;
     now = mktime(&timeinfo);
-    if (now == (time_t)-1) {
-        ESP_LOGE(TAG, "Failed to convert current time");
-        return -1;
-    }
     tv_now.tv_sec = now;
-    tv_now.tv_usec = 0;
     settimeofday(&tv_now, NULL);
     /* set the last updated */
     gettimeofday(&last_updated, NULL);
@@ -138,7 +117,6 @@ int set_local_time_info(struct ble_svc_cts_local_time_info info) {
     local_info.timezone = info.timezone;
     local_info.dst_offset = info.dst_offset;
     gettimeofday(&last_updated, NULL);
-    adjust_reason = (CHANGE_OF_DST_MASK | CHANGE_OF_TIME_ZONE_MASK);
     return 0;
 }
 int fetch_reference_time_info(struct ble_svc_cts_reference_time_info *info) {
@@ -162,6 +140,8 @@ int fetch_reference_time_info(struct ble_svc_cts_reference_time_info *info) {
         hours_since_update = (tv_now.tv_sec % 86400L) / 3600;
         info->hours_since_update = hours_since_update;
     }
+    adjust_reason = (CHANGE_OF_DST_MASK | CHANGE_OF_TIME_ZONE_MASK);
+
     return 0;
 }
 int
@@ -169,12 +149,8 @@ gatt_svr_init(void)
 {
     struct ble_svc_cts_cfg cfg;
 
-#if CONFIG_BT_NIMBLE_GAP_SERVICE
     ble_svc_gap_init();
-#endif /* CONFIG_BT_NIMBLE_GAP_SERVICE */
-#if MYNEWT_VAL(BLE_GATTS)
     ble_svc_gatt_init();
-#endif
 
     cfg.fetch_time_cb = fetch_current_time;
     cfg.local_time_info_cb = fetch_local_time_info;

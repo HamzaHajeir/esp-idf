@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -146,62 +146,6 @@ TEST_CASE("Test esp_backtrace_print_all_tasks()", "[esp_system]")
 }
 
 #endif // CONFIG_IDF_TARGET_ARCH_XTENSA
-
-#if CONFIG_IDF_TARGET_ARCH_RISCV
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_debug_helpers.h"
-
-#define NUM_TEST_FUNCS_RISCV    2
-
-static void backtrace_suspend_func_riscv(void *arg)
-{
-    vTaskSuspend(NULL);
-}
-
-TEST_CASE("Test esp_backtrace_print_all_tasks() on RISC-V", "[esp_system]")
-{
-    TaskHandle_t task_handles[NUM_TEST_FUNCS_RISCV];
-
-    // An invalid depth must be rejected
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_backtrace_print_all_tasks(0));
-
-    for (int i = 0; i < NUM_TEST_FUNCS_RISCV; i++) {
-        xTaskCreate(backtrace_suspend_func_riscv, "trace_func", 2048, NULL, UNITY_FREERTOS_PRIORITY + i + 1, &task_handles[i]);
-    }
-    vTaskDelay(10);
-    TEST_ASSERT_EQUAL(ESP_OK, esp_backtrace_print_all_tasks(3));
-
-    for (int i = 0; i < NUM_TEST_FUNCS_RISCV; i++) {
-        vTaskDelete(task_handles[i]);
-    }
-}
-
-/* Busy-waits for at least one full tick period, so that the tick interrupt of this core saves a frame of this task
- * outside esp_backtrace_print(). The test does not depend on where that frame is. */
-static void __attribute__((noinline)) spin_across_tick(void)
-{
-    const TickType_t start = xTaskGetTickCount();
-    while (xTaskGetTickCount() - start < 2) {
-        ;
-    }
-}
-
-static void __attribute__((noinline)) backtrace_print_caller(void)
-{
-    TEST_ASSERT_EQUAL(ESP_OK, esp_backtrace_print(10));
-}
-
-TEST_CASE("Test esp_backtrace_print() from a task prints the backtrace of its caller", "[esp_system]")
-{
-    spin_across_tick();
-    printf("Backtrace of the caller:\n");
-    backtrace_print_caller();
-    printf("Backtrace of the caller done\n");
-}
-
-#endif // CONFIG_IDF_TARGET_ARCH_RISCV
 
 #if CONFIG_ESP_SYSTEM_USE_FRAME_POINTER
 

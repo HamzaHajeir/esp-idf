@@ -1,15 +1,15 @@
 /*
- * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
 
 #include "sdkconfig.h"          // For CONFIG_NVS_BDL_STACK
-
-#include "nvs_flash.h"
+#include "mbedtls/aes.h"        // For mbedtls_aes_xts_context
+#include "nvs_flash.h"          // For nvs_sec_cfg_t
 #include "nvs_partition.hpp"
-#include "nvs_xts_aes.h"
+
 namespace nvs {
 
 /**
@@ -23,7 +23,7 @@ public:
     NVSEncryptedPartition(const esp_partition_t *partition);
 #endif
 
-    virtual ~NVSEncryptedPartition();
+    virtual ~NVSEncryptedPartition() { }
 
     /**
      * Initializes the AES encryption components with the provided configuration.
@@ -67,8 +67,8 @@ public:
     esp_err_t write(size_t dst_offset, const void* src, size_t size) override;
 
 protected:
-    XTS_CONTEXT mEctxt;     // AES context for encryption
-    XTS_CONTEXT mDctxt;     // AES context for decryption
+    mbedtls_aes_xts_context mEctxt;     // AES context for encryption
+    mbedtls_aes_xts_context mDctxt;     // AES context for decryption
 };
 
 } // nvs

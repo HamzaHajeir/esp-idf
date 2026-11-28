@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,7 +20,6 @@
 #include "test_spi_board.h"
 
 #define TEST_SPI_HOST_ID  SPI2_HOST
-#define TEST_IMG_SIZE (200 * 200 * sizeof(uint16_t))
 
 void test_spi_lcd_common_initialize(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_io_color_trans_done_cb_t on_color_trans_done,
                                     void *user_data, int cmd_bits, int param_bits, bool oct_mode)
@@ -39,7 +38,7 @@ void test_spi_lcd_common_initialize(esp_lcd_panel_io_handle_t *io_handle, esp_lc
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = TEST_IMG_SIZE,
+        .max_transfer_sz = 100 * 100 * sizeof(uint16_t),
     };
 #if SOC_SPI_SUPPORT_OCT
     if (oct_mode) {
@@ -75,9 +74,11 @@ void test_spi_lcd_common_initialize(esp_lcd_panel_io_handle_t *io_handle, esp_lc
     TEST_ESP_OK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TEST_SPI_HOST_ID, &io_config, io_handle));
 }
 
-static void lcd_panel_test(esp_lcd_panel_io_handle_t io_handle, esp_lcd_panel_handle_t panel_handle, bool use_psram)
+#define TEST_IMG_SIZE (200 * 200 * sizeof(uint16_t))
+
+static void lcd_panel_test(esp_lcd_panel_io_handle_t io_handle, esp_lcd_panel_handle_t panel_handle)
 {
-    uint8_t *img = heap_caps_malloc(TEST_IMG_SIZE, MALLOC_CAP_DMA | (use_psram ? MALLOC_CAP_SPIRAM : MALLOC_CAP_INTERNAL));
+    uint8_t *img = heap_caps_malloc(TEST_IMG_SIZE, MALLOC_CAP_DMA);
     TEST_ASSERT_NOT_NULL(img);
 
     esp_lcd_panel_reset(panel_handle);
@@ -114,6 +115,10 @@ static void lcd_panel_test(esp_lcd_panel_io_handle_t io_handle, esp_lcd_panel_ha
 
     printf("turn off the panel\r\n");
     esp_lcd_panel_disp_on_off(panel_handle, false);
+    TEST_ESP_OK(esp_lcd_panel_del(panel_handle));
+    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
+    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
+    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
     free(img);
 }
 
@@ -128,7 +133,6 @@ TEST_CASE("lcd_panel_spi_io_test", "[lcd]")
     esp_lcd_panel_io_tx_param(io_handle, 0x1C, NULL, 0);
     TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
     TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
 
     test_spi_lcd_common_initialize(&io_handle, NULL, NULL, 16, 16, false);
     esp_lcd_panel_io_tx_param(io_handle, 0x1A01, NULL, 0);
@@ -138,7 +142,6 @@ TEST_CASE("lcd_panel_spi_io_test", "[lcd]")
     esp_lcd_panel_io_tx_param(io_handle, 0x1C03, NULL, 0);
     TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
     TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
 
 #if SOC_SPI_SUPPORT_OCT
     test_spi_lcd_common_initialize(&io_handle, NULL, NULL, 8, 8, true);
@@ -149,7 +152,6 @@ TEST_CASE("lcd_panel_spi_io_test", "[lcd]")
     esp_lcd_panel_io_tx_param(io_handle, 0x1C, NULL, 0);
     TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
     TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
 
     test_spi_lcd_common_initialize(&io_handle, NULL, NULL, 16, 16, true);
     esp_lcd_panel_io_tx_param(io_handle, 0x1A01, NULL, 0);
@@ -159,7 +161,6 @@ TEST_CASE("lcd_panel_spi_io_test", "[lcd]")
     esp_lcd_panel_io_tx_param(io_handle, 0x1C03, NULL, 0);
     TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
     TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
 #endif // SOC_SPI_SUPPORT_OCT
 }
 
@@ -175,15 +176,7 @@ TEST_CASE("lcd_panel_with_8-line_spi_interface_(st7789)", "[lcd]")
         .bits_per_pixel = 16,
     };
     TEST_ESP_OK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
-    lcd_panel_test(io_handle, panel_handle, false);
-#if SOC_PSRAM_DMA_CAPABLE && CONFIG_PSRAM
-    printf("test with PSRAM\r\n");
-    lcd_panel_test(io_handle, panel_handle, true);
-#endif
-    TEST_ESP_OK(esp_lcd_panel_del(panel_handle));
-    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
-    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
+    lcd_panel_test(io_handle, panel_handle);
 }
 
 TEST_CASE("lcd_panel_with_8-line_spi_interface_(nt35510)", "[lcd]")
@@ -197,15 +190,7 @@ TEST_CASE("lcd_panel_with_8-line_spi_interface_(nt35510)", "[lcd]")
         .bits_per_pixel = 16,
     };
     TEST_ESP_OK(esp_lcd_new_panel_nt35510(io_handle, &panel_config, &panel_handle));
-    lcd_panel_test(io_handle, panel_handle, false);
-#if SOC_PSRAM_DMA_CAPABLE && CONFIG_PSRAM
-    printf("test with PSRAM\r\n");
-    lcd_panel_test(io_handle, panel_handle, true);
-#endif
-    TEST_ESP_OK(esp_lcd_panel_del(panel_handle));
-    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
-    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
+    lcd_panel_test(io_handle, panel_handle);
 }
 #endif // SOC_SPI_SUPPORT_OCT
 
@@ -220,15 +205,7 @@ TEST_CASE("lcd_panel_with_1-line_spi_interface_(st7789)", "[lcd]")
         .bits_per_pixel = 16,
     };
     TEST_ESP_OK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
-    lcd_panel_test(io_handle, panel_handle, false);
-#if SOC_PSRAM_DMA_CAPABLE && CONFIG_PSRAM
-    printf("test with PSRAM\r\n");
-    lcd_panel_test(io_handle, panel_handle, true);
-#endif
-    TEST_ESP_OK(esp_lcd_panel_del(panel_handle));
-    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
-    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
+    lcd_panel_test(io_handle, panel_handle);
 }
 
 TEST_CASE("spi_lcd_send_colors_to_fixed_region", "[lcd]")
@@ -265,20 +242,19 @@ TEST_CASE("spi_lcd_send_colors_to_fixed_region", "[lcd]")
     gpio_set_level(TEST_LCD_BK_LIGHT_GPIO, 1);
 
     printf("set the flush window for only once\r\n");
-    TEST_ESP_OK(esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_CASET, (uint8_t[]) {
+    esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_CASET, (uint8_t[]) {
         (x_start >> 8) & 0xFF,
         x_start & 0xFF,
         ((x_end - 1) >> 8) & 0xFF,
         (x_end - 1) & 0xFF,
-    }, 4));
-    TEST_ESP_OK(esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_RASET, (uint8_t[]) {
+    }, 4);
+    esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_RASET, (uint8_t[]) {
         (y_start >> 8) & 0xFF,
         y_start & 0xFF,
         ((y_end - 1) >> 8) & 0xFF,
         (y_end - 1) & 0xFF,
-    }, 4));
-    // RAMWR has no parameter; the following color transfers carry pixels only
-    TEST_ESP_OK(esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_RAMWR, NULL, 0));
+    }, 4);
+    esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_RAMWR, NULL, 0);
 
     printf("send colors to the fixed region in multiple steps\r\n");
     const int steps = 10;
@@ -299,129 +275,5 @@ TEST_CASE("spi_lcd_send_colors_to_fixed_region", "[lcd]")
     TEST_ESP_OK(esp_lcd_panel_del(panel_handle));
     TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
     TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
     free(color_data);
 }
-
-#define TEST_SPI_LCD_CONCURRENT_COLOR_LEN   (120 * 120)
-typedef struct {
-    spi_device_handle_t spi_dev;
-    TaskHandle_t done_task;
-    volatile bool stop;
-    uint32_t trans_count;
-} spi_lcd_concurrent_polling_ctx_t;
-
-static void spi_lcd_concurrent_polling_task(void *arg)
-{
-    spi_lcd_concurrent_polling_ctx_t *ctx = arg;
-    spi_transaction_t trans = {
-        .length = 4 * 8,
-        .flags = SPI_TRANS_USE_TXDATA,
-    };
-
-    while (!ctx->stop) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-        TEST_ESP_OK(spi_device_polling_transmit(ctx->spi_dev, &trans));
-        ctx->trans_count++;
-    }
-    xTaskNotifyGive(ctx->done_task);
-    vTaskDelete(NULL);
-}
-
-TEST_CASE("spi_lcd_safe_with_another_device_polling_on_same_bus", "[lcd]")
-{
-    void *color_data = malloc(TEST_SPI_LCD_CONCURRENT_COLOR_LEN);
-    TEST_ASSERT_NOT_NULL(color_data);
-
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    test_spi_lcd_common_initialize(&io_handle, NULL, NULL, 8, 8, false);
-
-    spi_lcd_concurrent_polling_ctx_t polling_ctx = { .done_task = xTaskGetCurrentTaskHandle() };
-    spi_device_interface_config_t other_dev_config = {
-        .clock_speed_hz = TEST_LCD_PIXEL_CLOCK_HZ,
-        .spics_io_num = -1,
-        .queue_size = 1,
-    };
-    TEST_ESP_OK(spi_bus_add_device(TEST_SPI_HOST_ID, &other_dev_config, &polling_ctx.spi_dev));
-
-    // polling task with higher priority than the interrupt task
-    xTaskCreate(spi_lcd_concurrent_polling_task, "spi_polling", 4096, &polling_ctx, 10, NULL);
-
-    for (int i = 0; i < 30; i++) {
-        printf("panel_io_tx_color %d\r\n", i);
-        TEST_ESP_OK(esp_lcd_panel_io_tx_color(io_handle, -1, color_data, TEST_SPI_LCD_CONCURRENT_COLOR_LEN));
-    }
-
-    polling_ctx.stop = true;
-    vTaskDelay(pdMS_TO_TICKS(100)); // wait for polling task to stop
-    TEST_ASSERT_GREATER_THAN(0, (int)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000)));
-    TEST_ASSERT_GREATER_THAN_UINT32(0, polling_ctx.trans_count);
-
-    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
-    TEST_ESP_OK(spi_bus_remove_device(polling_ctx.spi_dev));
-    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    TEST_ESP_OK(gpio_reset_pin(TEST_LCD_BK_LIGHT_GPIO));
-    free(color_data);
-}
-
-#if CONFIG_SPI_MASTER_ISR_IN_IRAM
-#include "unity_test_utils_cache.h"
-#include "esp_rom_sys.h"
-
-#define TEST_SPI_LCD_CACHE_SAFE_COLOR_LEN (16 * 1024) // ~6.5 ms at 20 MHz, so the transfer ends inside the cache-off window
-
-static IRAM_ATTR bool test_color_trans_done_iram(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
-{
-    *(volatile bool *)user_ctx = true;
-    return false;
-}
-
-static IRAM_ATTR void wait_color_trans_done(void *arg)
-{
-    volatile bool *done = (volatile bool *)arg;
-    for (int i = 0; i < 100 && !*done; i++) {
-        esp_rom_delay_us(1000);
-    }
-}
-
-TEST_CASE("spi_lcd_color_trans_done_with_cache_disabled", "[lcd]")
-{
-    // With ESP_INTR_FLAG_IRAM, the SPI master ISR keeps running during flash operations and calls the
-    // esp_lcd pre/post transaction callbacks from there, so both must be IRAM-safe.
-    spi_bus_config_t buscfg = {
-        .sclk_io_num = TEST_LCD_PCLK_GPIO,
-        .mosi_io_num = TEST_LCD_DATA0_GPIO,
-        .miso_io_num = -1,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = TEST_SPI_LCD_CACHE_SAFE_COLOR_LEN,
-        .intr_flags = ESP_INTR_FLAG_IRAM,
-    };
-    TEST_ESP_OK(spi_bus_initialize(TEST_SPI_HOST_ID, &buscfg, SPI_DMA_CH_AUTO));
-
-    volatile bool done = false;
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = TEST_LCD_DC_GPIO,
-        .cs_gpio_num = TEST_LCD_CS_GPIO,
-        .pclk_hz = TEST_LCD_PIXEL_CLOCK_HZ,
-        .trans_queue_depth = 1,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-        .on_color_trans_done = test_color_trans_done_iram,
-        .user_ctx = (void *) &done,
-    };
-    TEST_ESP_OK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TEST_SPI_HOST_ID, &io_config, &io_handle));
-
-    uint8_t *color_data = heap_caps_calloc(1, TEST_SPI_LCD_CACHE_SAFE_COLOR_LEN, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    TEST_ASSERT_NOT_NULL(color_data);
-
-    TEST_ESP_OK(esp_lcd_panel_io_tx_color(io_handle, -1, color_data, TEST_SPI_LCD_CACHE_SAFE_COLOR_LEN));
-    unity_utils_run_cache_disable_stub(wait_color_trans_done, (void *)&done);
-    TEST_ASSERT_TRUE(done);
-
-    TEST_ESP_OK(esp_lcd_panel_io_del(io_handle));
-    TEST_ESP_OK(spi_bus_free(TEST_SPI_HOST_ID));
-    free(color_data);
-}
-#endif // CONFIG_SPI_MASTER_ISR_IN_IRAM

@@ -16,7 +16,7 @@ IDF Docker image (``espressif/idf``) is intended for building applications and l
 The image contains:
 
 - Common utilities such as ``git``, ``wget``, ``curl``, and ``zip``.
-- Python 3.11 or newer.
+- Python 3.10 or newer.
 - A copy of a specific version of ESP-IDF. See below for information about versions. ``IDF_PATH`` environment variable is set and points to the ESP-IDF location in the container.
 - All the build tools required for the specific version of ESP-IDF: CMake, Ninja, cross-compiler toolchains, etc.
 - All Python packages required by ESP-IDF are installed in a virtual environment.
@@ -164,7 +164,7 @@ To use these arguments, pass them via the ``--build-arg`` command line option. F
         --build-arg IDF_INSTALL_TARGETS=esp32c3 \
         tools/docker
 
-.. _remote serial ports: https://docs.espressif.com/projects/esptool/en/latest/remote-serial-ports.html
+.. _remote serial ports: https://docs.espressif.com/projects/esptool/en/latest/esptool/remote-serial-ports.html
 .. _RFC2217: http://www.ietf.org/rfc/rfc2217.txt
 .. _esptool releases: https://github.com/espressif/esptool/releases
 .. _device option: https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities

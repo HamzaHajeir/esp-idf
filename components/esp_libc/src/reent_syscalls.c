@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,7 +15,6 @@
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 #include "sdkconfig.h"
-#include <esp_compiler.h>
 
 static int syscall_not_implemented(struct _reent *r, ...)
 {
@@ -32,7 +31,10 @@ static int syscall_not_implemented_aborts(void)
  * doesn't have the same signature as the original function.
  * Disable type mismatch warnings for this reason.
  */
-ESP_COMPILER_DIAGNOSTIC_PUSH_IGNORE("-Wattribute-alias")
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattribute-alias"
+#endif
 
 int _open_r(struct _reent *r, const char * path, int flags, int mode)
 __attribute__((weak, alias("syscall_not_implemented")));
@@ -65,7 +67,9 @@ __attribute__((alias("syscall_not_implemented")));
 int _kill_r(struct _reent *r, int pid, int sig)
 __attribute__((alias("syscall_not_implemented")));
 
-ESP_COMPILER_DIAGNOSTIC_POP("-Wattribute-alias")
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 /* No-op function, used to force linking this file,
    instead of the syscalls implementation from libgloss.

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,18 +22,9 @@ extern "C" {
 
 #define AHB_DMA_LL_GET_HW(id) (((id) == 0) ? (&AHB_DMA) : NULL)
 
-#define AHB_DMA_LL_SUPPORTED_BURST_SIZE_MASK (GDMA_BURST_SIZE_SUPPORT_4 | \
-                                              GDMA_BURST_SIZE_SUPPORT_16 | \
-                                              GDMA_BURST_SIZE_SUPPORT_32 | \
-                                              GDMA_BURST_SIZE_SUPPORT_64)
-
 // any "dummy" peripheral ID can be used for M2M mode
 #define AHB_DMA_LL_M2M_FREE_PERIPH_ID_MASK (0xFAC2)
-#define AHB_DMA_LL_RX_EVENT_MASK (0x1F)
-#define AHB_DMA_LL_TX_EVENT_MASK (0x0F)
-
-// Default value of weighted arbitration timeout, in AHB bus clock cycles
-#define AHB_DMA_LL_DEFAULT_WEIGHTED_ARBITRATION_TIMEOUT (2000)
+#define AHB_DMA_LL_INVALID_PERIPH_ID       (0x3F)
 
 ///////////////////////////////////// Common /////////////////////////////////////////
 /**
@@ -77,6 +68,31 @@ static inline void ahb_dma_ll_set_default_memory_range(ahb_dma_dev_t *dev)
     dev->intr_mem_start_addr.val = 0x40000000;
     dev->intr_mem_end_addr.val = 0x4FFC0000;
 }
+
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
+/**
+ * @brief Enable the weighted arbitration for AHB-DMA
+ *
+ * @param dev DMA register base address
+ * @param enable True to enable, false to disable
+ */
+static inline void ahb_dma_ll_enable_weighted_arb(ahb_dma_dev_t *dev, bool enable)
+{
+    dev->weight_en.weight_en = enable;
+}
+
+/**
+ * @brief Set the weighted arbitration timeout for AHB-DMA
+ *
+ * @param dev DMA register base address
+ * @param timeout AHB bus clock cycle
+ */
+static inline void ahb_dma_ll_set_weighted_arb_timeout(ahb_dma_dev_t *dev, uint32_t timeout)
+{
+    HAL_ASSERT(timeout != 0 && timeout <= 65535);
+    dev->arb_timeout.arb_timeout_num = timeout;
+}
+#endif
 
 ///////////////////////////////////// RX /////////////////////////////////////////
 /**
@@ -309,25 +325,16 @@ static inline void ahb_dma_ll_rx_set_priority(ahb_dma_dev_t *dev, uint32_t chann
 /**
  * @brief Connect DMA RX channel to a given peripheral
  */
-static inline void ahb_dma_ll_rx_connect_to_periph(ahb_dma_dev_t *dev, uint32_t channel, int periph_id)
+static inline void ahb_dma_ll_rx_connect_to_periph(ahb_dma_dev_t *dev, uint32_t channel, gdma_trigger_peripheral_t periph, int periph_id)
 {
     dev->channel[channel].in.in_peri_sel.peri_in_sel_chn = periph_id;
-    dev->channel[channel].in.in_conf0.mem_trans_en_chn = false;
+    dev->channel[channel].in.in_conf0.mem_trans_en_chn = (periph == GDMA_TRIG_PERIPH_M2M);
 }
 
 /**
- * @brief Connect DMA RX channel to memory (M2M mode)
+ * @brief Disconnect DMA RX channel from peripheral
  */
-static inline void ahb_dma_ll_rx_connect_to_mem(ahb_dma_dev_t *dev, uint32_t channel, int dummy_id)
-{
-    dev->channel[channel].in.in_peri_sel.peri_in_sel_chn = dummy_id;
-    dev->channel[channel].in.in_conf0.mem_trans_en_chn = true;
-}
-
-/**
- * @brief Disconnect DMA RX channel from all peripherals
- */
-static inline void ahb_dma_ll_rx_disconnect_all(ahb_dma_dev_t *dev, uint32_t channel)
+static inline void ahb_dma_ll_rx_disconnect_from_periph(ahb_dma_dev_t *dev, uint32_t channel)
 {
     dev->channel[channel].in.in_peri_sel.peri_in_sel_chn = 0x3F;
     dev->channel[channel].in.in_conf0.mem_trans_en_chn = false;
@@ -342,6 +349,32 @@ static inline void ahb_dma_ll_rx_enable_etm_task(ahb_dma_dev_t *dev, uint32_t ch
 {
     dev->channel[channel].in.in_conf0.in_etm_en_chn = enable;
 }
+
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
+/**
+ * @brief Enable the weighted arbitration optimize for DMA RX channel
+ *
+ * @param dev DMA register base address
+ * @param channel Channel ID
+ * @param enable True to enable, false to disable
+ */
+static inline void ahb_dma_ll_rx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
+{
+    dev->in_crc_arb[channel].arb_weight_opt.rx_arb_weight_opt_dis_chn = !enable;
+}
+
+/**
+ * @brief Set the weight for DMA RX channel
+ *
+ * @param dev DMA register base address
+ * @param channel Channel ID
+ * @param weight Weight value
+ */
+static inline void ahb_dma_ll_rx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
+{
+    dev->in_crc_arb[channel].ch_arb_weight.rx_arb_weight_value_chn = weight;
+}
+#endif
 
 ///////////////////////////////////// TX /////////////////////////////////////////
 /**
@@ -573,23 +606,16 @@ static inline void ahb_dma_ll_tx_set_priority(ahb_dma_dev_t *dev, uint32_t chann
 /**
  * @brief Connect DMA TX channel to a given peripheral
  */
-static inline void ahb_dma_ll_tx_connect_to_periph(ahb_dma_dev_t *dev, uint32_t channel, int periph_id)
+static inline void ahb_dma_ll_tx_connect_to_periph(ahb_dma_dev_t *dev, uint32_t channel, gdma_trigger_peripheral_t periph, int periph_id)
 {
+    (void)periph;
     dev->channel[channel].out.out_peri_sel.peri_out_sel_chn = periph_id;
 }
 
 /**
- * @brief Connect DMA TX channel to memory (M2M mode)
+ * @brief Disconnect DMA TX channel from peripheral
  */
-static inline void ahb_dma_ll_tx_connect_to_mem(ahb_dma_dev_t *dev, uint32_t channel, int dummy_id)
-{
-    dev->channel[channel].out.out_peri_sel.peri_out_sel_chn = dummy_id;
-}
-
-/**
- * @brief Disconnect DMA TX channel from all peripherals
- */
-static inline void ahb_dma_ll_tx_disconnect_all(ahb_dma_dev_t *dev, uint32_t channel)
+static inline void ahb_dma_ll_tx_disconnect_from_periph(ahb_dma_dev_t *dev, uint32_t channel)
 {
     dev->channel[channel].out.out_peri_sel.peri_out_sel_chn = 0x3F;
 }
@@ -603,6 +629,32 @@ static inline void ahb_dma_ll_tx_enable_etm_task(ahb_dma_dev_t *dev, uint32_t ch
 {
     dev->channel[channel].out.out_conf0.out_etm_en_chn = enable;
 }
+
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
+/**
+ * @brief Enable the weighted arbitration optimize for DMA TX channel
+ *
+ * @param dev DMA register base address
+ * @param channel Channel ID
+ * @param enable True to enable, false to disable
+ */
+static inline void ahb_dma_ll_tx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
+{
+    dev->out_crc_arb[channel].arb_weight_opt.tx_arb_weight_opt_dis_chn = !enable;
+}
+
+/**
+ * @brief Set the weight for DMA TX channel
+ *
+ * @param dev DMA register base address
+ * @param channel Channel ID
+ * @param weight Weight value
+ */
+static inline void ahb_dma_ll_tx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
+{
+    dev->out_crc_arb[channel].ch_arb_weight.tx_arb_weight_value_chn = weight;
+}
+#endif
 
 ///////////////////////////////////// CRC-TX /////////////////////////////////////////
 
@@ -725,145 +777,6 @@ static inline void ahb_dma_ll_rx_crc_set_lfsr_data_mask(ahb_dma_dev_t *dev, uint
     }
     HAL_FORCE_MODIFY_U32_REG_FIELD(dev->in_crc_arb[channel].crc_data_en_wr_data, rx_crc_data_en_wr_data_chn, data_mask);
 }
-
-/**********************************************************************************************************************/
-/************************ The following functions behave differently based on the chip revision ***********************/
-/**********************************************************************************************************************/
-
-#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) >= 300
-/**
- * @brief Check if the weighted arbitration is supported
- */
-static inline bool ahb_dma_ll_is_weighted_arb_supported(ahb_dma_dev_t *dev)
-{
-    (void)dev;
-    return true;
-}
-
-/**
- * @brief Enable the weighted arbitration for AHB-DMA
- *
- * @param dev DMA register base address
- * @param enable True to enable, false to disable
- */
-static inline void ahb_dma_ll_enable_weighted_arb(ahb_dma_dev_t *dev, bool enable)
-{
-    dev->weight_en.weight_en = enable;
-}
-
-/**
- * @brief Set the weighted arbitration timeout for AHB-DMA
- *
- * @param dev DMA register base address
- * @param timeout AHB bus clock cycle
- */
-static inline void ahb_dma_ll_set_weighted_arb_timeout(ahb_dma_dev_t *dev, uint32_t timeout)
-{
-    HAL_ASSERT(timeout != 0 && timeout <= 65535);
-    dev->arb_timeout.arb_timeout_num = timeout;
-}
-
-/**
- * @brief Enable the weighted arbitration optimize for DMA RX channel
- *
- * @param dev DMA register base address
- * @param channel Channel ID
- * @param enable True to enable, false to disable
- */
-static inline void ahb_dma_ll_rx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    dev->in_crc_arb[channel].arb_weight_opt.rx_arb_weight_opt_dis_chn = !enable;
-}
-
-/**
- * @brief Set the weight for DMA RX channel
- *
- * @param dev DMA register base address
- * @param channel Channel ID
- * @param weight Weight value
- */
-static inline void ahb_dma_ll_rx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    dev->in_crc_arb[channel].ch_arb_weight.rx_arb_weight_value_chn = weight;
-}
-
-/**
- * @brief Enable the weighted arbitration optimize for DMA TX channel
- *
- * @param dev DMA register base address
- * @param channel Channel ID
- * @param enable True to enable, false to disable
- */
-static inline void ahb_dma_ll_tx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    dev->out_crc_arb[channel].arb_weight_opt.tx_arb_weight_opt_dis_chn = !enable;
-}
-
-/**
- * @brief Set the weight for DMA TX channel
- *
- * @param dev DMA register base address
- * @param channel Channel ID
- * @param weight Weight value
- */
-static inline void ahb_dma_ll_tx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    dev->out_crc_arb[channel].ch_arb_weight.tx_arb_weight_value_chn = weight;
-}
-#else
-static inline bool ahb_dma_ll_is_weighted_arb_supported(ahb_dma_dev_t *dev)
-{
-    // not supported
-    (void)dev;
-    return false;
-}
-
-static inline void ahb_dma_ll_enable_weighted_arb(ahb_dma_dev_t *dev, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)enable;
-}
-
-static inline void ahb_dma_ll_set_weighted_arb_timeout(ahb_dma_dev_t *dev, uint32_t timeout)
-{
-    // not supported
-    (void)dev;
-    (void)timeout;
-}
-
-static inline void ahb_dma_ll_rx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)enable;
-}
-
-static inline void ahb_dma_ll_rx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)weight;
-}
-
-static inline void ahb_dma_ll_tx_enable_weighted_arb_opt(ahb_dma_dev_t *dev, uint32_t channel, bool enable)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)enable;
-}
-
-static inline void ahb_dma_ll_tx_set_weight(ahb_dma_dev_t *dev, uint32_t channel, uint32_t weight)
-{
-    // not supported
-    (void)dev;
-    (void)channel;
-    (void)weight;
-}
-#endif
 
 #ifdef __cplusplus
 }

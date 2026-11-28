@@ -7,7 +7,7 @@ I80 Interfaced LCD
 
     - :cpp:member:`esp_lcd_i80_bus_config_t::clk_src` sets the clock source of the I80 bus. Note, the default clock source may be different between ESP targets.
     - :cpp:member:`esp_lcd_i80_bus_config_t::wr_gpio_num` sets the GPIO number of the pixel clock (also referred as ``WR`` in some LCD spec)
-    - :cpp:member:`esp_lcd_i80_bus_config_t::dc_gpio_num` sets the GPIO number of the data or command select pin (also referred as ``RS`` in some LCD spec). Set it to ``-1`` when the device has no D/C line and only receives data.
+    - :cpp:member:`esp_lcd_i80_bus_config_t::dc_gpio_num` sets the GPIO number of the data or command select pin (also referred as ``RS`` in some LCD spec)
     - :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` sets the bit width of the data bus (only support ``8`` or ``16``)
     - :cpp:member:`esp_lcd_i80_bus_config_t::data_gpio_nums` is the array of the GPIO number of the data bus. The number of GPIOs should be equal to the :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` value.
     - :cpp:member:`esp_lcd_i80_bus_config_t::max_transfer_bytes` sets the maximum number of bytes that can be transferred in one transaction.
@@ -41,13 +41,6 @@ I80 Interfaced LCD
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::pclk_hz` sets the pixel clock frequency in Hz. Higher pixel clock frequency results in higher refresh rate, but may cause flickering if the DMA bandwidth is not sufficient or the LCD controller chip does not support high pixel clock frequency.
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::lcd_cmd_bits` and :cpp:member:`esp_lcd_panel_io_i80_config_t::lcd_param_bits` set the bit width of the command and parameter that recognized by the LCD controller chip. This is chip specific, you should refer to your LCD spec in advance.
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::trans_queue_depth` sets the maximum number of transactions that can be queued in the LCD IO device. A bigger value means more transactions can be queued up, but it also consumes more memory.
-
-    .. note::
-
-        The output pixel clock PCLK frequency has an upper limit that depends on the data bus width:
-
-        - When :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` is 8, the PCLK frequency is recommended to be less than 80 MHz.
-        - When :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` is 16, the PCLK frequency is recommended to be less than 40 MHz.
 
     .. code-block:: c
 

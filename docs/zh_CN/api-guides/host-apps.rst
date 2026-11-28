@@ -42,29 +42,25 @@ ESP-IDF 应用程序通常在主机上进行构建（交叉编译），然后上
 POSIX/Linux 模拟器的模拟
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-ESP-IDF 已支持使用 FreeRTOS Linux 模拟器预览应用程序在目标芯片上的运行效果。该模拟器可以将每个 FreeRTOS 任务作为一个 POSIX 线程来运行，实现在主机上运行 ESP-IDF 组件，并让 ESP-IDF 应用在主机上运行时能够使用这些组件。目前，并非所有组件都可以在 Linux 上运行。此外，各组件移植到 Linux 上后，其功能可能也会受到限制，或与在芯片目标上构建该组件的功能有所不同。有关所需组件在 Linux 上是否受支持的更多信息，请参阅 :ref:`component-linux-mock-support`。
+ESP-IDF 已支持使用 `FreeRTOS POSIX/Linux 模拟器 <https://www.freertos.org/FreeRTOS-simulator-for-Linux.html>`_ 预览应用程序在目标芯片上的运行效果。使用该模拟器可以在主机上运行 ESP-IDF 组件，并使这类组件可用于在主机上运行的 ESP-IDF 应用程序。目前，只有一部分组件可以在 Linux 上构建。此外，各组件移植到 Linux 上后，其功能可能也会受到限制，或与在芯片目标上构建该组件的功能有所不同。有关所需组件在 Linux 上是否受支持的更多信息，请参阅 :ref:`component-linux-mock-support`。
 
-**调度模型**
-
-Linux 模拟器采用 *协作式抢占*：专用调度器线程按照 ``configTICK_RATE_HZ`` 设定的频率推进 tick 计数，并通过阻塞和解除阻塞 pthread 来切换任务。上下文切换仅发生在任务与 FreeRTOS 内核交互时，因此模拟器并不像真实硬件那样在指令级实现抢占。这意味着：
+注意，该模拟器在控制和中断线程时大量依赖于 POSIX 信号和信号处理程序。因此，它具有以下 *限制*：
 
 .. list::
-    - 忙循环且未调用任何 FreeRTOS API 的任务不会被抢占。抢占需要任务与内核交互，例如进入或退出临界区、主动让出 CPU，或调用可能阻塞的 API（如 ``vTaskDelay()``、``xQueueReceive()``）。
-    - 定时精度受限于 tick 周期（例如 100 Hz 时为 10 ms）。
-    - 临界区通过互斥锁保护，而非禁用中断。
+    - 避免使用不是 *async-signal-safe* 的函数，例如 ``printf()``。特别是，在多个优先级不同的任务中调用这些函数可能会导致崩溃和死锁。
+    - 不是由 FreeRTOS API 函数创建的线程，禁止从中调用任何 FreeRTOS 原语。
+    - 在 FreeRTOS 模拟器中，如果一个任务使用了像 ``select()`` 这样的原生阻塞或等待机制，模拟器可能会错误地将这些任务视为处于 *就绪状态*，然后尝试调度它们执行。实际上，这些任务可能仍然处于阻塞状态。FreeRTOS 对于那些使用了 FreeRTOS API 而被阻塞的任务，调度器只能识别出 *等待状态*。
+    - 当一个模拟的 FreeRTOS 任务调用可能被信号中断的 API 时，这些 API 将持续接收模拟的 FreeRTOS 时钟中断。因此，调用这些 API 的代码应设计为能够处理潜在的中断信号，或者通过链接器进行 API 的包装处理。
 
-**限制**
+由于测试和开发过程会受到这些限制影响，我们期望寻找到更好的解决方案用于在主机上运行 ESP-IDF 应用程序。
 
-.. list::
-    - 请勿从非 FreeRTOS 任务 API 创建的 pthread 中调用可能阻塞或让出 CPU 的 FreeRTOS 原语（例如队列、信号量、任务通知或 ``vTaskDelay()``）。任何线程均可使用临界区（``taskENTER_CRITICAL`` / ``taskEXIT_CRITICAL``）。
+此外，请注意，如果您使用的是 ESP-IDF 中的 FreeRTOS 模拟组件（``tools/mocks/freertos``），这些限制不会影响程序运行。但是，该模拟组件也无法执行任何调度。
 
-如果使用 ESP-IDF 的 FreeRTOS 模拟组件 (``tools/mocks/freertos``)，则不受上述限制，但该模拟组件不会执行调度。
-
-.. only:: not esp32p4 and not esp32h4 and not esp32s31
+.. only:: not esp32p4 and not esp32h4
 
     .. note::
 
-        FreeRTOS POSIX/Linux 模拟器可配置为使用 :ref:`amazon_smp_freertos`。但模拟仍在单核模式下运行（``configNUM_CORES = 1``）。支持 Amazon SMP FreeRTOS 主要是为了与面向 Amazon SMP FreeRTOS 编写的 ESP-IDF 应用程序保持 API 兼容性。
+        FreeRTOS POSIX/Linux 模拟器支持配置 :ref:`amazon_smp_freertos` 版本，但模拟仍在单核模式下运行。支持 Amazon SMP FreeRTOS 主要是为给 Amazon SMP FreeRTOS 编写的 ESP-IDF 应用程序提供 API 兼容性。
 
 使用模拟器的前提
 -----------------
@@ -83,33 +79,6 @@ Linux 模拟器采用 *协作式抢占*：专用调度器线程按照 ``configTI
   idf.py --preview set-target linux
   idf.py build
   idf.py monitor
-
-为其他 Linux 系统交叉编译
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-默认情况下，应用程序使用主机编译器为主机系统构建。如需为其他 Linux 系统（例如采用不同 CPU 架构的嵌入式 Linux 设备）构建应用程序，请通过 ``CMAKE_TOOLCHAIN_FILE`` 传入该系统的 CMake 工具链文件：
-
-.. code-block:: bash
-
-  idf.py --preview -DIDF_TARGET=linux -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake build
-
-也可以通过环境变量 ``CMAKE_TOOLCHAIN_FILE`` 设置工具链文件。工具链文件通常由目标系统的 SDK 提供，例如由 Yocto 或 Buildroot 生成的 SDK。
-
-请注意：
-
-- 上述前提中列出的库必须适用于目标系统，通常位于工具链文件指定的 sysroot 中。
-- 交叉编译的应用程序无法通过 ``idf.py monitor`` 运行，请将其复制到目标系统上运行。
-- 如需更换工具链文件，请先运行 ``idf.py fullclean``。
-
-.. _host-apps-networking:
-
-Linux 目标上的网络功能
-------------------------------
-
-针对 ``linux`` 目标构建时，网络可采用两种不同方式：
-
-- **主机套接字**：应用程序使用 Linux BSD 套接字 API。ESP-NETIF 及相关组件可能替换为桩实现。参见 :example:`protocols/sockets/tcp_client`。
-- **lwIP 协议栈**：ESP-IDF 的 lwIP 协议栈会被编译，并运行在 FreeRTOS 模拟器中。套接字 API 进入 lwIP，而不是主机 TCP/IP 协议栈。可通过 TAP 接口把 lwIP 接到主机网络。参见 :ref:`lwip-on-linux` 和 :example:`protocols/sockets/udp_client`。
 
 问题排查
 ---------------

@@ -5,12 +5,11 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include "soc/soc.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define DR_REG_USB_BASE(i)                      ((i) ? DR_REG_USB_OTG_FS_CORE1_BASE : DR_REG_USB_OTG_FS_CORE0_BASE)
 
 /** USB_OTGFS_GOTGCTL_REG register
  *  OTG Control and Status Register The OTG Control and Status register controls the

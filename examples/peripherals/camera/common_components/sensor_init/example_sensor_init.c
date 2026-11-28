@@ -1,12 +1,12 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -36,9 +36,9 @@ void example_sensor_init(example_sensor_config_t *sensor_config, example_sensor_
 
     //---------------SCCB Init------------------//
     esp_cam_sensor_config_t cam_config = {
-        .reset_pin = sensor_config->reset_pin,
-        .pwdn_pin = sensor_config->pwdn_pin,
-        .xclk_pin = sensor_config->xclk_pin,
+        .reset_pin = -1,
+        .pwdn_pin = -1,
+        .xclk_pin = -1,
     };
 
     esp_cam_sensor_device_t *cam = NULL;
@@ -99,16 +99,12 @@ void example_sensor_init(example_sensor_config_t *sensor_config, example_sensor_
         ESP_LOGE(TAG, "Start stream fail");
     }
     ESP_ERROR_CHECK(ret);
-    out_sensor_handle->sensor_device = cam;
     out_sensor_handle->i2c_bus_handle = i2c_bus_handle;
     out_sensor_handle->sccb_handle = cam_config.sccb_handle;
 }
 
 void example_sensor_deinit(example_sensor_handle_t sensor_handle)
 {
-    int enable_flag = 0;
-    ESP_ERROR_CHECK(esp_cam_sensor_ioctl(sensor_handle.sensor_device, ESP_CAM_SENSOR_IOC_S_STREAM, &enable_flag));
-    ESP_ERROR_CHECK(esp_cam_sensor_del_dev(sensor_handle.sensor_device));
     ESP_ERROR_CHECK(esp_sccb_del_i2c_io(sensor_handle.sccb_handle));
     ESP_ERROR_CHECK(i2c_del_master_bus(sensor_handle.i2c_bus_handle));
 }

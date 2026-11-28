@@ -1,20 +1,17 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "soc/soc_caps.h"
 #include "hal/assert.h"
-#include "hal/log.h"
 #include "hal/gdma_hal_axi.h"
+#include "hal/axi_dma_ll.h"
 #include "hal/gdma_ll.h"
 
 static gdma_hal_priv_data_t gdma_axi_hal_priv_data = {
     .m2m_free_periph_mask = AXI_DMA_LL_M2M_FREE_PERIPH_ID_MASK,
-    .tx_event_mask = AXI_DMA_LL_TX_EVENT_MASK,
-    .rx_event_mask = AXI_DMA_LL_RX_EVENT_MASK,
-    .supported_burst_size_mask = AXI_DMA_LL_SUPPORTED_BURST_SIZE_MASK,
 };
 
 void gdma_axi_hal_start_with_desc(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, intptr_t desc_base_addr)
@@ -64,30 +61,23 @@ void gdma_axi_hal_set_priority(gdma_hal_context_t *hal, int chan_id, gdma_channe
     }
 }
 
-void gdma_axi_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int periph_id)
+void gdma_axi_hal_connect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, gdma_trigger_peripheral_t periph, int periph_sub_id)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        axi_dma_ll_rx_connect_to_periph(hal->axi_dma_dev, chan_id, periph_id);
+        axi_dma_ll_rx_reset_channel(hal->axi_dma_dev, chan_id); // reset channel
+        axi_dma_ll_rx_connect_to_periph(hal->axi_dma_dev, chan_id, periph, periph_sub_id);
     } else {
-        axi_dma_ll_tx_connect_to_periph(hal->axi_dma_dev, chan_id, periph_id);
+        axi_dma_ll_tx_reset_channel(hal->axi_dma_dev, chan_id); // reset channel
+        axi_dma_ll_tx_connect_to_periph(hal->axi_dma_dev, chan_id, periph, periph_sub_id);
     }
 }
 
-void gdma_axi_hal_connect_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, int dummy_id)
+void gdma_axi_hal_disconnect_peri(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        axi_dma_ll_rx_connect_to_mem(hal->axi_dma_dev, chan_id, dummy_id);
+        axi_dma_ll_rx_disconnect_from_periph(hal->axi_dma_dev, chan_id);
     } else {
-        axi_dma_ll_tx_connect_to_mem(hal->axi_dma_dev, chan_id, dummy_id);
-    }
-}
-
-void gdma_axi_hal_disconnect_all(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
-{
-    if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        axi_dma_ll_rx_disconnect_all(hal->axi_dma_dev, chan_id);
-    } else {
-        axi_dma_ll_tx_disconnect_all(hal->axi_dma_dev, chan_id);
+        axi_dma_ll_tx_disconnect_from_periph(hal->axi_dma_dev, chan_id);
     }
 }
 
@@ -173,14 +163,14 @@ uint32_t gdma_axi_hal_get_eof_desc_addr(gdma_hal_context_t *hal, int chan_id, gd
     }
 }
 
-#if AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-void gdma_axi_hal_request_link_switch_event(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
+void gdma_axi_hal_enable_access_encrypt_mem(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_or_dis)
 {
-    if (dir == GDMA_CHANNEL_DIRECTION_TX) {
-        axi_dma_ll_tx_request_link_switch_event(hal->axi_dma_dev, chan_id);
+    if (dir == GDMA_CHANNEL_DIRECTION_RX) {
+        axi_dma_ll_rx_enable_ext_mem_ecc_aes_access(hal->axi_dma_dev, chan_id, en_or_dis);
+    } else {
+        axi_dma_ll_tx_enable_ext_mem_ecc_aes_access(hal->axi_dma_dev, chan_id, en_or_dis);
     }
 }
-#endif // AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
 
 #if SOC_GDMA_SUPPORT_CRC
 void gdma_axi_hal_clear_crc(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir)
@@ -249,22 +239,6 @@ void gdma_axi_hal_enable_etm_task(gdma_hal_context_t *hal, int chan_id, gdma_cha
 }
 #endif // SOC_GDMA_SUPPORT_ETM
 
-bool gdma_axi_hal_is_tx_link_switch_event_supported(gdma_hal_context_t *hal)
-{
-    return axi_dma_ll_tx_is_link_switch_event_supported(hal->axi_dma_dev);
-}
-
-#if SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-void gdma_axi_hal_set_weight(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t weight)
-{
-    if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        axi_dma_ll_rx_set_weight(hal->axi_dma_dev, chan_id, weight);
-    } else {
-        axi_dma_ll_tx_set_weight(hal->axi_dma_dev, chan_id, weight);
-    }
-}
-#endif // SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-
 void gdma_axi_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 {
     hal->axi_dma_dev = AXI_DMA_LL_GET_HW(config->group_id - GDMA_LL_AXI_GROUP_START_ID);
@@ -275,8 +249,7 @@ void gdma_axi_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
     hal->reset = gdma_axi_hal_reset;
     hal->set_priority = gdma_axi_hal_set_priority;
     hal->connect_peri = gdma_axi_hal_connect_peri;
-    hal->connect_mem = gdma_axi_hal_connect_mem;
-    hal->disconnect_all = gdma_axi_hal_disconnect_all;
+    hal->disconnect_peri = gdma_axi_hal_disconnect_peri;
     hal->enable_burst = gdma_axi_hal_enable_burst;
     hal->set_strategy = gdma_axi_hal_set_strategy;
     hal->enable_intr = gdma_axi_hal_enable_intr;
@@ -285,6 +258,7 @@ void gdma_axi_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
     hal->get_intr_status_reg = gdma_axi_hal_get_intr_status_reg;
     hal->get_eof_desc_addr = gdma_axi_hal_get_eof_desc_addr;
     hal->set_burst_size = gdma_axi_hal_set_burst_size;
+    hal->enable_access_encrypt_mem = gdma_axi_hal_enable_access_encrypt_mem;
 #if SOC_GDMA_SUPPORT_CRC
     hal->clear_crc = gdma_axi_hal_clear_crc;
     hal->set_crc_poly = gdma_axi_hal_set_crc_poly;
@@ -293,30 +267,5 @@ void gdma_axi_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 #if SOC_GDMA_SUPPORT_ETM
     hal->enable_etm_task = gdma_axi_hal_enable_etm_task;
 #endif // SOC_GDMA_SUPPORT_ETM
-
-    hal->is_tx_link_switch_event_supported = gdma_axi_hal_is_tx_link_switch_event_supported;
-#if AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-    hal->request_link_switch_event = gdma_axi_hal_request_link_switch_event;
-#endif // AXI_DMA_LL_SUPPORT(TX_LINK_SWITCH)
-
-#if SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
-    hal->set_weight = gdma_axi_hal_set_weight;
-    if (config->flags.enable_weighted_arbitration) {
-        if (axi_dma_ll_is_weighted_arb_supported(hal->axi_dma_dev)) {
-            axi_dma_ll_enable_weighted_arb(hal->axi_dma_dev, true);
-            // always enable weighted arbitration optimize
-            for (int i = 0; i < GDMA_LL_AXI_PAIRS_PER_GROUP; i++) {
-                axi_dma_ll_tx_enable_weighted_arb_opt(hal->axi_dma_dev, i, true);
-                axi_dma_ll_rx_enable_weighted_arb_opt(hal->axi_dma_dev, i, true);
-            }
-            // set timeout to default value, to ensure that all channels within each time period can almost consume all the tokens
-            axi_dma_ll_set_weighted_arb_timeout(hal->axi_dma_dev, AXI_DMA_LL_DEFAULT_WEIGHTED_ARBITRATION_TIMEOUT);
-        } else {
-            HAL_LOGE("axi_dma_hal", "Weighted arbitration is not supported");
-        }
-    } else {
-        axi_dma_ll_enable_weighted_arb(hal->axi_dma_dev, false);
-    }
-#endif // SOC_GDMA_SUPPORT_WEIGHTED_ARBITRATION
     axi_dma_ll_set_default_memory_range(hal->axi_dma_dev);
 }

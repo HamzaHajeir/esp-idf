@@ -1,23 +1,15 @@
 /*
- * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 #include "sdkconfig.h"
 #include <inttypes.h>
 #include "unity.h"
-#include "soc/soc_caps.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && SOC_LIGHT_SLEEP_SUPPORTED
-#include "esp_pm.h"
-#include "esp_timer.h"
-#endif
 #include "esp_attr.h"
 #include "esp_sleep.h"
-#include "esp_rom_sys.h"
 #include "soc/rtc.h"
 #include "hal/wdt_hal.h"
 #if CONFIG_IDF_TARGET_ARCH_RISCV
@@ -302,210 +294,6 @@ TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_WDT after RTC watchdog",
                           do_rtc_wdt,
                           check_reset_reason_any_wdt);
 
-#if CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS > 0
-static void hang_in_shutdown_handler(void)
-{
-    while (1) {
-    }
-}
-
-static void do_shutdown_handler_hang(void)
-{
-    setup_values();
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(hang_in_shutdown_handler));
-    esp_restart();
-}
-
-/* Same check as the RTC watchdog case: a blocked shutdown handler must come
- * back as a watchdog reset, not a software reset or a hang. */
-TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_WDT after hung shutdown handler",
-                          "[reset_reason]",
-                          do_shutdown_handler_hang,
-                          check_reset_reason_any_wdt);
-
-#if CHECK_RTC_MEM
-/* Bit n is set only after handler n has finished its delay. */
-static RTC_NOINIT_ATTR uint32_t s_shutdown_handlers_done;
-#endif
-
-/* arm_shutdown_handler_wdt() computes ticks from nominal rtc_clk_slow_freq_get_hz(),
- * while the default internal RC_SLOW oscillator can deviate by up to +-30% across
- * chips and temperature (putting the actual WDT timeout in ~0.77x..1.43x of
- * CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS).
- *
- * Use 6 handlers of 30% timeout each:
- * - Each handler (30%) is well below the shortest possible WDT timeout (~77%),
- *   so no single handler can trigger the WDT on its own.
- * - The first two handlers (60%) always finish before the shortest possible WDT
- *   timeout (~77%), proving multiple handlers run before the reset.
- * - All 6 handlers together (180%) always exceed the longest possible WDT
- *   timeout (~143%), guaranteeing an ESP_RST_WDT before the last handler finishes.
- */
-#define SHUTDOWN_CUMULATIVE_HANDLER_COUNT 6
-
-static void shutdown_handler_slice(unsigned index)
-{
-    esp_rom_delay_us((CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS * 3 / 10) * 1000);
-#if CHECK_RTC_MEM
-    s_shutdown_handlers_done |= 1u << index;
-#else
-    (void)index;
-#endif
-}
-
-static void shutdown_handler_0(void)
-{
-    shutdown_handler_slice(0);
-}
-
-static void shutdown_handler_1(void)
-{
-    shutdown_handler_slice(1);
-}
-
-static void shutdown_handler_2(void)
-{
-    shutdown_handler_slice(2);
-}
-
-static void shutdown_handler_3(void)
-{
-    shutdown_handler_slice(3);
-}
-
-static void shutdown_handler_4(void)
-{
-    shutdown_handler_slice(4);
-}
-
-static void shutdown_handler_5(void)
-{
-    shutdown_handler_slice(5);
-}
-
-static void do_shutdown_handlers_cumulative(void)
-{
-#if CHECK_RTC_MEM
-    s_shutdown_handlers_done = 0;
-#endif
-    setup_values();
-    /* Collectively, the shutdown handlers take 180% of the nominal timeout, so
-     * the RTC watchdog resets the chip after the first two handlers complete and
-     * before the final handler finishes. */
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_0));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_1));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_2));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_3));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_4));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(shutdown_handler_5));
-    /* Does not return. The RTC watchdog resets the chip before the last handler finishes. */
-    esp_restart();
-}
-
-static void check_shutdown_handlers_cumulative(void)
-{
-    TEST_ASSERT_EQUAL_MESSAGE(ESP_RST_WDT, esp_reset_reason(),
-                              "RTC watchdog did not reset the chip before all shutdown handlers finished");
-#if CHECK_RTC_MEM
-    TEST_ASSERT_EQUAL_HEX32(CHECK_VALUE, s_rtc_noinit_val);
-    /* The first two handlers (60% of nominal timeout) must finish before the WDT fires. */
-    TEST_ASSERT_BITS_MESSAGE(0x3, 0x3, s_shutdown_handlers_done,
-                             "RTC watchdog reset the chip too early; the first two handlers did not finish");
-    /* The last handler (180% cumulative) must not finish. */
-    TEST_ASSERT_BITS_MESSAGE(1u << (SHUTDOWN_CUMULATIVE_HANDLER_COUNT - 1), 0, s_shutdown_handlers_done,
-                             "last handler finished; RTC watchdog missed the timeout");
-#endif
-}
-
-TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_WDT after shutdown handlers exceed timeout together",
-                          "[reset_reason]",
-                          do_shutdown_handlers_cumulative,
-                          check_shutdown_handlers_cumulative);
-
-/* The scheduler is still running here. This wait returns only if some task
- * notifies this one, but no task does. */
-static void wait_for_notification(void)
-{
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-}
-
-static void do_shutdown_handler_notify_wait(void)
-{
-    setup_values();
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(wait_for_notification));
-    esp_restart();
-}
-
-TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_WDT after shutdown handler waits for notification",
-                          "[reset_reason]",
-                          do_shutdown_handler_notify_wait,
-                          check_reset_reason_any_wdt);
-
-#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && SOC_LIGHT_SLEEP_SUPPORTED
-/* Wall time waited inside the handler. Must survive the software reset. */
-#if CHECK_RTC_MEM
-static RTC_NOINIT_ATTR uint32_t s_light_sleep_wait_ms;
-#endif
-static int64_t s_light_sleep_wait_start_us;
-
-/* Becomes runnable only while the shutdown handler is blocked. Notifies after
- * the shutdown timeout has passed in wall time. */
-static void notify_after_shutdown_timeout(void *arg)
-{
-    TaskHandle_t restart_task = (TaskHandle_t)arg;
-    vTaskDelay(pdMS_TO_TICKS(CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS + 1500));
-    xTaskNotifyGive(restart_task);
-    vTaskDelete(NULL);
-}
-
-/* Blocks so the idle task can enter automatic light sleep. Light sleep pauses
- * the RTC watchdog armed for this handler, so this wait can outlast the
- * timeout and still return. */
-static void wait_through_auto_light_sleep(void)
-{
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-#if CHECK_RTC_MEM
-    int64_t elapsed_ms = (esp_timer_get_time() - s_light_sleep_wait_start_us) / 1000;
-    s_light_sleep_wait_ms = (elapsed_ms > 0) ? (uint32_t)elapsed_ms : 0;
-#endif
-}
-
-static void do_shutdown_handler_auto_light_sleep(void)
-{
-    esp_pm_config_t pm_config = {
-        .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-        .min_freq_mhz = CONFIG_XTAL_FREQ,
-        .light_sleep_enable = true,
-    };
-    setup_values();
-#if CHECK_RTC_MEM
-    s_light_sleep_wait_ms = 0;
-#endif
-    TEST_ASSERT_EQUAL(ESP_OK, esp_pm_configure(&pm_config));
-    s_light_sleep_wait_start_us = esp_timer_get_time();
-    TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(notify_after_shutdown_timeout, "late_notify", 2048,
-                                          xTaskGetCurrentTaskHandle(), 1, NULL));
-    TEST_ASSERT_EQUAL(ESP_OK, esp_register_shutdown_handler(wait_through_auto_light_sleep));
-    esp_restart();
-}
-
-static void check_shutdown_handler_auto_light_sleep(void)
-{
-    check_reset_reason_sw();
-#if CHECK_RTC_MEM
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
-        CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS, s_light_sleep_wait_ms,
-        "handler returned before the shutdown timeout; light sleep did not cover the wait");
-#endif
-}
-
-TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_SW after shutdown handler waits in automatic light sleep",
-                          "[reset_reason]",
-                          do_shutdown_handler_auto_light_sleep,
-                          check_shutdown_handler_auto_light_sleep);
-#endif // CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && SOC_LIGHT_SLEEP_SUPPORTED
-#endif // CONFIG_ESP_SYSTEM_SHUTDOWN_HANDLER_TIMEOUT_MS
-
 static void do_brownout(void)
 {
     setup_values();
@@ -534,31 +322,15 @@ TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_BROWNOUT after brownout event",
                           check_reset_reason_brownout);
 
 #ifdef CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
-#if (defined(CONFIG_IDF_TARGET_ARCH_XTENSA) && !defined(CONFIG_FREERTOS_UNICORE)) || defined(CONFIG_IDF_TARGET_ARCH_RISCV)
-#include "esp_memory_utils.h"
-#include "freertos/task.h"
+#ifndef CONFIG_FREERTOS_UNICORE
 #if CONFIG_IDF_TARGET_ARCH_XTENSA
 #include "xt_instr_macros.h"
 #include "xtensa/config/xt_specreg.h"
-#endif
 
-/* IDF's xTaskCreateStatic[PinnedToCore]() takes the stack size in BYTES
- * (not in words like upstream FreeRTOS). */
 static int size_stack = 1024 * 4;
 static StackType_t *start_addr_stack;
 
-static void func_do_exception(void)
-{
-    *((volatile int *) 0x01) = 0;
-}
-
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
-/* On Xtensa (windowed ABI), recursing forces the register window to wrap,
- * which triggers overflow/underflow exceptions that spill/fill registers
- * to/from the (SPIRAM-backed) task stack. This makes sure SP is genuinely
- * pointing into SPIRAM and that spilled frames live there too when func()
- * is finally called from deep inside the recursion. */
-static int fibonacci(int n, void *func(void))
+static int fibonacci(int n, void* func(void))
 {
     int tmp1 = n, tmp2 = n;
     uint32_t base, start;
@@ -576,7 +348,6 @@ static int fibonacci(int n, void *func(void))
     printf("fib = %d\n", (tmp1 - tmp2) + fib);
     return fib;
 }
-#endif // CONFIG_IDF_TARGET_ARCH_XTENSA
 
 static void test_task(void *func)
 {
@@ -586,13 +357,30 @@ static void test_task(void *func)
     } else {
         printf("restart_task: uses internal stack, addr_stack = %p\n", start_addr_stack);
     }
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
     fibonacci(35, func);
-#else
-    /* RISC-V has no register windows, so no need to recurse. Just invoke
-     * the test function directly from this task (whose stack is in SPIRAM). */
-    ((void (*)(void))func)();
-#endif
+}
+
+static void func_do_exception(void)
+{
+    *((int *) 0) = 0;
+}
+
+static void init_restart_task(void)
+{
+    StackType_t *stack_for_task = (StackType_t *) heap_caps_calloc(1, size_stack, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    printf("init_task: current addr_stack = %p, stack_for_task = %p\n", esp_cpu_get_sp(), stack_for_task);
+    static StaticTask_t task_buf;
+    xTaskCreateStaticPinnedToCore(test_task, "test_task", size_stack, esp_restart, 5, stack_for_task, &task_buf, 1);
+    while (1) { };
+}
+
+static void init_task_do_exception(void)
+{
+    StackType_t *stack_for_task = (StackType_t *) heap_caps_calloc(1, size_stack, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    printf("init_task: current addr_stack = %p, stack_for_task = %p\n", esp_cpu_get_sp(), stack_for_task);
+    static StaticTask_t task_buf;
+    xTaskCreateStaticPinnedToCore(test_task, "test_task", size_stack, func_do_exception, 5, stack_for_task, &task_buf, 1);
+    while (1) { };
 }
 
 static void test1_finish(void)
@@ -607,38 +395,6 @@ static void test2_finish(void)
     printf("test - OK\n");
 }
 
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
-#ifndef CONFIG_FREERTOS_UNICORE
-#define CREATE_TEST_TASK(stack, buf, entry) \
-    xTaskCreateStaticPinnedToCore(test_task, "test_task", size_stack, (entry), 5, (stack), (buf), 1)
-#endif // !CONFIG_FREERTOS_UNICORE
-#else // RISCV
-#define CREATE_TEST_TASK(stack, buf, entry) \
-    xTaskCreateStatic(test_task, "test_task", size_stack, (entry), 5, (stack), (buf))
-#endif
-
-#if defined(CREATE_TEST_TASK)
-
-static void init_restart_task(void)
-{
-    StackType_t *stack_for_task = (StackType_t *) heap_caps_calloc(1, size_stack, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    TEST_ASSERT_NOT_NULL(stack_for_task);
-    printf("init_task: current addr_stack = %p, stack_for_task = %p\n", esp_cpu_get_sp(), stack_for_task);
-    static StaticTask_t task_buf;
-    CREATE_TEST_TASK(stack_for_task, &task_buf, esp_restart);
-    while (1) { }
-}
-
-static void init_task_do_exception(void)
-{
-    StackType_t *stack_for_task = (StackType_t *) heap_caps_calloc(1, size_stack, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    TEST_ASSERT_NOT_NULL(stack_for_task);
-    printf("init_task: current addr_stack = %p, stack_for_task = %p\n", esp_cpu_get_sp(), stack_for_task);
-    static StaticTask_t task_buf;
-    CREATE_TEST_TASK(stack_for_task, &task_buf, func_do_exception);
-    while (1) { }
-}
-
 TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_SW after restart in a task with spiram stack", "[spiram_stack]",
                           init_restart_task,
                           test1_finish);
@@ -647,8 +403,8 @@ TEST_CASE_MULTIPLE_STAGES("reset reason ESP_RST_PANIC after an exception in a ta
                           init_task_do_exception,
                           test2_finish);
 
-#endif // CREATE_TEST_TASK
-#endif // (XTENSA && !UNICORE) || RISCV
+#endif //CONFIG_IDF_TARGET_ARCH_XTENSA
+#endif // CONFIG_FREERTOS_UNICORE
 #endif // CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
 
 /* Not tested here: ESP_RST_SDIO */

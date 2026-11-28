@@ -1,7 +1,7 @@
 /*
  * SPDX-FileCopyrightText: 2016 Intel Corporation
  * SPDX-FileCopyrightText: 2016 Wind River Systems, Inc.
- * SPDX-FileContributor: 2018-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2018-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +18,14 @@
 static hash_map_t *bm_alarm_hash_map;
 static const size_t BLE_MESH_ALARM_HASH_MAP_SIZE = 20 + CONFIG_BLE_MESH_PBA_SAME_TIME +
                                                         CONFIG_BLE_MESH_PBG_SAME_TIME;
+
+typedef struct alarm_t {
+    /* timer id point to here */
+    esp_timer_handle_t alarm_hdl;
+    osi_alarm_callback_t cb;
+    void *cb_data;
+    int64_t deadline_us;
+} osi_alarm_t;
 
 int64_t k_uptime_get(void)
 {
@@ -61,7 +69,7 @@ void bt_mesh_timer_init(void)
 {
     bm_alarm_hash_map = hash_map_new(BLE_MESH_ALARM_HASH_MAP_SIZE,
                                      hash_function_pointer, NULL,
-                                     osi_alarm_free_cb, NULL);
+                                     (data_free_fn)osi_alarm_free, NULL);
     __ASSERT(bm_alarm_hash_map, "Failed to create hash map");
 }
 
@@ -95,7 +103,7 @@ int k_delayed_work_init(struct k_delayed_work *work, k_work_handler_t handler)
         return -EEXIST;
     }
 
-    alarm = osi_alarm_new("bt_mesh", (osi_alarm_callback_t)handler, (void *)&work->work, NULL);
+    alarm = osi_alarm_new("bt_mesh", (osi_alarm_callback_t)handler, (void *)&work->work, 0);
     if (alarm == NULL) {
         BT_ERR("Init, alarm not created");
         bt_mesh_alarm_unlock();
@@ -104,7 +112,6 @@ int k_delayed_work_init(struct k_delayed_work *work, k_work_handler_t handler)
 
     if (!hash_map_set(bm_alarm_hash_map, work, (void *)alarm)) {
         BT_ERR("Init, alarm not set");
-        osi_alarm_free(alarm);
         bt_mesh_alarm_unlock();
         return -EIO;
     }
@@ -127,7 +134,7 @@ int k_delayed_work_submit(struct k_delayed_work *work, int32_t delay)
     }
 
     /* If delay is 0, call the corresponding timeout handler. */
-    if (delay <= 0) {
+    if (delay == 0) {
         k_work_submit(&work->work);
         return 0;
     }
@@ -202,7 +209,7 @@ int k_delayed_work_cancel(struct k_delayed_work *work)
     }
 
     osi_alarm_cancel(alarm);
-    osi_alarm_set_deadline_us(alarm, 0);
+    alarm->deadline_us = 0;
 
     bt_mesh_alarm_unlock();
 

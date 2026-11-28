@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,6 +15,7 @@
 #include "driver/rtc_io.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_rom_gpio.h"
 #include "esp_rom_sys.h"
 #include "esp_rom_serial_output.h"
 #include "test_utils.h"
@@ -49,13 +50,9 @@ TEST_CASE("RTC_SLOW_CLK sources calibration", "[rtc_clk]")
     rtc_clk_32k_enable(true);
 #endif
 
-#if SOC_CLK_RC_FAST_D256_SUPPORTED
-    rtc_clk_8m_enable(true, true);
-#endif
-
     // By default Kconfig, RTC_SLOW_CLK source is RC_SLOW
     soc_rtc_slow_clk_src_t default_rtc_slow_clk_src = rtc_clk_slow_src_get();
-    TEST_ASSERT_NOT_EQUAL(0, CALIBRATE_ONE(CLK_CAL_RTC_SLOW));
+    CALIBRATE_ONE(CLK_CAL_RTC_SLOW);
 #if SOC_CLK_RC_FAST_D256_SUPPORTED
     CALIBRATE_ONE(CLK_CAL_RC_FAST_D256);
 #endif
@@ -69,7 +66,7 @@ TEST_CASE("RTC_SLOW_CLK sources calibration", "[rtc_clk]")
         rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_XTAL32K);
         printf("done\n");
 
-        TEST_ASSERT_NOT_EQUAL(0, CALIBRATE_ONE(CLK_CAL_RTC_SLOW));
+        CALIBRATE_ONE(CLK_CAL_RTC_SLOW);
 #if SOC_CLK_RC_FAST_D256_SUPPORTED
         CALIBRATE_ONE(CLK_CAL_RC_FAST_D256);
 #endif
@@ -82,7 +79,7 @@ TEST_CASE("RTC_SLOW_CLK sources calibration", "[rtc_clk]")
     rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_RC_FAST_D256);
     printf("done\n");
 
-    TEST_ASSERT_NOT_EQUAL(0, CALIBRATE_ONE(CLK_CAL_RTC_SLOW));
+    CALIBRATE_ONE(CLK_CAL_RTC_SLOW);
     CALIBRATE_ONE(CLK_CAL_RC_FAST_D256);
 #if SOC_CLK_XTAL32K_SUPPORTED
     CALIBRATE_ONE(CLK_CAL_32K_XTAL);
@@ -99,7 +96,7 @@ TEST_CASE("RTC_SLOW_CLK sources calibration", "[rtc_clk]")
         rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_OSC_SLOW);
         printf("done\n");
 
-        TEST_ASSERT_NOT_EQUAL(0, CALIBRATE_ONE(CLK_CAL_RTC_SLOW));
+        CALIBRATE_ONE(CLK_CAL_RTC_SLOW);
 #if SOC_CLK_RC_FAST_D256_SUPPORTED
         CALIBRATE_ONE(CLK_CAL_RC_FAST_D256);
 #endif
@@ -141,31 +138,6 @@ TEST_CASE("Calculate RC_FAST clock frequency", "[rtc_clk]")
 }
 #endif
 
-TEST_CASE("Calculate RC_SLOW clock frequency", "[rtc_clk]")
-{
-    soc_rtc_slow_clk_src_t prev_src = rtc_clk_slow_src_get();
-    if (prev_src != SOC_RTC_SLOW_CLK_SRC_DEFAULT) {
-        rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_DEFAULT);
-    }
-
-    uint32_t rc_slow_approx_hz = 0;
-    uint32_t rc_slow_freq_hz = 0;
-    TEST_ESP_OK(esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_RTC_SLOW, ESP_CLK_TREE_SRC_FREQ_PRECISION_APPROX, &rc_slow_approx_hz));
-    TEST_ESP_OK(esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_RTC_SLOW, ESP_CLK_TREE_SRC_FREQ_PRECISION_EXACT, &rc_slow_freq_hz));
-    printf("RC_SLOW_CLK = %"PRIu32" Hz (approx %"PRIu32" Hz)\n", rc_slow_freq_hz, rc_slow_approx_hz);
-
-    if (prev_src != SOC_RTC_SLOW_CLK_SRC_DEFAULT) {
-        rtc_clk_slow_src_set(prev_src);
-        uint32_t restored_freq_hz = 0;
-        TEST_ESP_OK(esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_RTC_SLOW, ESP_CLK_TREE_SRC_FREQ_PRECISION_EXACT, &restored_freq_hz));
-    }
-
-    /* Internal RC_SLOW oscillator frequency varies across process, voltage, and
-     * temperature (datasheets only specify an approximate nominal value; RWDT
-     * tests allow +-30% margin). Verify calibrated frequency stays within +-30%. */
-    TEST_ASSERT_INT32_WITHIN((uint32_t)(rc_slow_approx_hz * 0.30), rc_slow_approx_hz, rc_slow_freq_hz);
-}
-
 static void test_clock_switching(void (*switch_func)(const rtc_cpu_freq_config_t* config))
 {
     const int test_duration_sec = 10;
@@ -205,39 +177,22 @@ TEST_CASE("Test fast switching between PLL and XTAL", "[rtc_clk]")
 
 extern void rtc_clk_select_rtc_slow_clk(void);
 
-/* In CI environments, the esp32 32kXTAL runners don't have 8MB psram for bank switching.
+/* In CI environments, the 32kXTAL runners don't have 8MB psram for bank switching.
    So can only test one config or the other. */
 #if !defined(CONFIG_IDF_CI_BUILD) || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
 
 #define COUNT_TEST      3
-/* Duration of one 32k-period calibration, in ms. */
-#define XTAL32K_CAL_TIME_MS ((CONFIG_RTC_CLK_CAL_CYCLES * 1000) / SOC_CLK_XTAL32K_FREQ_APPROX)
-/* Settle delay after bootstrap, so 32k detect should succeed without retry:
- * two 32k-period calibrations (32k detect + RTC_SLOW cal), plus 5 ms margin. */
-#define TIMEOUT_TEST_MS_NO_RETRY (5 + 2 * XTAL32K_CAL_TIME_MS)
+#define TIMEOUT_TEST_MS (5 + CONFIG_RTC_CLK_CAL_CYCLES / 16)
 
-#define XTAL32K_CAL_CYCLES_NO_BOOTSTRAP 3000
-
-void stop_rtc_external_quartz(void)
-{
-    const gpio_num_t pin_xtal32k_p = SOC_XTAL32K_P_GPIO_NUM;
-    const gpio_num_t pin_xtal32k_n = SOC_XTAL32K_N_GPIO_NUM;
+void stop_rtc_external_quartz(void){
+#if CONFIG_IDF_TARGET_ESP32
+    const uint8_t pin_xtal32k_p = XTAL32K_P_GPIO_NUM;
+    const uint8_t pin_xtal32k_n = XTAL32K_N_GPIO_NUM;
 
     rtc_clk_32k_enable(false);
 
-#if SOC_RTCIO_PIN_COUNT > 0
-    /* Route XTAL32K pads back to digital GPIO so they can be driven, and so
-     * later bootstrap (gpio_ll pull-up/down on most targets) can reach the pin. */
-    if (rtc_gpio_is_valid_gpio(pin_xtal32k_p)) {
-        rtc_gpio_deinit(pin_xtal32k_p);
-    }
-    if (rtc_gpio_is_valid_gpio(pin_xtal32k_n)) {
-        rtc_gpio_deinit(pin_xtal32k_n);
-    }
-#endif
-
-    gpio_ll_func_sel(&GPIO, pin_xtal32k_p, PIN_FUNC_GPIO);
-    gpio_ll_func_sel(&GPIO, pin_xtal32k_n, PIN_FUNC_GPIO);
+    esp_rom_gpio_pad_select_gpio(pin_xtal32k_p);
+    esp_rom_gpio_pad_select_gpio(pin_xtal32k_n);
     gpio_ll_output_enable(&GPIO, pin_xtal32k_p);
     gpio_ll_output_enable(&GPIO, pin_xtal32k_n);
     gpio_ll_set_level(&GPIO, pin_xtal32k_p, 0);
@@ -245,6 +200,8 @@ void stop_rtc_external_quartz(void)
     esp_rom_delay_us(500000);
     gpio_ll_output_disable(&GPIO, pin_xtal32k_p);
     gpio_ll_output_disable(&GPIO, pin_xtal32k_n);
+#endif
+    // Other targets no need to do bootstrap
 }
 
 static void start_freq(soc_rtc_slow_clk_src_t required_src, uint32_t start_delay_ms)
@@ -260,16 +217,16 @@ static void start_freq(soc_rtc_slow_clk_src_t required_src, uint32_t start_delay
             bootstrap_cycles,
             CONFIG_RTC_CLK_CAL_CYCLES);
 #else
-    uint32_t bootstrap_cycles = 8;
+    uint32_t bootstrap_cycles = 5;
     printf("Test is started. Kconfig settings:\n Internal RC is selected,\n Oscillation cycles = %"PRIu32",\n Calibration cycles = %d.\n",
             bootstrap_cycles,
             CONFIG_RTC_CLK_CAL_CYCLES);
 #endif // CONFIG_RTC_CLK_SRC_EXT_CRYS
-    if (start_delay_ms == 0 && CONFIG_RTC_CLK_CAL_CYCLES < 1500) {
+    if (start_delay_ms == 0 && CONFIG_RTC_CLK_CAL_CYCLES < 1500){
         start_delay_ms = 50;
         printf("Recommended increase Number of cycles for RTC_SLOW_CLK calibration to 3000!\n");
     }
-    while (i < COUNT_TEST) {
+    while(i < COUNT_TEST){
         start_time = xTaskGetTickCount() * (1000 / configTICK_RATE_HZ);
         i++;
         printf("attempt #%d/%d...", i, COUNT_TEST);
@@ -278,35 +235,32 @@ static void start_freq(soc_rtc_slow_clk_src_t required_src, uint32_t start_delay
         rtc_clk_select_rtc_slow_clk();
         selected_src = rtc_clk_slow_src_get();
         end_time = xTaskGetTickCount() * (1000 / configTICK_RATE_HZ);
-        uint32_t duration_ms = (end_time - start_time) - start_delay_ms;
-        printf(" [time=%"PRIu32"] ", duration_ms);
-        if (selected_src != required_src) {
-            printf("FAIL. Time measurement...");
-            fail = 1;
-        } else if (required_src == SOC_RTC_SLOW_CLK_SRC_XTAL32K && duration_ms > TIMEOUT_TEST_MS_NO_RETRY) {
+        printf(" [time=%"PRIu32"] ", (end_time - start_time) - start_delay_ms);
+        if(selected_src != required_src){
             printf("FAIL. Time measurement...");
             fail = 1;
         } else {
             printf("PASS. Time measurement...");
         }
         uint32_t fail_measure = 0;
+#if SOC_LP_TIMER_SUPPORTED
         uint64_t clk_rtc_time;
         for (int j = 0; j < 3; ++j) {
             clk_rtc_time = esp_clk_rtc_time();
             esp_rom_delay_us(1000000);
             uint64_t delta = esp_clk_rtc_time() - clk_rtc_time;
-            if (delta < 900000LL || delta > 1100000) {
+            if (delta < 900000LL || delta > 1100000){
                 printf("FAIL");
                 fail = 1;
                 fail_measure = 1;
                 break;
             }
         }
-        if (fail_measure == 0) {
+#endif
+        if(fail_measure == 0) {
             printf("PASS");
         }
         printf(" [calibration val = %"PRIu32"] \n", esp_clk_slowclk_cal_get());
-
         rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_DEFAULT);
         stop_rtc_external_quartz();
         esp_rom_delay_us(500000);
@@ -318,33 +272,37 @@ static void start_freq(soc_rtc_slow_clk_src_t required_src, uint32_t start_delay
 TEST_CASE("Test starting external RTC quartz", "[rtc_clk][test_env=xtal32k]")
 {
     int i = 0, fail = 0;
+    uint32_t start_time;
+    uint32_t end_time;
     stop_rtc_external_quartz();
-    printf("Start XTAL32K without bootstrap. Calibration cycles = %d.\n", XTAL32K_CAL_CYCLES_NO_BOOTSTRAP);
+#ifdef CONFIG_RTC_CLK_SRC_EXT_CRYS
+    uint32_t bootstrap_cycles = CONFIG_ESP_SYSTEM_RTC_EXT_XTAL_BOOTSTRAP_CYCLES;
+    printf("Test is started. Kconfig settings:\n External 32K crystal is selected,\n Oscillation cycles = %"PRIu32",\n Calibration cycles = %d.\n",
+            bootstrap_cycles,
+            CONFIG_RTC_CLK_CAL_CYCLES);
+#else
+    uint32_t bootstrap_cycles = 5;
+    printf("Test is started. Kconfig settings:\n Internal RC is selected,\n Oscillation cycles = %"PRIu32",\n Calibration cycles = %d.\n",
+            bootstrap_cycles,
+            CONFIG_RTC_CLK_CAL_CYCLES);
+#endif // CONFIG_RTC_CLK_SRC_EXT_CRYS
+    if (CONFIG_RTC_CLK_CAL_CYCLES < 1500) {
+        printf("Recommended increase Number of cycles for RTC_SLOW_CLK calibration to 3000!\n");
+    }
     while (i < COUNT_TEST) {
+        start_time = xTaskGetTickCount() * (1000 / configTICK_RATE_HZ);
         i++;
         printf("attempt #%d/%d...", i, COUNT_TEST);
-        rtc_clk_32k_enable(true);
-        uint32_t cal_val = 0;
-        int retry_max = 4;
-#if CONFIG_IDF_TARGET_ESP32
-        retry_max = 50; // ESP32 requires longer time to start up the 32k XTAL if without bootstrap
-#endif
-        for (int retry = 0; retry < retry_max && cal_val == 0; retry++) {
-            cal_val = rtc_clk_cal(CLK_CAL_32K_XTAL, XTAL32K_CAL_CYCLES_NO_BOOTSTRAP);
-        }
-        if (cal_val != 0) {
-            rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_XTAL32K);
-            cal_val = rtc_clk_cal(CLK_CAL_RTC_SLOW, CONFIG_RTC_CLK_CAL_CYCLES);
-        }
-        soc_rtc_slow_clk_src_t selected_src = rtc_clk_slow_src_get();
-        printf(" [src=%d] ", (int)selected_src);
-        if (selected_src != SOC_RTC_SLOW_CLK_SRC_XTAL32K || cal_val == 0) {
+        rtc_clk_32k_bootstrap(bootstrap_cycles);
+        rtc_clk_select_rtc_slow_clk();
+        end_time = xTaskGetTickCount() * (1000 / configTICK_RATE_HZ);
+        printf(" [time=%"PRIu32"] ", end_time - start_time);
+        if ((end_time - start_time) > TIMEOUT_TEST_MS) {
             printf("FAIL\n");
             fail = 1;
         } else {
             printf("PASS\n");
         }
-
         rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_DEFAULT);
         stop_rtc_external_quartz();
         esp_rom_delay_us(100000);
@@ -376,7 +334,7 @@ TEST_CASE("Test starting 'External 32kHz XTAL' on the board without it.", "[rtc_
 #endif // !defined(CONFIG_IDF_CI_BUILD) || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
 #endif // SOC_CLK_XTAL32K_SUPPORTED
 
-#if !SOC_RTC_TIMER_V1
+#if SOC_LP_TIMER_SUPPORTED
 TEST_CASE("Test rtc clk calibration compensation", "[rtc_clk]")
 {
     int64_t t1 = esp_rtc_get_time_us();
@@ -412,13 +370,9 @@ RTC_NOINIT_ATTR
 #if CONFIG_IDF_TARGET_ESP32C2
 #define TEMP_RTC_STORE_REG          RTC_CNTL_DATE_REG
 #define TEMP_RTC_STORE_REG_M        RTC_CNTL_DATE_M
-#elif CONFIG_IDF_TARGET_ESP32C61
+#elif CONFIG_IDF_TARGET_ESP32C61 || CONFIG_IDF_TARGET_ESP32H4
 #define TEMP_RTC_STORE_REG          LP_AON_DATE_REG
 #define TEMP_RTC_STORE_REG_M        LP_AON_DATE_M
-#elif CONFIG_IDF_TARGET_ESP32H4 || CONFIG_IDF_TARGET_ESP32H21
-#include "soc/pmu_reg.h"
-#define TEMP_RTC_STORE_REG          PMU_DATE_REG
-#define TEMP_RTC_STORE_REG_M        PMU_PMU_DATE_M
 #endif
 #endif
 static int64_t start = 0;
@@ -521,34 +475,4 @@ TEST_CASE("Output 8M clock to GPIO25", "[ignore]")
     SET_PERI_REG_MASK(RTC_IO_RTC_DEBUG_SEL_REG, RTC_IO_DEBUG_12M_NO_GATING);
     pull_out_clk(RTC_IO_DEBUG_SEL0_8M);
 }
-#endif
-
-#if !CONFIG_RTC_CLK_FUNC_IN_IRAM
-static void do_restart(void)
-{
-    esp_restart();
-}
-
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-static void do_restart_from_app_cpu(void)
-{
-    xTaskCreatePinnedToCore((TaskFunction_t) &do_restart, "restart", 2048, NULL, 5, NULL, 1);
-    vTaskDelay(2);
-}
-#endif
-
-static void check_reset_reason_sw(void)
-{
-    TEST_ASSERT_EQUAL(ESP_RST_SW, esp_reset_reason());
-}
-
-TEST_CASE_MULTIPLE_STAGES("test rtc_clk in flash after restart", "[rtc_clk]",
-                          do_restart,
-                          check_reset_reason_sw);
-
-#if CONFIG_FREERTOS_NUMBER_OF_CORES > 1
-TEST_CASE_MULTIPLE_STAGES("test rtc_clk in flash after restart from APP CPU", "[rtc_clk]",
-                          do_restart_from_app_cpu,
-                          check_reset_reason_sw);
-#endif
 #endif

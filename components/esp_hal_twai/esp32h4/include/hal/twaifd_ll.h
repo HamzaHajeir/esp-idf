@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,19 +18,12 @@
 #define TWAIFD_LL_GET_HW(num) (((num) == 0) ? (&TWAI0) : NULL)
 
 #define TWAI_LL_BRP_MIN                 1
+#define TWAI_LL_BRP_MAX                 255
 #define TWAI_LL_TSEG1_MIN               0
 #define TWAI_LL_TSEG2_MIN               1
-#define TWAI_LL_BRP_MAX                 TWAIFD_BRP
-#define TWAI_LL_PROP_MAX                TWAIFD_PROP
 #define TWAI_LL_TSEG1_MAX               TWAIFD_PH1
 #define TWAI_LL_TSEG2_MAX               TWAIFD_PH2
 #define TWAI_LL_SJW_MAX                 TWAIFD_SJW
-#define TWAI_LL_BRP_MAX_FD              TWAIFD_BRP_FD
-#define TWAI_LL_PROP_MAX_FD             TWAIFD_PROP_FD
-#define TWAI_LL_TSEG1_MAX_FD            TWAIFD_PH1_FD
-#define TWAI_LL_TSEG2_MAX_FD            TWAIFD_PH2_FD
-#define TWAI_LL_SJW_MAX_FD              TWAIFD_SJW_FD
-#define TWAI_LL_TIMER_DIV_MAX           TWAIFD_TIMER_STEP
 
 #define TWAIFD_IDENTIFIER_BASE_S        18      // Start bit of std_id in IDENTIFIER_W of TX buffer or RX buffer
 
@@ -47,10 +40,6 @@
 #define TWAIFD_LL_TX_CMD_EMPTY          TWAIFD_TXCE     // Set tx buffer to "Empty" state
 #define TWAIFD_LL_TX_CMD_READY          TWAIFD_TXCR     // Set tx buffer to "Ready" state
 #define TWAIFD_LL_TX_CMD_ABORT          TWAIFD_TXCA     // Set tx buffer to "Aborted" state
-
-#define TWAIFD_LL_TX_STATUS_SUCCESS     0x4     // TX buffer transmitted successfully
-#define TWAIFD_LL_TX_STATUS_FAILED      0x6     // TX buffer transmission failed
-#define TWAIFD_LL_TX_STATUS_ABORTED     0x7     // TX buffer transmission aborted
 
 #define TWAIFD_LL_HW_CMD_RST_ERR_CNT    TWAIFD_ERCRST   // Error Counters Reset
 #define TWAIFD_LL_HW_CMD_RST_RX_CNT     TWAIFD_RXFCRST  // Clear RX bus traffic counter
@@ -319,6 +308,17 @@ static inline void twaifd_ll_clr_intr_status(twaifd_dev_t *hw, uint32_t intr_mas
 }
 
 /* ------------------------ Bus Timing Registers --------------------------- */
+/**
+ * @brief Check if the brp value valid
+ *
+ * @param brp Bit rate prescaler value
+ * @return true or False
+ */
+static inline bool twaifd_ll_check_brp_validation(uint32_t brp)
+{
+    return (brp >= TWAI_LL_BRP_MIN) && (brp <= TWAI_LL_BRP_MAX);
+}
+
 /**
  * @brief Set bus timing nominal bit rate
  *
@@ -668,10 +668,11 @@ static inline uint32_t twaifd_ll_get_tx_buffer_total(twaifd_dev_t *hw)
  * @param buffer_idx Index of the TX buffer (0-7).
  * @return The status of the selected TX buffer.
  */
-__attribute__((always_inline))
 static inline uint32_t twaifd_ll_get_tx_buffer_status(twaifd_dev_t *hw, uint8_t buffer_idx)
 {
-    return (hw->tx_status.val >> (TWAIFD_TX2S_S * buffer_idx)) & TWAIFD_TX2S_V;
+    HAL_ASSERT(buffer_idx < twaifd_ll_get_tx_buffer_total(hw));  // Ensure buffer index is valid
+    uint32_t reg_val = hw->tx_status.val;
+    return reg_val & (TWAIFD_TX2S_V << (TWAIFD_TX2S_S * buffer_idx));  // Get status for buffer
 }
 
 /**
@@ -702,6 +703,7 @@ static inline void twaifd_ll_set_tx_buffer_cmd(twaifd_dev_t *hw, uint8_t buffer_
  */
 static inline void twaifd_ll_set_tx_buffer_priority(twaifd_dev_t *hw, uint8_t buffer_idx, uint32_t priority)
 {
+    HAL_ASSERT(buffer_idx < twaifd_ll_get_tx_buffer_total(hw));  // Ensure buffer index is valid
     uint32_t reg_val = hw->tx_priority.val;
     reg_val &= ~(TWAIFD_TXT1P_V << (TWAIFD_TXT2P_S * buffer_idx));  // Clear old priority
     reg_val |= priority << (TWAIFD_TXT2P_S * buffer_idx);           // Set new priority
@@ -963,7 +965,6 @@ static inline void twaifd_ll_timer_enable(twaifd_dev_t *hw, bool enable)
  * @param hw Pointer to the TWAI-FD device hardware.
  * @return Bit width of the timer.
  */
-__attribute__((always_inline))
 static inline uint8_t twaifd_ll_timer_get_bitwidth(twaifd_dev_t *hw)
 {
     return hw->err_capt_retr_ctr_alc_ts_info.ts_bits + 1;
@@ -971,7 +972,6 @@ static inline uint8_t twaifd_ll_timer_get_bitwidth(twaifd_dev_t *hw)
 
 /**
  * @brief Get the current timer count.
- * @note  The frame time is recorded by hardware, so this function is not required, can be used for independent test
  *
  * @param hw Pointer to the TWAI-FD device hardware.
  * @return Current timer count as a 64-bit value.
@@ -983,16 +983,16 @@ static inline uint64_t twaifd_ll_timer_get_count(twaifd_dev_t *hw)
 }
 
 /**
- * @brief Set the timer clock divider value.
+ * @brief Set the timer step value.
  *
  * @note This is to determine the resolution of the timer. We can also treat it as a prescaler.
  *
  * @param hw Pointer to the TWAI-FD device hardware.
- * @param div Clock divider value to set.
+ * @param step Step value to set (actual step = step - 1).
  */
-static inline void twaifd_ll_timer_set_clkdiv(twaifd_dev_t *hw, uint32_t div)
+static inline void twaifd_ll_timer_set_step(twaifd_dev_t *hw, uint32_t step)
 {
-    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->timer_cfg, timer_step, (div - 1));
+    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->timer_cfg, timer_step, (step - 1));
 }
 
 /**
@@ -1018,7 +1018,7 @@ static inline void twaifd_ll_timer_clr_count(twaifd_dev_t *hw, bool clear)
 }
 
 /**
- * @brief Set the timer preload value when overflow.
+ * @brief Set the timer preload value.
  *
  * @param hw Pointer to the TWAI-FD device hardware.
  * @param load_value 64-bit load value.
@@ -1074,7 +1074,6 @@ static inline void twaifd_ll_timer_enable_intr(twaifd_dev_t *hw, uint32_t mask, 
  * @param hw Pointer to the TWAI-FD device hardware.
  * @return Current interrupt status.
  */
-__attribute__((always_inline))
 static inline uint32_t twaifd_ll_timer_get_intr_status(twaifd_dev_t *hw, uint32_t mask)
 {
     return hw->timer_int_st.val & mask;
@@ -1085,7 +1084,6 @@ static inline uint32_t twaifd_ll_timer_get_intr_status(twaifd_dev_t *hw, uint32_
  *
  * @param hw Pointer to the TWAI-FD device hardware.
  */
-__attribute__((always_inline))
 static inline void twaifd_ll_timer_clr_intr_status(twaifd_dev_t *hw, uint32_t mask)
 {
     hw->timer_int_clr.val = mask;

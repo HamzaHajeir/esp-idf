@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,9 +20,7 @@
 #include "soc/rtc.h"
 #include "soc/rtc_periph.h"
 #include "soc/i2s_reg.h"
-#if SOC_WDT_SUPPORTED || SOC_RTC_WDT_SUPPORTED
 #include "hal/wdt_hal.h"
-#endif
 #include "hal/usb_serial_jtag_ll.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_clk.h"
@@ -38,7 +36,7 @@ ESP_LOG_ATTR_TAG(TAG, "clk");
  */
 #define SLOW_CLK_CAL_CYCLES     CONFIG_RTC_CLK_CAL_CYCLES
 
-#define RTC_XTAL_CAL_RETRY 3
+#define RTC_XTAL_CAL_RETRY 1
 
 /* Indicates that this 32k oscillator gets input from external oscillator, rather
  * than a crystal.
@@ -85,7 +83,7 @@ __attribute__((weak)) void esp_clk_init(void)
     rtc_clk_8m_enable(true, rc_fast_d256_is_enabled);
     rtc_clk_fast_src_set(SOC_RTC_FAST_CLK_SRC_RC_FAST);
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
     // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
@@ -110,7 +108,7 @@ __attribute__((weak)) void esp_clk_init(void)
     select_rtc_slow_clk(SLOW_CLK_RTC);
 #endif
 
-#if defined(CONFIG_BOOTLOADER_WDT_ENABLE) && SOC_RTC_WDT_SUPPORTED
+#ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // After changing a frequency WDT timeout needs to be set for new frequency.
     stage_timeout_ticks = (uint32_t)((uint64_t)CONFIG_BOOTLOADER_WDT_TIME_MS * rtc_clk_slow_freq_get_hz() / 1000ULL);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -163,13 +161,6 @@ static void select_rtc_slow_clk(slow_clk_sel_t slow_clk)
              */
             ESP_EARLY_LOGD(TAG, "waiting for 32k oscillator to start up");
             if (slow_clk == SLOW_CLK_32K_XTAL) {
-                /* 1、The bootloader should already have it enabled.
-                 * 2、Because 32kHz crystal oscillators have a slow startup time, if they are not enabled beforehand,
-                 *  there is a high probability that they will not be detected if enabled here.
-                 */
-                if (!rtc_clk_32k_enabled()) {
-                    ESP_EARLY_LOGW(TAG, "32 kHz XTAL not enabled in advance");
-                }
                 rtc_clk_32k_enable(true);
             } else if (slow_clk == SLOW_CLK_32K_EXT_OSC) {
                 rtc_clk_32k_enable_external();
@@ -225,15 +216,29 @@ __attribute__((weak)) void esp_perip_clk_init(void)
     uint32_t common_perip_clk, hwcrypto_perip_clk, wifi_bt_sdio_clk = 0;
     uint32_t common_perip_clk1 = 0;
 
-    /* Shared peripherals follow CPU0; ignore CPU1 (may hold a stale CPU-only cause). */
-    const soc_reset_reason_t rst_reas0 = esp_rom_get_reset_reason(0);
+#if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    soc_reset_reason_t rst_reas[1];
+#else
+    soc_reset_reason_t rst_reas[2];
+#endif
+
+    rst_reas[0] = esp_rom_get_reset_reason(0);
+#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    rst_reas[1] = esp_rom_get_reset_reason(1);
+#endif
 
     /* For reason that only reset CPU, do not disable the clocks
      * that have been enabled before reset.
      */
     uint32_t hwcrypto_mask_in_perip1 = (SYSTEM_CRYPTO_HMAC_CLK_EN | SYSTEM_CRYPTO_DS_CLK_EN | SYSTEM_CRYPTO_RSA_CLK_EN | SYSTEM_CRYPTO_SHA_CLK_EN | SYSTEM_CRYPTO_AES_CLK_EN);
 
-    if (soc_reset_get_level(rst_reas0) == SOC_RESET_LEVEL_CPU) {
+    if ((rst_reas[0] == RESET_REASON_CPU0_MWDT0 || rst_reas[0] == RESET_REASON_CPU0_SW ||
+            rst_reas[0] == RESET_REASON_CPU0_RTC_WDT || rst_reas[0] == RESET_REASON_CPU0_MWDT1)
+#if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+            || (rst_reas[1] == RESET_REASON_CPU1_MWDT0 || rst_reas[1] == RESET_REASON_CPU1_SW ||
+                rst_reas[1] == RESET_REASON_CPU1_RTC_WDT || rst_reas[1] == RESET_REASON_CPU1_MWDT1)
+#endif
+       ) {
         common_perip_clk = ~READ_PERI_REG(SYSTEM_PERIP_CLK_EN0_REG);
         common_perip_clk1 = (~READ_PERI_REG(SYSTEM_PERIP_CLK_EN1_REG)) & (~hwcrypto_mask_in_perip1);
         hwcrypto_perip_clk = (~READ_PERI_REG(SYSTEM_PERIP_CLK_EN1_REG)) & hwcrypto_mask_in_perip1;

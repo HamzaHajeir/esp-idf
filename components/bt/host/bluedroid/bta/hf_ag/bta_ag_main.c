@@ -27,7 +27,6 @@
 #include "bta_ag_int.h"
 #include "bta/bta_api.h"
 #include "bta/bta_sys.h"
-#include "common/bt_target.h"
 #include "bta/bta_ag_api.h"
 #include "bta/bta_ag_co.h"
 #include "bta/utl.h"
@@ -287,11 +286,7 @@ const tBTA_AG_ST_TBL bta_ag_st_tbl[] =
 /*****************************************************************************
 ** Global data
 *****************************************************************************/
-#if UC_BT_HFP_LC3_ENABLE
-const uint16_t bta_ag_version = HFP_VERSION_1_9;
-#else
 const uint16_t bta_ag_version = HFP_VERSION_1_8;
-#endif
 /* AG control block */
 #if BTA_DYNAMIC_MEMORY == FALSE
 tBTA_AG_CB  bta_ag_cb;
@@ -497,7 +492,7 @@ void bta_ag_scb_dealloc(tBTA_AG_SCB *p_scb)
     memset(p_scb, 0, sizeof(tBTA_AG_SCB));
     p_scb->sco_idx = BTM_INVALID_SCO_INDEX;
     /* If all scbs are deallocated, callback with disable event */
-    if (bta_ag_cb.disabling) {
+    if (!bta_sys_is_register (BTA_ID_AG)) {
         for (idx = 0; idx < BTA_AG_NUM_SCB; idx++) {
             if (bta_ag_cb.scb[idx].in_use) {
                 allocated = TRUE;
@@ -505,8 +500,6 @@ void bta_ag_scb_dealloc(tBTA_AG_SCB *p_scb)
             }
         }
         if (!allocated) {
-            bta_ag_cb.disabling = FALSE;
-            bta_sys_deregister(BTA_ID_AG);
             (*bta_ag_cb.p_cback)(BTA_AG_DISABLE_EVT, NULL);
         }
     }
@@ -524,15 +517,8 @@ void bta_ag_scb_dealloc(tBTA_AG_SCB *p_scb)
 *******************************************************************************/
 UINT16 bta_ag_scb_to_idx(tBTA_AG_SCB *p_scb)
 {
-    if (p_scb == NULL) {
-        return 0;
-    }
     /* use array arithmetic to determine index */
-    UINT16 idx = ((UINT16) (p_scb - bta_ag_cb.scb)) + 1;
-    if (idx < 1 || idx > BTA_AG_NUM_SCB) {
-        return 0;
-    }
-    return idx;
+    return ((UINT16) (p_scb - bta_ag_cb.scb)) + 1;
 }
 
 /*******************************************************************************
@@ -745,7 +731,7 @@ void bta_ag_collision_cback (tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id
         }
         /* Start timer to han */
         p_scb->colli_timer.p_cback = (TIMER_CBACK*)&bta_ag_colli_timer_cback;
-        p_scb->colli_timer.param = (UINT32)p_scb;
+        p_scb->colli_timer.param = (INT32)p_scb;
         bta_sys_start_timer(&p_scb->colli_timer, 0, BTA_AG_COLLISION_TIMER);
         p_scb->colli_tmr_on = TRUE;
     }
@@ -829,7 +815,8 @@ static void bta_ag_api_disable(tBTA_AG_DATA *p_data)
         APPL_TRACE_ERROR("BTA AG is already disabled, ignoring ...");
         return;
     }
-    bta_ag_cb.disabling = TRUE;
+    /* De-register with BTA system manager */
+    bta_sys_deregister(BTA_ID_AG);
 
     for (i = 0; i < BTA_AG_NUM_SCB; i++, p_scb++) {
         if (p_scb->in_use) {
@@ -840,8 +827,6 @@ static void bta_ag_api_disable(tBTA_AG_DATA *p_data)
 
     if (!do_dereg) {
         /* Done, send callback evt to app */
-        bta_ag_cb.disabling = FALSE;
-        bta_sys_deregister(BTA_ID_AG);
         (*bta_ag_cb.p_cback)(BTA_AG_DISABLE_EVT, NULL);
     }
     bta_sys_collision_register (BTA_ID_AG, NULL);
@@ -920,16 +905,12 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
 #if BTA_AG_DEBUG == TRUE
     UINT16  in_event = event;
     UINT8   in_state = p_scb->state;
-    tBTA_AG_RES dbg_api_result = (tBTA_AG_RES)0;
-    if (p_data != NULL && in_event == BTA_AG_API_RESULT_EVT) {
-        dbg_api_result = p_data->api_result.result;
-    }
     /* Ignore displaying of AT results when not connected (Ignored in state machine) */
     if (in_event != BTA_AG_API_RESULT_EVT || p_scb->state == BTA_AG_OPEN_ST) {
         APPL_TRACE_EVENT("AG evt (hdl 0x%04x): State %d (%s), Event 0x%04x (%s)",
                            bta_ag_scb_to_idx(p_scb),
                            p_scb->state, bta_ag_state_str(p_scb->state),
-                           event, bta_ag_evt_str(event, dbg_api_result));
+                           event, bta_ag_evt_str(event, p_data->api_result.result));
     }
 #else
     APPL_TRACE_EVENT("AG evt (hdl 0x%04x): State %d, Event 0x%04x",
@@ -957,7 +938,7 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
         APPL_TRACE_EVENT("BTA AG State Change: [%s] -> [%s] after Event [%s]",
                       bta_ag_state_str(in_state),
                       bta_ag_state_str(p_scb->state),
-                      bta_ag_evt_str(in_event, dbg_api_result));
+                      bta_ag_evt_str(in_event, p_data->api_result.result));
     }
 #endif
 }

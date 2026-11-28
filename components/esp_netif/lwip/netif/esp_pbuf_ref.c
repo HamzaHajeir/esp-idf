@@ -6,12 +6,12 @@
 /**
  * @file esp_pbuf reference
  * This file handles lwip custom pbufs interfacing with esp_netif
- * and L2 driver RX buffer free callbacks
+ * and the L2 free function esp_netif_free_rx_buffer()
  */
 
 #include "lwip/mem.h"
 #include "lwip/esp_pbuf_ref.h"
-#include "esp_netif_lwip_internal.h"
+#include "esp_netif_net_stack.h"
 
 /**
  * @brief Specific pbuf structure for pbufs allocated by ESP netif
@@ -20,8 +20,7 @@
 typedef struct esp_custom_pbuf
 {
     struct pbuf_custom p;
-    void* driver_handle;
-    void (*driver_free_rx_buffer)(void *h, void* buffer);
+    esp_netif_t *esp_netif;
     void* l2_buf;
 } esp_custom_pbuf_t;
 
@@ -34,9 +33,7 @@ typedef struct esp_custom_pbuf
 static void esp_pbuf_free(struct pbuf *pbuf)
 {
     esp_custom_pbuf_t* esp_pbuf = (esp_custom_pbuf_t*)pbuf;
-    if (esp_pbuf->driver_free_rx_buffer != NULL) {
-        esp_pbuf->driver_free_rx_buffer(esp_pbuf->driver_handle, esp_pbuf->l2_buf);
-    }
+    esp_netif_free_rx_buffer(esp_pbuf->esp_netif, esp_pbuf->l2_buf);
     mem_free(pbuf);
 }
 
@@ -57,9 +54,7 @@ struct pbuf* esp_pbuf_allocate(esp_netif_t *esp_netif, void *buffer, size_t len,
         return NULL;
     }
     esp_pbuf->p.custom_free_function = esp_pbuf_free;
-    /* The pbuf can outlive esp_netif driver config teardown. */
-    esp_pbuf->driver_handle = esp_netif->driver_handle;
-    esp_pbuf->driver_free_rx_buffer = esp_netif->driver_free_rx_buffer;
+    esp_pbuf->esp_netif = esp_netif;
     esp_pbuf->l2_buf = l2_buff;
     p = pbuf_alloced_custom(PBUF_RAW, len, PBUF_REF, &esp_pbuf->p, buffer, len);
     if (p == NULL) {

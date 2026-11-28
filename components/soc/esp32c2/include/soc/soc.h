@@ -30,6 +30,7 @@
 #define REG_TIMG_BASE(i)                        (DR_REG_TIMERGROUP0_BASE + (i)*0x1000)
 #define REG_SPI_MEM_BASE(i)                     (DR_REG_SPI0_BASE - (i) * 0x1000)
 #define REG_SPI_BASE(i)                         (((i)==2) ? (DR_REG_SPI2_BASE) : (0))   // only one GPSPI
+#define REG_I2C_BASE(i)                         (DR_REG_I2C_EXT_BASE + (i) * 0x14000 )
 
 //Registers Operation {{
 #define ETS_UNCACHED_ADDR(addr) (addr)
@@ -141,6 +142,7 @@
 //Periheral Clock {{
 #define  APB_CLK_FREQ                                (SOC_XTAL_FREQ_MHZ * 1000000 )
 #define  MODEM_REQUIRED_MIN_APB_CLK_FREQ             ( 80*1000000 )
+#define  REF_CLK_FREQ                                ( 1000000 )
 //}}
 
 /* Overall memory map */

@@ -12,7 +12,6 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "osi/semaphore.h"
-#include "osi/slist.h"
 #include "esp_task.h"
 #include "bt_common.h"
 
@@ -20,15 +19,10 @@
 
 struct osi_thread;
 struct osi_event;
-struct osi_dynamic_event;
 
 typedef struct osi_thread osi_thread_t;
 
 typedef void (*osi_thread_func_t)(void *context);
-
-/* Reclaim a context owned by a work queue when osi_thread_free drains it
- * without running the handler. NULL keeps the old leak-by-discard behavior. */
-typedef void (*osi_thread_free_cb_t)(void *context);
 
 typedef enum {
     OSI_THREAD_CORE_0 = 0,
@@ -42,11 +36,10 @@ typedef enum {
  * param stack_size: thread stack size
  * param priority: thread priority
  * param core: the CPU core which this thread run, OSI_THREAD_CORE_AFFINITY means unspecific CPU core
- * param work_queue_num: specify queue number, the queue[0] has highest priority, and the priority is decrease by index
- * param in_psram: place the task in PSRAM
+ * param work_queue_num: speicify queue number, the queue[0] has highest priority, and the priority is decrease by index
  * return : if create successfully, return thread handler; otherwise return NULL.
  */
-osi_thread_t *osi_thread_create(const char *name, size_t stack_size, int priority, osi_thread_core_t core, uint8_t work_queue_num, const size_t work_queue_len[], bool in_psram);
+osi_thread_t *osi_thread_create(const char *name, size_t stack_size, int priority, osi_thread_core_t core, uint8_t work_queue_num, const size_t work_queue_len[]);
 
 /*
  * brief: Destroy a thread or task
@@ -54,44 +47,16 @@ osi_thread_t *osi_thread_create(const char *name, size_t stack_size, int priorit
  */
 void osi_thread_free(osi_thread_t *thread);
 
-/* Lifecycle points inside osi_thread_free(). */
-typedef enum {
-    OSI_THREAD_EVT_PRE_STOP,
-    OSI_THREAD_EVT_STOPPED,
-    OSI_THREAD_EVT_PRE_FREE,
-} osi_thread_evt_t;
-
-/* Must not register, unregister, or call osi_thread_free(). Publish holds the
- * listener lock across the callback. */
-typedef void (*osi_thread_listener_t)(osi_thread_t *thread, osi_thread_evt_t evt);
-
-/* Caller-owned. Fill |listener| and keep the node alive until unregister. */
-struct osi_thread_listener_node {
-    slist_node_t node;
-    osi_thread_listener_t listener;
-};
-
-/* Link |node|. The thread does not allocate it. false on NULL, a NULL
- * listener, an already-linked node, or when the listener list is not initialized. */
-bool osi_thread_listener_register(struct osi_thread_listener_node *node);
-/* Unlink |node| without freeing it. Must not be called from a listener. */
-void osi_thread_listener_unregister(struct osi_thread_listener_node *node);
-
 /*
  * brief: Post an msg to a thread and told the thread call the function
  * param thread: point of thread handler
  * param func: callback function that called by target thread
  * param context: argument of callback function
- * param free_cb: called on the context when osi_thread_free drains the
- *                undelivered work item during teardown. NULL means the
- *                context is not queue-owned. Not called on a normal
- *                dispatch; the handler keeps owning the context there.
  * param queue_idx: the queue which the msg send to
  * param timeout: post timeout, OSI_THREAD_MAX_TIMEOUT means blocking forever, 0 means never blocking, others means block millisecond
  * return : if post successfully, return true, otherwise return false
  */
-bool osi_thread_post(osi_thread_t *thread, osi_thread_func_t func, void *context,
-                     osi_thread_free_cb_t free_cb, int queue_idx, uint32_t timeout);
+bool osi_thread_post(osi_thread_t *thread, osi_thread_func_t func, void *context, int queue_idx, uint32_t timeout);
 
 /*
  * brief: Set the priority of thread
@@ -115,12 +80,10 @@ const char *osi_thread_name(osi_thread_t *thread);
 int osi_thread_queue_wait_size(osi_thread_t *thread, int wq_idx);
 
 /*
- * brief: Create a session-stable osi_event and register its handler and argument.
+ * brief: Create an osi_event struct and register the handler function and its argument
  *        An osi_event is a kind of work that can be posted to the workqueue of osi_thread to process,
  *        but the work can have at most one instance the thread workqueue before it is processed. This
  *        allows the "single post, multiple data processing" jobs.
- *        Delete is logical: storage remains valid until osi_thread_event_deinit(), allowing stale
- *        posts during session teardown to be rejected without a global alive-list lock.
  * param func: the handler to process the job
  * param context: the argument to be passed to the handler function when the job is being processed
  * return: NULL if no memory, otherwise a valid struct pointer
@@ -139,7 +102,7 @@ struct osi_event *osi_event_create(osi_thread_func_t func, void *context);
 bool osi_event_bind(struct osi_event* event, osi_thread_t *thread, int queue_idx);
 
 /*
- * brief: Logically delete an osi_event. Its memory is reclaimed by osi_thread_event_deinit().
+ * brief: Destroy the osi_event struct created by osi_event_create and free the allocated memory
  * param event: the pointer to osi_event
  */
 void osi_event_delete(struct osi_event* event);
@@ -148,30 +111,10 @@ void osi_event_delete(struct osi_event* event);
  * brief: try sending a work to the binded thread's workqueue, so that it can be handled by the worker thread
  * param event: pointer to osi_event, created by osi_event_create
  * param timeout: post timeout, OSI_THREAD_MAX_TIMEOUT means blocking forever, 0 means never blocking, others means block millisecond
- * return: true if this call enqueued the event. false if it is already QUEUED,
- *        the queue is full, or the event cannot be posted.
- * note: a false return with osi_event_is_queued() set means a handler is already
- *       pending and will observe state written before this post. Retry only when
- *       the event is not queued.
+ * return: true if the message is enqueued to the thread workqueue, otherwise failed
+ * note: if the return value of function is false, it is the case that the workqueue of the thread is full, and users
+ *       are expected to post the event sometime later to get the work handled.
  */
 bool osi_thread_post_event(struct osi_event *event, uint32_t timeout);
-
-/* True while the event is waiting to run. Cleared before the handler is called. */
-bool osi_event_is_queued(struct osi_event *event);
-
-/*
- * Dynamic events may be created and destroyed repeatedly during one
- * osi_thread event-subsystem session. Unlike session-stable osi_event objects,
- * their storage can be released by delete, so all operations use a separate
- * API whose post/bind entry points validate the opaque pointer without first
- * dereferencing it.
- */
-struct osi_dynamic_event *osi_dynamic_event_create(osi_thread_func_t func, void *context);
-bool osi_dynamic_event_bind(struct osi_dynamic_event *event, osi_thread_t *thread, int queue_idx);
-bool osi_dynamic_event_post(struct osi_dynamic_event *event, uint32_t timeout);
-void osi_dynamic_event_delete(struct osi_dynamic_event *event);
-
-int osi_thread_event_init(void);
-void osi_thread_event_deinit(void);
 
 #endif /* __THREAD_H__ */

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,9 +12,11 @@
 #include "riscv/rvruntime-frames.h"
 #include "riscv/rv_utils.h"
 #include "esp_private/cache_err_int.h"
-#if CONFIG_RISCV_USER_MODE_TRAPS
-#include "esp_private/privilege_trap.h"
-#endif /* CONFIG_RISCV_USER_MODE_TRAPS */
+
+#if CONFIG_ESP_SYSTEM_MEMPROT && CONFIG_ESP_SYSTEM_MEMPROT_PMS
+#include "esp_private/esp_memprot_internal.h"
+#include "esp_memprot.h"
+#endif
 
 #if CONFIG_ESP_SYSTEM_USE_EH_FRAME
 #include "esp_private/eh_frame_parser.h"
@@ -81,6 +83,75 @@ static inline void print_assist_debug_details(const void *frame)
 }
 #endif // CONFIG_ESP_SYSTEM_HW_STACK_GUARD
 
+/**
+ * Function called when a memory protection error occurs (PMS). It prints details such as the
+ * explanation of why the panic occurred.
+ */
+#if CONFIG_ESP_SYSTEM_MEMPROT && CONFIG_ESP_SYSTEM_MEMPROT_PMS
+
+static esp_memp_intr_source_t s_memp_intr = {MEMPROT_TYPE_INVALID, -1};
+
+#define PRINT_MEMPROT_ERROR(err) \
+        do { \
+            panic_print_str("N/A (error "); \
+            panic_print_str(esp_err_to_name(err)); \
+            panic_print_str(")"); \
+        } while(0)
+
+static inline void print_memprot_err_details(const void *frame __attribute__((unused)))
+{
+    if (s_memp_intr.mem_type == MEMPROT_TYPE_INVALID && s_memp_intr.core == -1) {
+        panic_print_str("  - no details available -\r\n");
+        return;
+    }
+
+    //common memprot fault info
+    panic_print_str("  memory type: ");
+    panic_print_str(esp_mprot_mem_type_to_str(s_memp_intr.mem_type));
+
+    panic_print_str("\r\n  faulting address: ");
+    void *faulting_addr;
+    esp_err_t res = esp_mprot_get_violate_addr(s_memp_intr.mem_type, &faulting_addr, s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str("0x");
+        panic_print_hex((int)faulting_addr);
+    } else {
+        PRINT_MEMPROT_ERROR(res);
+    }
+
+    panic_print_str("\r\n  world: ");
+    esp_mprot_pms_world_t world;
+    res = esp_mprot_get_violate_world(s_memp_intr.mem_type, &world, s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str(esp_mprot_pms_world_to_str(world));
+    } else {
+        PRINT_MEMPROT_ERROR(res);
+    }
+
+    panic_print_str("\r\n  operation type: ");
+    uint32_t operation;
+    res = esp_mprot_get_violate_operation(s_memp_intr.mem_type, &operation, s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str(esp_mprot_oper_type_to_str(operation));
+    } else {
+        PRINT_MEMPROT_ERROR(res);
+    }
+
+    if (esp_mprot_has_byte_enables(s_memp_intr.mem_type)) {
+        panic_print_str("\r\n  byte-enables: ");
+        uint32_t byte_enables;
+        res = esp_mprot_get_violate_byte_enables(s_memp_intr.mem_type, &byte_enables, s_memp_intr.core);
+        if (res == ESP_OK) {
+            panic_print_hex(byte_enables);
+        } else {
+            PRINT_MEMPROT_ERROR(res);
+        }
+    }
+
+    panic_print_str("\r\n");
+}
+#endif //CONFIG_ESP_SYSTEM_MEMPROT && CONFIG_ESP_SYSTEM_MEMPROT_PMS
+
 static void panic_print_register_array(const char* names[], const uint32_t* regs, int size)
 {
     const int regs_per_line = 4;
@@ -108,12 +179,6 @@ void panic_print_registers(const void *f, int core)
         "MSTATUS ", "MTVEC   ", "MCAUSE  ", "MTVAL   ", "MHARTID "
     };
 
-#if CONFIG_RISCV_USER_MODE_TRAPS
-    /* The registers of a trap from U-mode hold U-mode values, such as virtual addresses of the U-mode code */
-    if (rv_user_frame_from_user(f)) {
-        panic_print_str("Trap taken from U-mode\r\n");
-    }
-#endif /* CONFIG_RISCV_USER_MODE_TRAPS */
     panic_print_str("Core ");
     panic_print_dec(core);
     panic_print_str(" register dump:");
@@ -192,7 +257,9 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
 #endif
 #if CONFIG_ESP_SYSTEM_MEMPROT && CONFIG_ESP_SYSTEM_MEMPROT_PMS
     else if (frame->mcause == ETS_MEMPROT_ERR_INUM) {
-        panic_memprot_fill_info(info);
+        info->reason = "Memory protection fault";
+        info->details = print_memprot_err_details;
+        info->core = esp_mprot_get_active_intr(&s_memp_intr) == ESP_OK ? s_memp_intr.core : -1;
     }
 #endif //CONFIG_ESP_SYSTEM_MEMPROT && CONFIG_ESP_SYSTEM_MEMPROT_PMS
 }
@@ -263,21 +330,6 @@ static void panic_print_basic_backtrace(const void *frame, int core)
 
 void panic_print_backtrace(const void *frame, int core)
 {
-#if CONFIG_RISCV_USER_MODE_TRAPS
-    /* The stack pointer of a trap from U-mode is a virtual address of the U-mode code, which the unwinders would read
-     * as an M-mode address. Unwind the M-mode code from the call that entered U-mode instead. */
-    RvExcFrame entry;
-    if (rv_user_frame_from_user(frame)) {
-        panic_print_str("Backtrace of the M-mode code that entered U-mode:\r\n");
-        rv_user_entry_frame(frame, &entry);
-        frame = &entry;
-#if !CONFIG_ESP_SYSTEM_USE_EH_FRAME && !CONFIG_ESP_SYSTEM_USE_FRAME_POINTER
-        /* idf.py monitor decodes the stack memory with the register dump right above it */
-        panic_print_registers(frame, core);
-        panic_print_str("\r\n");
-#endif
-    }
-#endif /* CONFIG_RISCV_USER_MODE_TRAPS */
 #if CONFIG_ESP_SYSTEM_USE_EH_FRAME
     if (!spi_flash_cache_enabled()) {
         panic_print_str("\r\nWarning: SPI Flash cache is disabled, cannot process eh_frame parsing. "
@@ -313,11 +365,7 @@ void panic_prepare_frame_from_ctx(void* frame)
     /* Cleanup the frame, status registers are not saved during context switches, so these will contain garbage
        values from the stack.
     */
-#if !CONFIG_RISCV_USER_MODE_TRAPS
-    /* With CONFIG_RISCV_USER_MODE_TRAPS, the interrupt entry code saves mstatus, which holds the privilege mode that
-     * the task was interrupted in. The mstatus of this core holds the mode of whatever trapped last. */
     ((RvExcFrame *)frame)->mstatus = RV_READ_CSR(mstatus);
-#endif /* !CONFIG_RISCV_USER_MODE_TRAPS */
     ((RvExcFrame *)frame)->mtvec = RV_READ_CSR(mtvec);
 
     ((RvExcFrame *)frame)->mcause = MCAUSE_INVALID_VALUE;

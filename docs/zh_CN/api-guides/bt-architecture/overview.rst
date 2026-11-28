@@ -14,45 +14,8 @@
     {IDF_TARGET_NAME} 支持双模蓝牙，即同时支持经典蓝牙和低功耗蓝牙。
 
 
-芯片蓝牙能力总览
-------------------
-
-下表总结了 ESP-IDF 中支持蓝牙的 ESP 芯片及其蓝牙类型支持情况（Y = 支持，N = 不支持）。
-
-.. list-table::
-    :header-rows: 1
-
-    * - 芯片
-      - 经典蓝牙 (BR/EDR)
-      - 低功耗蓝牙 (LE)
-    * - ESP32
-      - Y
-      - Y
-    * - ESP32-S3
-      - N
-      - Y
-    * - ESP32-C2
-      - N
-      - Y
-    * - ESP32-C3
-      - N
-      - Y
-    * - ESP32-C5
-      - N
-      - Y
-    * - ESP32-C6
-      - N
-      - Y
-    * - ESP32-C61
-      - N
-      - Y
-    * - ESP32-H2
-      - N
-      - Y
-
-
 蓝牙协议栈
------------
+============
 
 蓝牙协议栈是一种分层通信架构，定义了蓝牙设备如何发现彼此、建立连接、交换数据，并确保通信安全可靠。如图 :ref:`bluetooth-core-system-architecture` 所示，协议栈主要分为控制器（Controller）和主机（Host）两大部分，两者通过 HCI 接口进行通信。
 
@@ -124,7 +87,7 @@
 
 
 蓝牙运行环境
---------------
+=============
 
 ESP-IDF 蓝牙协议栈运行在 FreeRTOS 环境中，蓝牙任务根据功能和优先级进行分配。由于实时性要求，控制器任务具有最高优先级（部分跨核通信 IPC 任务除外）。
 
@@ -134,26 +97,18 @@ ESP-IDF 蓝牙协议栈运行在 FreeRTOS 环境中，蓝牙任务根据功能�
 
 
 Bluedroid
-----------
+============
 
-.. only:: SOC_BT_CLASSIC_SUPPORTED
-
-   ESP-Bluedroid 是基于 Android 蓝牙协议栈 Bluedroid 的修改版， 支持经典蓝牙和低功耗蓝牙。由两层组成：
-
-.. only:: not SOC_BT_CLASSIC_SUPPORTED
-
-   ESP-Bluedroid 是基于 Android 蓝牙协议栈 Bluedroid 的修改版，在 {IDF_TARGET_NAME} 上仅支持低功耗蓝牙。由两层组成：
+ESP-Bluedroid 是基于 Android 蓝牙协议栈 Bluedroid 的修改版， 支持经典蓝牙和低功耗蓝牙。由两层组成：
 
 - **蓝牙上层 (BTU):** 实现核心协议（L2CAP、GATT、SMP 等）。
 - **蓝牙传输控制器层 (BTC):** 提供应用层 API， 并管理配置文件。
 
-.. only:: SOC_BT_CLASSIC_SUPPORTED
-
-   **使用场景:** 推荐用于同时需要经典蓝牙和蓝牙低能耗的应用。
+**使用场景:** 推荐用于同时需要经典蓝牙和蓝牙低能耗的应用。
 
 
 操作系统适配
-^^^^^^^^^^^^^^^
+--------------
 
 Bluedroid 通过适配系统相关功能与 FreeRTOS 集成：
 
@@ -167,7 +122,7 @@ Bluedroid 通过适配系统相关功能与 FreeRTOS 集成：
 
 
 Bluedroid 目录结构
-^^^^^^^^^^^^^^^^^^^^
+--------------------
 
 ESP-IDF 目录 *component/bt/host/bluedroid* 包含如下子文件夹：
 

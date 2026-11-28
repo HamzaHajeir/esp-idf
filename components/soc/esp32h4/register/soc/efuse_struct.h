@@ -1,5 +1,5 @@
 /**
- * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
  *
  *  SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -44,145 +44,13 @@ typedef union {
  */
 typedef union {
     struct {
-        /** wr_dis_rd_dis : RO; bitpos: [0]; default: 0;
-         *  Write disable bit 0 for EFUSE_RD_DIS
+        /** wr_dis : RO; bitpos: [31:0]; default: 0;
+         *  Represents whether programming of individual eFuse memory bit is disabled or
+         *  enabled.
+         *  1: Disabled
+         *  0: Enabled
          */
-        uint32_t wr_dis_rd_dis:1;
-        /** wr_dis_1 : RO; bitpos: [1]; default: 0;
-         *  reserved
-         */
-        uint32_t wr_dis_1:1;
-        /** wr_dis_2 : RO; bitpos: [2]; default: 0;
-         *  Write disable bit 2 for EFUSE_DIS_USB_JTAG, EFUSE_DIS_USB_SERIAL_JTAG,
-         *  EFUSE_PVT_GLITCH_EN, EFUSE_PVT_GLITCH_MODE, EFUSE_DIS_FORCE_DOWNLOAD,
-         *  EFUSE_SPI_DOWNLOAD_MSPI_DIS, EFUSE_DIS_TWAI, EFUSE_JTAG_SEL_ENABLE,
-         *  EFUSE_DIS_PAD_JTAG, EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT
-         */
-        uint32_t wr_dis_2:1;
-        /** wr_dis_dis_core1 : RO; bitpos: [3]; default: 0;
-         *  Write disable bit 3 for EFUSE_DIS_CORE1
-         */
-        uint32_t wr_dis_dis_core1:1;
-        /** wr_dis_spi_boot_crypt_cnt : RO; bitpos: [4]; default: 0;
-         *  Write disable bit 4 for EFUSE_SPI_BOOT_CRYPT_CNT
-         */
-        uint32_t wr_dis_spi_boot_crypt_cnt:1;
-        /** wr_dis_secure_boot_key_revoke0 : RO; bitpos: [5]; default: 0;
-         *  Write disable bit 5 for EFUSE_SECURE_BOOT_KEY_REVOKE0
-         */
-        uint32_t wr_dis_secure_boot_key_revoke0:1;
-        /** wr_dis_secure_boot_key_revoke1 : RO; bitpos: [6]; default: 0;
-         *  Write disable bit 6 for EFUSE_SECURE_BOOT_KEY_REVOKE1
-         */
-        uint32_t wr_dis_secure_boot_key_revoke1:1;
-        /** wr_dis_secure_boot_key_revoke2 : RO; bitpos: [7]; default: 0;
-         *  Write disable bit 7 for EFUSE_SECURE_BOOT_KEY_REVOKE2
-         */
-        uint32_t wr_dis_secure_boot_key_revoke2:1;
-        /** wr_dis_key_purpose_0 : RO; bitpos: [8]; default: 0;
-         *  Write disable bit 8 for EFUSE_KEY_PURPOSE_0
-         */
-        uint32_t wr_dis_key_purpose_0:1;
-        /** wr_dis_key_purpose_1 : RO; bitpos: [9]; default: 0;
-         *  Write disable bit 9 for EFUSE_KEY_PURPOSE_1
-         */
-        uint32_t wr_dis_key_purpose_1:1;
-        /** wr_dis_key_purpose_2 : RO; bitpos: [10]; default: 0;
-         *  Write disable bit 10 for EFUSE_KEY_PURPOSE_2
-         */
-        uint32_t wr_dis_key_purpose_2:1;
-        /** wr_dis_key_purpose_3 : RO; bitpos: [11]; default: 0;
-         *  Write disable bit 11 for EFUSE_KEY_PURPOSE_3
-         */
-        uint32_t wr_dis_key_purpose_3:1;
-        /** wr_dis_key_purpose_4 : RO; bitpos: [12]; default: 0;
-         *  Write disable bit 12 for EFUSE_KEY_PURPOSE_4
-         */
-        uint32_t wr_dis_key_purpose_4:1;
-        /** wr_dis_key_purpose_5 : RO; bitpos: [13]; default: 0;
-         *  Write disable bit 13 for EFUSE_KEY_PURPOSE_5
-         */
-        uint32_t wr_dis_key_purpose_5:1;
-        /** wr_dis_14 : RO; bitpos: [14]; default: 0;
-         *  Write disable bit 14 for EFUSE_SECURE_BOOT_SHA384_EN, EFUSE_SEC_DPA_LEVEL,
-         *  EFUSE_XTS_DPA_PSEUDO_LEVEL, EFUSE_XTS_DPA_CLK_ENABLE, EFUSE_ECC_FORCE_CONST_TIME
-         */
-        uint32_t wr_dis_14:1;
-        /** wr_dis_secure_boot_en : RO; bitpos: [15]; default: 0;
-         *  Write disable bit 15 for EFUSE_SECURE_BOOT_EN
-         */
-        uint32_t wr_dis_secure_boot_en:1;
-        /** wr_dis_secure_boot_aggressive_revoke : RO; bitpos: [16]; default: 0;
-         *  Write disable bit 16 for EFUSE_SECURE_BOOT_AGGRESSIVE_REVOKE
-         */
-        uint32_t wr_dis_secure_boot_aggressive_revoke:1;
-        /** wr_dis_17 : RO; bitpos: [17]; default: 0;
-         *  Write disable bit 17 for EFUSE_KM_DISABLE_DEPLOY_MODE, EFUSE_KM_RND_SWITCH_CYCLE,
-         *  EFUSE_KM_DEPLOY_ONLY_ONCE, EFUSE_FORCE_USE_KEY_MANAGER_KEY,
-         *  EFUSE_FORCE_DISABLE_SW_INIT_KEY, EFUSE_KM_XTS_KEY_LENGTH_256, EFUSE_LOCK_KM_KEY
-         */
-        uint32_t wr_dis_17:1;
-        /** wr_dis_18 : RO; bitpos: [18]; default: 0;
-         *  Write disable bit 18 for EFUSE_FLASH_TPUW, EFUSE_DIS_DOWNLOAD_MODE,
-         *  EFUSE_DIS_DIRECT_BOOT, EFUSE_DIS_USB_SERIAL_JTAG_ROM_PRINT,
-         *  EFUSE_DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE, EFUSE_ENABLE_SECURITY_DOWNLOAD,
-         *  EFUSE_UART_PRINT_CONTROL, EFUSE_FORCE_SEND_RESUME, EFUSE_SECURE_VERSION
-         */
-        uint32_t wr_dis_18:1;
-        /** wr_dis_huk_gen_state : RO; bitpos: [19]; default: 0;
-         *  Write disable bit 19 for EFUSE_HUK_GEN_STATE
-         */
-        uint32_t wr_dis_huk_gen_state:1;
-        /** wr_dis_block1 : RO; bitpos: [20]; default: 0;
-         *  Write disable bit 20 for BLOCK1
-         */
-        uint32_t wr_dis_block1:1;
-        /** wr_dis_block2 : RO; bitpos: [21]; default: 0;
-         *  Write disable bit 21 for BLOCK2
-         */
-        uint32_t wr_dis_block2:1;
-        /** wr_dis_block3 : RO; bitpos: [22]; default: 0;
-         *  Write disable bit 22 for BLOCK3
-         */
-        uint32_t wr_dis_block3:1;
-        /** wr_dis_block4 : RO; bitpos: [23]; default: 0;
-         *  Write disable bit 23 for BLOCK4
-         */
-        uint32_t wr_dis_block4:1;
-        /** wr_dis_block5 : RO; bitpos: [24]; default: 0;
-         *  Write disable bit 24 for BLOCK5
-         */
-        uint32_t wr_dis_block5:1;
-        /** wr_dis_block6 : RO; bitpos: [25]; default: 0;
-         *  Write disable bit 25 for BLOCK6
-         */
-        uint32_t wr_dis_block6:1;
-        /** wr_dis_block7 : RO; bitpos: [26]; default: 0;
-         *  Write disable bit 26 for BLOCK7
-         */
-        uint32_t wr_dis_block7:1;
-        /** wr_dis_block8 : RO; bitpos: [27]; default: 0;
-         *  Write disable bit 27 for BLOCK8
-         */
-        uint32_t wr_dis_block8:1;
-        /** wr_dis_block9 : RO; bitpos: [28]; default: 0;
-         *  Write disable bit 28 for BLOCK9
-         */
-        uint32_t wr_dis_block9:1;
-        /** wr_dis_block10 : RO; bitpos: [29]; default: 0;
-         *  Write disable bit 29 for BLOCK10
-         */
-        uint32_t wr_dis_block10:1;
-        /** wr_dis_30 : RO; bitpos: [30]; default: 0;
-         *  Write disable bit 30 for EFUSE_USB_DREFH, EFUSE_USB_DREFL, EFUSE_USB_OTG_FS_DREFH,
-         *  EFUSE_USB_OTG_FS_DREFL, EFUSE_USB_EXCHG_PINS, EFUSE_USB_OTG_FS_EXCHG_PINS,
-         *  EFUSE_USB_PHY_SEL
-         */
-        uint32_t wr_dis_30:1;
-        /** wr_dis_soft_dis_jtag : RO; bitpos: [31]; default: 0;
-         *  Write disable bit 31 for EFUSE_SOFT_DIS_JTAG
-         */
-        uint32_t wr_dis_soft_dis_jtag:1;
+        uint32_t wr_dis:32;
     };
     uint32_t val;
 } efuse_rd_wr_dis0_reg_t;
@@ -192,34 +60,13 @@ typedef union {
  */
 typedef union {
     struct {
-        /** rd_dis_block4 : RO; bitpos: [0]; default: 0;
-         *  Read disable bit 0 for BLOCK4
+        /** rd_dis : RO; bitpos: [6:0]; default: 0;
+         *  Represents whether reading of individual eFuse block(block4~block10) is disabled or
+         *  enabled.
+         *  1: disabled
+         *  0: enabled
          */
-        uint32_t rd_dis_block4:1;
-        /** rd_dis_block5 : RO; bitpos: [1]; default: 0;
-         *  Read disable bit 1 for BLOCK5
-         */
-        uint32_t rd_dis_block5:1;
-        /** rd_dis_block6 : RO; bitpos: [2]; default: 0;
-         *  Read disable bit 2 for BLOCK6
-         */
-        uint32_t rd_dis_block6:1;
-        /** rd_dis_block7 : RO; bitpos: [3]; default: 0;
-         *  Read disable bit 3 for BLOCK7
-         */
-        uint32_t rd_dis_block7:1;
-        /** rd_dis_block8 : RO; bitpos: [4]; default: 0;
-         *  Read disable bit 4 for BLOCK8
-         */
-        uint32_t rd_dis_block8:1;
-        /** rd_dis_block9 : RO; bitpos: [5]; default: 0;
-         *  Read disable bit 5 for BLOCK9
-         */
-        uint32_t rd_dis_block9:1;
-        /** rd_dis_block10 : RO; bitpos: [6]; default: 0;
-         *  Read disable bit 6 for BLOCK10
-         */
-        uint32_t rd_dis_block10:1;
+        uint32_t rd_dis:7;
         /** dis_usb_jtag : RO; bitpos: [7]; default: 0;
          *  Represents whether the function of usb switch to jtag is disabled or enabled.
          *  1: disabled
@@ -274,26 +121,16 @@ typedef union {
          *  0: enabled
          */
         uint32_t dis_download_manual_encrypt:1;
-        /** reserved_0_47 : R; bitpos: [17:15]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_47:3;
+        uint32_t reserved_15:3;
         /** pvt_glitch_en : RO; bitpos: [18]; default: 0;
          *  Represents whether to enable PVT power glitch monitor function.
          *  1:Enable.
          *  0:Disable
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_glitch_en:1;
-        /** reserved_0_51 : R; bitpos: [19]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_51:1;
+        uint32_t reserved_19:1;
         /** pvt_glitch_mode : RO; bitpos: [21:20]; default: 0;
          *  Use to configure glitch mode
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_glitch_mode:2;
         /** dis_core1 : RO; bitpos: [22]; default: 0;
@@ -303,26 +140,30 @@ typedef union {
          */
         uint32_t dis_core1:1;
         /** spi_boot_crypt_cnt : RO; bitpos: [25:23]; default: 0;
-         *  Enables flash encryption when 1 or 3 bits are set and disabled otherwise
+         *  Represents whether SPI boot encrypt/decrypt is disabled or enabled.
+         *  Odd number of 1: enabled
+         *  Even number of 1: disabled
          */
         uint32_t spi_boot_crypt_cnt:3;
         /** secure_boot_key_revoke0 : RO; bitpos: [26]; default: 0;
-         *  Revoke 1st secure boot key
+         *  Represents whether revoking first secure boot key is enabled or disabled.
+         *  1: enabled
+         *  0: disabled
          */
         uint32_t secure_boot_key_revoke0:1;
         /** secure_boot_key_revoke1 : RO; bitpos: [27]; default: 0;
-         *  Revoke 2nd secure boot key
+         *  Represents whether revoking second secure boot key is enabled or disabled.
+         *  1: enabled
+         *  0: disabled
          */
         uint32_t secure_boot_key_revoke1:1;
         /** secure_boot_key_revoke2 : RO; bitpos: [28]; default: 0;
-         *  Revoke 3rd secure boot key
+         *  Represents whether revoking third secure boot key is enabled or disabled.
+         *  1: enabled
+         *  0: disabled
          */
         uint32_t secure_boot_key_revoke2:1;
-        /** reserved_0_61 : R; bitpos: [31:29]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_61:3;
+        uint32_t reserved_29:3;
     };
     uint32_t val;
 } efuse_rd_repeat_data0_reg_t;
@@ -490,11 +331,7 @@ typedef union {
          *  is 2 times the programmed value.
          */
         uint32_t flash_tpuw:3;
-        /** reserved_0_126 : R; bitpos: [30]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_126:1;
+        uint32_t reserved_30:1;
         /** dis_download_mode : RO; bitpos: [31]; default: 0;
          *  Represents whether Download mode is disabled or enabled.
          *  1: disabled
@@ -563,11 +400,7 @@ typedef union {
          *  1 : efuse 0 : strapping
          */
         uint32_t flash_ldo_efuse_sel:1;
-        /** reserved_0_157 : R; bitpos: [31:29]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_157:3;
+        uint32_t reserved_29:3;
     };
     uint32_t val;
 } efuse_rd_repeat_data3_reg_t;
@@ -639,11 +472,7 @@ typedef union {
          *  Represents whether change DCDC to CCM mode
          */
         uint32_t dcdc_ccm_en:1;
-        /** reserved_0_184 : R; bitpos: [31:24]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_0_184:8;
+        uint32_t reserved_24:8;
     };
     uint32_t val;
 } efuse_rd_repeat_data4_reg_t;
@@ -687,24 +516,17 @@ typedef union {
     struct {
         /** pvt_limit : RO; bitpos: [15:0]; default: 0;
          *  Power glitch monitor threthold.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_limit:16;
         /** pvt_cell_select : RO; bitpos: [22:16]; default: 0;
          *  Power glitch monitor PVT cell select.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_cell_select:7;
         /** pvt_pump_limit : RO; bitpos: [30:23]; default: 0;
          *  Use to configure voltage monitor limit for charge pump
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_pump_limit:8;
-        /** reserved_1_95 : R; bitpos: [31]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_1_95:1;
+        uint32_t reserved_31:1;
     };
     uint32_t val;
 } efuse_rd_mac_sys2_reg_t;
@@ -716,7 +538,6 @@ typedef union {
     struct {
         /** pump_drv : RO; bitpos: [3:0]; default: 0;
          *  Use to configure charge pump voltage gain
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pump_drv:4;
         /** wdt_delay_sel : RO; bitpos: [5:4]; default: 0;
@@ -737,50 +558,23 @@ typedef union {
          *  Represents whether to trigger reset or charge pump when PVT power glitch happened.
          *  1:Trigger charge pump.
          *  0:Trigger reset
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
         uint32_t pvt_glitch_charge_reset:1;
-        /** reserved_1_104 : R; bitpos: [8]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_1_104:1;
+        uint32_t reserved_8:1;
         /** vdd_spi_ldo_adjust : RO; bitpos: [16:9]; default: 0;
          *  Represents configuration of FLASH LDO mode and voltage.
          */
         uint32_t vdd_spi_ldo_adjust:8;
         /** flash_ldo_power_sel : RO; bitpos: [17]; default: 0;
-         *  Selects the flash LDO voltage. 0: 1.2 V; 1: 1.8 V
+         *  Represents which flash ldo be select:
+         *  1: FLASH LDO 1P2
+         *  0 : FLASH LDO 1P8
          */
         uint32_t flash_ldo_power_sel:1;
-        /** wafer_version_minor : R; bitpos: [21:18]; default: 0;
-         *  Minor chip version
+        /** sys_data_part0_0 : RO; bitpos: [31:18]; default: 0;
+         *  Represents the first 14-bit of zeroth part of system data.
          */
-        uint32_t wafer_version_minor:4;
-        /** wafer_version_major : R; bitpos: [23:22]; default: 0;
-         *  Major chip version
-         */
-        uint32_t wafer_version_major:2;
-        /** disable_wafer_version_major : R; bitpos: [24]; default: 0;
-         *  Disables check of wafer version major
-         */
-        uint32_t disable_wafer_version_major:1;
-        /** disable_blk_version_major : R; bitpos: [25]; default: 0;
-         *  Disables check of blk version major
-         */
-        uint32_t disable_blk_version_major:1;
-        /** blk_version_minor : R; bitpos: [28:26]; default: 0;
-         *  BLK_VERSION_MINOR of BLOCK2
-         */
-        uint32_t blk_version_minor:3;
-        /** blk_version_major : R; bitpos: [30:29]; default: 0;
-         *  BLK_VERSION_MAJOR of BLOCK2
-         */
-        uint32_t blk_version_major:2;
-        /** flash_cap : R; bitpos: [31]; default: 0;
-         *  Flash capacity
-         */
-        uint32_t flash_cap:1;
+        uint32_t sys_data_part0_0:14;
     };
     uint32_t val;
 } efuse_rd_mac_sys3_reg_t;
@@ -790,46 +584,10 @@ typedef union {
  */
 typedef union {
     struct {
-        /** flash_cap_1 : R; bitpos: [1:0]; default: 0;
-         *  Flash capacity
+        /** sys_data_part0_1 : RO; bitpos: [31:0]; default: 0;
+         *  Represents the first 14-bit of zeroth part of system data.
          */
-        uint32_t flash_cap_1:2;
-        /** flash_vendor : R; bitpos: [4:2]; default: 0;
-         *  Flash vendor
-         */
-        uint32_t flash_vendor:3;
-        /** psram_cap : R; bitpos: [7:5]; default: 0;
-         *  Psram capacity
-         */
-        uint32_t psram_cap:3;
-        /** psram_vendor : R; bitpos: [9:8]; default: 0;
-         *  Psram vendor
-         */
-        uint32_t psram_vendor:2;
-        /** temp : R; bitpos: [11:10]; default: 0;
-         *  Temp (die embedded inside)
-         */
-        uint32_t temp:2;
-        /** pkg_version : R; bitpos: [14:12]; default: 0;
-         *  Package version
-         */
-        uint32_t pkg_version:3;
-        /** pvt_drvb : R; bitpos: [19:15]; default: 0;
-         *  PVT DRVB
-         */
-        uint32_t pvt_drvb:5;
-        /** adjust_1v2 : R; bitpos: [23:20]; default: 0;
-         *  SPI LDO adjust of 1.2v
-         */
-        uint32_t adjust_1v2:4;
-        /** adjust_1v8 : R; bitpos: [27:24]; default: 0;
-         *  SPI LDO adjust of 1.8v
-         */
-        uint32_t adjust_1v8:4;
-        /** active_dcdc_1v25 : R; bitpos: [31:28]; default: 0;
-         *  DCDC-DCDC DBIAS of 1.25v
-         */
-        uint32_t active_dcdc_1v25:4;
+        uint32_t sys_data_part0_1:32;
     };
     uint32_t val;
 } efuse_rd_mac_sys4_reg_t;
@@ -839,329 +597,43 @@ typedef union {
  */
 typedef union {
     struct {
-        /** active_dcdc_1v35 : R; bitpos: [3:0]; default: 0;
-         *  DCDC-DCDC DBIAS of 1.35v
+        /** sys_data_part0_2 : RO; bitpos: [31:0]; default: 0;
+         *  Represents the second 32-bit of zeroth part of system data.
          */
-        uint32_t active_dcdc_1v35:4;
-        /** slp_dcdc : R; bitpos: [8:4]; default: 0;
-         *  DCDC DBIAS in sleep
-         */
-        uint32_t slp_dcdc:5;
-        /** lslp_hp_drvb : R; bitpos: [13:9]; default: 0;
-         *  HP DRVB in light sleep
-         */
-        uint32_t lslp_hp_drvb:5;
-        /** dslp_lp_dbias : R; bitpos: [15:14]; default: 0;
-         *  LP DBIAS in deep sleep
-         */
-        uint32_t dslp_lp_dbias:2;
-        /** temp_calib : R; bitpos: [25:16]; default: 0;
-         *  Temperature calibration data
-         */
-        uint32_t temp_calib:10;
-        /** reserved_1_186 : R; bitpos: [31:26]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_1_186:6;
+        uint32_t sys_data_part0_2:32;
     };
     uint32_t val;
 } efuse_rd_mac_sys5_reg_t;
 
 
 /** Group: block2 registers */
-/** Type of rd_sys_part1_data0 register
- *  Represents rd_sys_part1_data0
+/** Type of rd_sys_part1_datan register
+ *  Represents rd_sys_part1_datan
  */
 typedef union {
     struct {
-        /** optional_unique_id : R; bitpos: [31:0]; default: 0;
-         *  Optional unique 128-bit ID
+        /** sys_data_part1_n : RO; bitpos: [31:0]; default: 0;
+         *  Represents the zeroth 32-bit of first part of system data.
          */
-        uint32_t optional_unique_id:32;
+        uint32_t sys_data_part1_n:32;
     };
     uint32_t val;
-} efuse_rd_sys_part1_data0_reg_t;
-
-/** Type of rd_sys_part1_data1 register
- *  Represents rd_sys_part1_data1
- */
-typedef union {
-    struct {
-        /** optional_unique_id_1 : R; bitpos: [31:0]; default: 0;
-         *  Optional unique 128-bit ID
-         */
-        uint32_t optional_unique_id_1:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data1_reg_t;
-
-/** Type of rd_sys_part1_data2 register
- *  Represents rd_sys_part1_data2
- */
-typedef union {
-    struct {
-        /** optional_unique_id_2 : R; bitpos: [31:0]; default: 0;
-         *  Optional unique 128-bit ID
-         */
-        uint32_t optional_unique_id_2:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data2_reg_t;
-
-/** Type of rd_sys_part1_data3 register
- *  Represents rd_sys_part1_data3
- */
-typedef union {
-    struct {
-        /** optional_unique_id_3 : R; bitpos: [31:0]; default: 0;
-         *  Optional unique 128-bit ID
-         */
-        uint32_t optional_unique_id_3:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data3_reg_t;
-
-/** Type of rd_sys_part1_data4 register
- *  Represents rd_sys_part1_data4
- */
-typedef union {
-    struct {
-        /** ocode : R; bitpos: [7:0]; default: 0;
-         *  ADC OCode
-         */
-        uint32_t ocode:8;
-        /** dcdc_ocode : R; bitpos: [15:8]; default: 0;
-         *  DCDC OCode
-         */
-        uint32_t dcdc_ocode:8;
-        /** vdd_3v4_dout : R; bitpos: [25:16]; default: 0;
-         *  ADC dout of vdd 3.4v
-         */
-        uint32_t vdd_3v4_dout:10;
-        /** adc1_ave_initcode_atten0 : R; bitpos: [31:26]; default: 0;
-         *  Average initcode of ADC1 atten0
-         */
-        uint32_t adc1_ave_initcode_atten0:6;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data4_reg_t;
-
-/** Type of rd_sys_part1_data5 register
- *  Represents rd_sys_part1_data5
- */
-typedef union {
-    struct {
-        /** adc1_ave_initcode_atten0_1 : R; bitpos: [2:0]; default: 0;
-         *  Average initcode of ADC1 atten0
-         */
-        uint32_t adc1_ave_initcode_atten0_1:3;
-        /** adc1_ave_initcode_atten1 : R; bitpos: [11:3]; default: 0;
-         *  Average initcode of ADC1 atten1
-         */
-        uint32_t adc1_ave_initcode_atten1:9;
-        /** adc1_ave_initcode_atten2 : R; bitpos: [20:12]; default: 0;
-         *  Average initcode of ADC1 atten2
-         */
-        uint32_t adc1_ave_initcode_atten2:9;
-        /** adc1_ave_initcode_atten3 : R; bitpos: [29:21]; default: 0;
-         *  Average initcode of ADC1 atten3
-         */
-        uint32_t adc1_ave_initcode_atten3:9;
-        /** adc1_hi_dout_atten0 : R; bitpos: [31:30]; default: 0;
-         *  HI dout of ADC1 atten0
-         */
-        uint32_t adc1_hi_dout_atten0:2;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data5_reg_t;
-
-/** Type of rd_sys_part1_data6 register
- *  Represents rd_sys_part1_data6
- */
-typedef union {
-    struct {
-        /** adc1_hi_dout_atten0_1 : R; bitpos: [6:0]; default: 0;
-         *  HI dout of ADC1 atten0
-         */
-        uint32_t adc1_hi_dout_atten0_1:7;
-        /** adc1_hi_dout_atten1 : R; bitpos: [15:7]; default: 0;
-         *  HI dout of ADC1 atten1
-         */
-        uint32_t adc1_hi_dout_atten1:9;
-        /** adc1_hi_dout_atten2 : R; bitpos: [24:16]; default: 0;
-         *  HI dout of ADC1 atten2
-         */
-        uint32_t adc1_hi_dout_atten2:9;
-        /** adc1_hi_dout_atten3 : R; bitpos: [31:25]; default: 0;
-         *  HI dout of ADC1 atten3
-         */
-        uint32_t adc1_hi_dout_atten3:7;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data6_reg_t;
-
-/** Type of rd_sys_part1_data7 register
- *  Represents rd_sys_part1_data7
- */
-typedef union {
-    struct {
-        /** adc1_hi_dout_atten3_1 : R; bitpos: [1:0]; default: 0;
-         *  HI dout of ADC1 atten3
-         */
-        uint32_t adc1_hi_dout_atten3_1:2;
-        /** adc1_ch0_atten0_initcode_diff : R; bitpos: [4:2]; default: 0;
-         *  Gap between ADC1 CH0 and average initcode
-         */
-        uint32_t adc1_ch0_atten0_initcode_diff:3;
-        /** adc1_ch1_atten0_initcode_diff : R; bitpos: [7:5]; default: 0;
-         *  Gap between ADC1 CH1 and average initcode
-         */
-        uint32_t adc1_ch1_atten0_initcode_diff:3;
-        /** adc1_ch2_atten0_initcode_diff : R; bitpos: [10:8]; default: 0;
-         *  Gap between ADC1 CH2 and average initcode
-         */
-        uint32_t adc1_ch2_atten0_initcode_diff:3;
-        /** adc1_ch3_atten0_initcode_diff : R; bitpos: [13:11]; default: 0;
-         *  Gap between ADC1 CH3 and average initcode
-         */
-        uint32_t adc1_ch3_atten0_initcode_diff:3;
-        /** adc1_ch4_atten0_initcode_diff : R; bitpos: [16:14]; default: 0;
-         *  Gap between ADC1 CH4 and average initcode
-         */
-        uint32_t adc1_ch4_atten0_initcode_diff:3;
-        /** initcode_diff_1p8_3p3 : R; bitpos: [21:17]; default: 0;
-         *  Initcode diff between IO LDO 1.8v and 3.3v
-         */
-        uint32_t initcode_diff_1p8_3p3:5;
-        /** hi_dout_diff_1p8_3p3 : R; bitpos: [26:22]; default: 0;
-         *  HI dout diff between IO LDO 1.8v and 3.3v
-         */
-        uint32_t hi_dout_diff_1p8_3p3:5;
-        /** reserved_2_251 : R; bitpos: [31:27]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_2_251:5;
-    };
-    uint32_t val;
-} efuse_rd_sys_part1_data7_reg_t;
+} efuse_rd_sys_part1_datan_reg_t;
 
 
 /** Group: block3 registers */
-/** Type of rd_usr_data0 register
- *  Represents rd_usr_data0
+/** Type of rd_usr_datan register
+ *  Represents rd_usr_datan
  */
 typedef union {
     struct {
-        /** usr_data0 : RO; bitpos: [31:0]; default: 0;
+        /** usr_datan : RO; bitpos: [31:0]; default: 0;
          *  Represents the zeroth 32-bit of block3 (user).
          */
-        uint32_t usr_data0:32;
+        uint32_t usr_datan:32;
     };
     uint32_t val;
-} efuse_rd_usr_data0_reg_t;
-
-/** Type of rd_usr_data1 register
- *  Represents rd_usr_data1
- */
-typedef union {
-    struct {
-        /** usr_data1 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of block3 (user).
-         */
-        uint32_t usr_data1:32;
-    };
-    uint32_t val;
-} efuse_rd_usr_data1_reg_t;
-
-/** Type of rd_usr_data2 register
- *  Represents rd_usr_data2
- */
-typedef union {
-    struct {
-        /** usr_data2 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of block3 (user).
-         */
-        uint32_t usr_data2:32;
-    };
-    uint32_t val;
-} efuse_rd_usr_data2_reg_t;
-
-/** Type of rd_usr_data3 register
- *  Represents rd_usr_data3
- */
-typedef union {
-    struct {
-        /** usr_data3 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of block3 (user).
-         */
-        uint32_t usr_data3:32;
-    };
-    uint32_t val;
-} efuse_rd_usr_data3_reg_t;
-
-/** Type of rd_usr_data4 register
- *  Represents rd_usr_data4
- */
-typedef union {
-    struct {
-        /** usr_data4 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of block3 (user).
-         */
-        uint32_t usr_data4:32;
-    };
-    uint32_t val;
-} efuse_rd_usr_data4_reg_t;
-
-/** Type of rd_usr_data5 register
- *  Represents rd_usr_data5
- */
-typedef union {
-    struct {
-        /** usr_data5 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of block3 (user).
-         */
-        uint32_t usr_data5:32;
-    };
-    uint32_t val;
-} efuse_rd_usr_data5_reg_t;
-
-/** Type of rd_usr_data6 register
- *  Represents rd_usr_data6
- */
-typedef union {
-    struct {
-        /** reserved_3_192 : R; bitpos: [7:0]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_3_192:8;
-        /** custom_mac : R; bitpos: [31:8]; default: 0;
-         *  Custom MAC
-         */
-        uint32_t custom_mac:24;
-    };
-    uint32_t val;
-} efuse_rd_usr_data6_reg_t;
-
-/** Type of rd_usr_data7 register
- *  Represents rd_usr_data7
- */
-typedef union {
-    struct {
-        /** custom_mac_1 : R; bitpos: [23:0]; default: 0;
-         *  Custom MAC
-         */
-        uint32_t custom_mac_1:24;
-        /** reserved_3_248 : R; bitpos: [31:24]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_3_248:8;
-    };
-    uint32_t val;
-} efuse_rd_usr_data7_reg_t;
+} efuse_rd_usr_datan_reg_t;
 
 
 /** Group: block4 registers */
@@ -1255,129 +727,18 @@ typedef union {
 
 
 /** Group: block10 registers */
-/** Type of rd_sys_part2_data0 register
- *  Represents rd_sys_part2_data0
+/** Type of rd_sys_part2_datan register
+ *  Represents rd_sys_part2_datan
  */
 typedef union {
     struct {
-        /** rxiq_version : R; bitpos: [2:0]; default: 0;
-         *  Stores RF Calibration data. RXIQ version
-         */
-        uint32_t rxiq_version:3;
-        /** rxiq_0 : R; bitpos: [9:3]; default: 0;
-         *  Stores RF Calibration data. RXIQ data 0
-         */
-        uint32_t rxiq_0:7;
-        /** rxiq_1 : R; bitpos: [16:10]; default: 0;
-         *  Stores RF Calibration data. RXIQ data 1
-         */
-        uint32_t rxiq_1:7;
-        /** reserved_10_17 : R; bitpos: [31:17]; default: 0;
-         *  reserved
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t reserved_10_17:15;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data0_reg_t;
-
-/** Type of rd_sys_part2_data1 register
- *  Represents rd_sys_part2_data1
- */
-typedef union {
-    struct {
-        /** sys_data_part2_1 : RO; bitpos: [31:0]; default: 0;
+        /** sys_data_part2_n : RO; bitpos: [31:0]; default: 0;
          *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
          */
-        uint32_t sys_data_part2_1:32;
+        uint32_t sys_data_part2_n:32;
     };
     uint32_t val;
-} efuse_rd_sys_part2_data1_reg_t;
-
-/** Type of rd_sys_part2_data2 register
- *  Represents rd_sys_part2_data2
- */
-typedef union {
-    struct {
-        /** sys_data_part2_2 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_2:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data2_reg_t;
-
-/** Type of rd_sys_part2_data3 register
- *  Represents rd_sys_part2_data3
- */
-typedef union {
-    struct {
-        /** sys_data_part2_3 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_3:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data3_reg_t;
-
-/** Type of rd_sys_part2_data4 register
- *  Represents rd_sys_part2_data4
- */
-typedef union {
-    struct {
-        /** sys_data_part2_4 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_4:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data4_reg_t;
-
-/** Type of rd_sys_part2_data5 register
- *  Represents rd_sys_part2_data5
- */
-typedef union {
-    struct {
-        /** sys_data_part2_5 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_5:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data5_reg_t;
-
-/** Type of rd_sys_part2_data6 register
- *  Represents rd_sys_part2_data6
- */
-typedef union {
-    struct {
-        /** sys_data_part2_6 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_6:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data6_reg_t;
-
-/** Type of rd_sys_part2_data7 register
- *  Represents rd_sys_part2_data7
- */
-typedef union {
-    struct {
-        /** sys_data_part2_7 : RO; bitpos: [31:0]; default: 0;
-         *  Represents the zeroth 32-bit of second part of system data.
-         *  This field is only for internal debugging purposes. Do not use it in applications.
-         */
-        uint32_t sys_data_part2_7:32;
-    };
-    uint32_t val;
-} efuse_rd_sys_part2_data7_reg_t;
+} efuse_rd_sys_part2_datan_reg_t;
 
 
 /** Group: block0 error report registers */
@@ -1513,7 +874,7 @@ typedef union {
          */
         uint32_t ecc_force_const_time_err:1;
         /** secure_boot_sha384_en_err : RO; bitpos: [4]; default: 0;
-         *  Represents the programming error of EFUSE_SECURE_BOOT_SHA384_EN
+         *  Represents the programming error of EFUSE_secure_boot_sha384_en
          */
         uint32_t secure_boot_sha384_en_err:1;
         /** secure_boot_en_err : RO; bitpos: [5]; default: 0;
@@ -4306,36 +3667,15 @@ typedef struct {
     volatile efuse_rd_mac_sys3_reg_t rd_mac_sys3;
     volatile efuse_rd_mac_sys4_reg_t rd_mac_sys4;
     volatile efuse_rd_mac_sys5_reg_t rd_mac_sys5;
-    volatile efuse_rd_sys_part1_data0_reg_t rd_sys_part1_data0;
-    volatile efuse_rd_sys_part1_data1_reg_t rd_sys_part1_data1;
-    volatile efuse_rd_sys_part1_data2_reg_t rd_sys_part1_data2;
-    volatile efuse_rd_sys_part1_data3_reg_t rd_sys_part1_data3;
-    volatile efuse_rd_sys_part1_data4_reg_t rd_sys_part1_data4;
-    volatile efuse_rd_sys_part1_data5_reg_t rd_sys_part1_data5;
-    volatile efuse_rd_sys_part1_data6_reg_t rd_sys_part1_data6;
-    volatile efuse_rd_sys_part1_data7_reg_t rd_sys_part1_data7;
-    volatile efuse_rd_usr_data0_reg_t rd_usr_data0;
-    volatile efuse_rd_usr_data1_reg_t rd_usr_data1;
-    volatile efuse_rd_usr_data2_reg_t rd_usr_data2;
-    volatile efuse_rd_usr_data3_reg_t rd_usr_data3;
-    volatile efuse_rd_usr_data4_reg_t rd_usr_data4;
-    volatile efuse_rd_usr_data5_reg_t rd_usr_data5;
-    volatile efuse_rd_usr_data6_reg_t rd_usr_data6;
-    volatile efuse_rd_usr_data7_reg_t rd_usr_data7;
+    volatile efuse_rd_sys_part1_datan_reg_t rd_sys_part1_datan[8];
+    volatile efuse_rd_usr_datan_reg_t rd_usr_datan[8];
     volatile efuse_rd_key0_datan_reg_t rd_key0_datan[8];
     volatile efuse_rd_key1_datan_reg_t rd_key1_datan[8];
     volatile efuse_rd_key2_datan_reg_t rd_key2_datan[8];
     volatile efuse_rd_key3_datan_reg_t rd_key3_datan[8];
     volatile efuse_rd_key4_datan_reg_t rd_key4_datan[8];
     volatile efuse_rd_key5_datan_reg_t rd_key5_datan[8];
-    volatile efuse_rd_sys_part2_data0_reg_t rd_sys_part2_data0;
-    volatile efuse_rd_sys_part2_data1_reg_t rd_sys_part2_data1;
-    volatile efuse_rd_sys_part2_data2_reg_t rd_sys_part2_data2;
-    volatile efuse_rd_sys_part2_data3_reg_t rd_sys_part2_data3;
-    volatile efuse_rd_sys_part2_data4_reg_t rd_sys_part2_data4;
-    volatile efuse_rd_sys_part2_data5_reg_t rd_sys_part2_data5;
-    volatile efuse_rd_sys_part2_data6_reg_t rd_sys_part2_data6;
-    volatile efuse_rd_sys_part2_data7_reg_t rd_sys_part2_data7;
+    volatile efuse_rd_sys_part2_datan_reg_t rd_sys_part2_datan[8];
     volatile efuse_rd_repeat_data_err0_reg_t rd_repeat_data_err0;
     volatile efuse_rd_repeat_data_err1_reg_t rd_repeat_data_err1;
     volatile efuse_rd_repeat_data_err2_reg_t rd_repeat_data_err2;

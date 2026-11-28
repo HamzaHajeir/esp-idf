@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/fcntl.h>
-#include <errno.h>
+#include <sys/errno.h>
 #include <sys/unistd.h>
 #include <sys/select.h>
 #include "freertos/FreeRTOS.h"

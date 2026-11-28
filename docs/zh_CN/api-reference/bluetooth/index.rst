@@ -5,14 +5,7 @@
 
 本章节提供 ESP-IDF 中蓝牙的 API 参考。ESP-IDF 支持两种主机协议栈：**Bluedroid** 和 **NimBLE**。
 
-.. only:: SOC_BT_CLASSIC_SUPPORTED
-
-    - **Bluedroid** （默认协议栈）：支持经典蓝牙和低功耗蓝牙，适用于同时使用这两种技术的应用场景。
-
-.. only:: not SOC_BT_CLASSIC_SUPPORTED
-
-    - **Bluedroid** （默认协议栈）：在 {IDF_TARGET_NAME} 上仅支持低功耗蓝牙。
-
+- **Bluedroid** （默认协议栈）：支持经典蓝牙和低功耗蓝牙，适用于同时使用这两种技术的应用场景。
 - **NimBLE**：仅支持低功耗蓝牙，因代码体积小、内存占用低，适合资源受限的应用。
 
 可通过下方链接查看相应的 API 文档和示例应用。
@@ -31,7 +24,7 @@
 
 **Bluedroid 协议栈 API**
 
-ESP-IDF 默认的主机协议栈。
+ESP-IDF 默认的主机协议栈，支持经典蓝牙和低功耗蓝牙。
 
 .. toctree::
     :maxdepth: 1
@@ -72,38 +65,15 @@ ESP-IDF 默认的主机协议栈。
 
         esp-ble-mesh
 
-.. only:: SOC_BLE_ISO_SUPPORTED
-
-    **ESP-BLE-ISO API**
-
-    低功耗蓝牙等时通道（CIS/BIS），用于蓝牙低功耗音频及时间同步流传输。
-
-    .. toctree::
-        :maxdepth: 1
-
-        esp-ble-iso
-
-.. only:: SOC_BLE_AUDIO_SUPPORTED
-
-    **ESP-BLE-AUDIO API**
-
-    蓝牙低功耗音频配置与服务（BAP、PACS、VCP、HAS、CSIP 等）。
-
-    .. toctree::
-        :maxdepth: 1
-
-        esp-ble-audio
-
 ----
 
 示例与教程
-----------
+------------
 
 ESP-IDF 提供了丰富的示例代码和实践教程，路径见 examples 目录：
 
 - **Bluedroid**: :example:`bluetooth/bluedroid`
 - **NimBLE**: :example:`bluetooth/nimble`
-- **BLE UART 服务** （基于 NimBLE 或 Bluedroid 的即用型蓝牙串口透传外设，提供 BLE UART Service GATT 布局）：:example:`bluetooth/ble_uart_service`
 
 使用 Bluedroid 协议栈进行开发的分步示例教程：
 

@@ -1,12 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <inttypes.h>
 #include "unity.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -15,11 +14,8 @@
 #include "esp_rom_sys.h"
 #include "esp_adc/adc_oneshot.h"
 #include "test_common_adc.h"
-#include "hal/adc_ll.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_adc/adc_filter.h"
-#include "hal/cache_hal.h"
-#include "hal/cache_ll.h"
 
 const __attribute__((unused)) static char *TAG = "TEST_ADC";
 
@@ -56,7 +52,12 @@ static bool IRAM_ATTR s_alarm_callback(gptimer_handle_t timer, const gptimer_ala
 
     esp_rom_printf("alarm isr count=%llu\r\n", edata->count_value);
     TEST_ESP_OK(adc_oneshot_read_isr(test_ctx->oneshot_handle, ADC1_TEST_CHAN0, &adc_raw));
-    test_assert_adc_raw(ADC_UNIT_1, ADC1_TEST_CHAN0, test_ctx->level, adc_raw, false, false);
+    esp_rom_printf("adc raw: %d\r\n", adc_raw);
+    if (test_ctx->level) {
+        TEST_ASSERT_INT_WITHIN(ADC_TEST_HIGH_THRESH, ADC_TEST_HIGH_VAL, adc_raw);
+    } else {
+        TEST_ASSERT_INT_WITHIN(ADC_TEST_LOW_THRESH, ADC_TEST_LOW_VAL, adc_raw);
+    }
 
     // check the count value at alarm event
     vTaskNotifyGiveFromISR(test_ctx->task_handle, &high_task_wakeup);
@@ -79,7 +80,7 @@ TEST_CASE("ADC oneshot fast work with ISR", "[adc_oneshot]")
     //-------------ADC1 TEST Channel 0 Config---------------//
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = TEST_ADC_DRIVER_DEFAULT_ATTEN,
+        .atten = ADC_ATTEN_DB_12,
     };
     TEST_ESP_OK(adc_oneshot_config_channel(isr_test_ctx.oneshot_handle, ADC1_TEST_CHAN0, &config));
 
@@ -169,7 +170,7 @@ TEST_CASE("ADC continuous big conv_frame_size test", "[adc_continuous]")
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
     };
     adc_digi_pattern_config_t adc_pattern[SOC_ADC_PATT_LEN_MAX] = {0};
-    adc_pattern[0].atten = TEST_ADC_DRIVER_DEFAULT_ATTEN;
+    adc_pattern[0].atten = ADC_ATTEN_DB_12;
     adc_pattern[0].channel = ADC1_TEST_CHAN0;
     adc_pattern[0].unit = ADC_UNIT_1;
     adc_pattern[0].bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
@@ -201,96 +202,13 @@ TEST_CASE("ADC continuous big conv_frame_size test", "[adc_continuous]")
             cnt++;
         }
         esp_rom_printf("avg: %" PRIu32 "\n", sum / cnt);
-        test_assert_adc_raw(ADC_UNIT_1, ADC1_TEST_CHAN0, false, sum / cnt, false, false);
+        TEST_ASSERT_INT_WITHIN(ADC_TEST_LOW_THRESH, ADC_TEST_LOW_VAL, sum / cnt);
     }
 
     TEST_ESP_OK(adc_continuous_stop(handle));
     TEST_ESP_OK(adc_continuous_deinit(handle));
     free(result);
 }
-
-/**
- * Verify ADC continuous mode on targets that access internal RAM through L1 cache,
- * especially when `conv_frame_size` is not a multiple of the cache-line size.
- * Test different frame sizes and check that the frame length and channel IDs read
- * from the DMA data stream through the public API are as expected. ADC sample
- * values are intentionally not checked.
- */
-#if CONFIG_IDF_TARGET_ESP32P4
-TEST_CASE("ADC continuous cache alignment check on ESP32-P4", "[adc_continuous]")
-{
-    uint32_t cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
-    printf("Internal memory cache line size: %" PRIu32 " bytes\n", cache_line_size);
-
-    static const uint32_t conv_num[] = {
-        2,      /* 8 bytes, original regression */
-        3,      /* 12 bytes, not a multiple of pattern_num */
-        16,     /* 64 bytes, exactly one cache line */
-        30,     /* 120 bytes, larger than one cache line and unaligned */
-        500,    /* 2000 bytes, large non-cache-line multiple */
-        1024,   /* 4096 bytes, one frame uses two DMA descriptors */
-    };
-
-    adc_digi_pattern_config_t patterns[2] = {
-        {
-            .atten = TEST_ADC_DRIVER_DEFAULT_ATTEN,
-            .channel = ADC_CHANNEL_5,
-            .unit = ADC_UNIT_1,
-            .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,
-        },
-        {
-            .atten = TEST_ADC_DRIVER_DEFAULT_ATTEN,
-            .channel = ADC_CHANNEL_4,
-            .unit = ADC_UNIT_2,
-            .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,
-        },
-    };
-
-    adc_continuous_config_t config = {
-        .pattern_num = 2,
-        .adc_pattern = patterns,
-        .sample_freq_hz = 20 * 1000,
-        .conv_mode = ADC_CONV_BOTH_UNIT,
-    };
-
-    for (size_t idx = 0; idx < sizeof(conv_num) / sizeof(conv_num[0]); idx++) {
-        uint32_t conv_frame_size = conv_num[idx] * SOC_ADC_DIGI_DATA_BYTES_PER_CONV;
-        printf("Testing ADC conversion logical frame size: %" PRIu32 " bytes\n", conv_frame_size);
-
-        adc_continuous_handle_t handle = NULL;
-        adc_continuous_handle_cfg_t handle_config = {
-            .max_store_buf_size = conv_frame_size * 4, /* store recent 4 frames */
-            .conv_frame_size = conv_frame_size,
-        };
-
-        TEST_ESP_OK(adc_continuous_new_handle(&handle_config, &handle));
-        TEST_ESP_OK(adc_continuous_config(handle, &config));
-
-        uint8_t *result = malloc(conv_frame_size);
-        TEST_ASSERT_NOT_NULL(result);
-
-        TEST_ESP_OK(adc_continuous_start(handle));
-
-        for (uint8_t times = 0; times < 10; times++) {
-            uint32_t out_length = 0;
-            TEST_ESP_OK(adc_continuous_read(handle, result, conv_frame_size, &out_length, 1000));
-
-            TEST_ASSERT_EQUAL_UINT32(conv_frame_size, out_length);
-            for (int i = 0; i < out_length; i += SOC_ADC_DIGI_RESULT_BYTES) {
-                adc_digi_output_data_t *p = (void*)&result[i];
-                uint32_t chan_num = ADC_DRIVER_TEST_GET_CHANNEL(p);
-                /* ESP32-P4 encodes ADC2 logical channel N as N + ADC_LL_UNIT2_CHANNEL_SUBSTRATION in raw DMA data. */
-                TEST_ASSERT(chan_num == patterns[0].channel ||
-                            chan_num == patterns[1].channel + ADC_LL_UNIT2_CHANNEL_SUBSTRATION);
-            }
-        }
-
-        TEST_ESP_OK(adc_continuous_stop(handle));
-        TEST_ESP_OK(adc_continuous_deinit(handle));
-        free(result);
-    }
-}
-#endif
 
 #define ADC_FLUSH_TEST_SIZE    64
 
@@ -309,7 +227,7 @@ TEST_CASE("ADC continuous flush internal pool", "[adc_continuous][manual][ignore
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
     };
     adc_digi_pattern_config_t adc_pattern[SOC_ADC_PATT_LEN_MAX] = {0};
-    adc_pattern[0].atten = TEST_ADC_DRIVER_DEFAULT_ATTEN;
+    adc_pattern[0].atten = ADC_ATTEN_DB_12;
     adc_pattern[0].channel = ADC1_TEST_CHAN0;
     adc_pattern[0].unit = ADC_UNIT_1;
     adc_pattern[0].bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
@@ -361,7 +279,7 @@ TEST_CASE("ADC continuous test after restarting", "[adc_continuous][ignore]")
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
     };
     adc_digi_pattern_config_t adc_pattern[SOC_ADC_PATT_LEN_MAX] = {0};
-    adc_pattern[0].atten = TEST_ADC_DRIVER_DEFAULT_ATTEN;
+    adc_pattern[0].atten = ADC_ATTEN_DB_12;
     adc_pattern[0].channel = ADC1_TEST_CHAN0;
     adc_pattern[0].unit = ADC_UNIT_1;
     adc_pattern[0].bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
@@ -382,7 +300,7 @@ TEST_CASE("ADC continuous test after restarting", "[adc_continuous][ignore]")
         for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
             adc_digi_output_data_t *p = (void*)&result[i];
             uint32_t chan_num = ADC_DRIVER_TEST_GET_CHANNEL(p);
-            TEST_ASSERT(chan_num < ADC_LL_CHANNEL_NUM(ADC_UNIT_1));
+            TEST_ASSERT(chan_num < SOC_ADC_CHANNEL_NUM(ADC_UNIT_1));
         }
         TEST_ESP_OK(adc_continuous_stop(handle));
     }
@@ -401,13 +319,13 @@ TEST_CASE("ADC filter exhausted allocation", "[adc_continuous]")
     };
     TEST_ESP_OK(adc_continuous_new_handle(&adc_config, &handle));
 
-    adc_iir_filter_handle_t filter_hdl[ADC_LL_DIGI_IIR_FILTER_NUM + 1] = {};
+    adc_iir_filter_handle_t filter_hdl[SOC_ADC_DIGI_IIR_FILTER_NUM + 1] = {};
     adc_continuous_iir_filter_config_t filter_config = {
         .unit = ADC_UNIT_1,
         .channel = ADC_CHANNEL_0,
         .coeff = ADC_DIGI_IIR_FILTER_COEFF_2,
     };
-    for (int i = 0; i < ADC_LL_DIGI_IIR_FILTER_NUM; i++) {
+    for (int i = 0; i < SOC_ADC_DIGI_IIR_FILTER_NUM; i++) {
 #if SOC_ADC_DIG_IIR_FILTER_UNIT_BINDED
         //On these chips, the unit and the filter_id should be the same
         filter_config.unit = i;
@@ -416,9 +334,9 @@ TEST_CASE("ADC filter exhausted allocation", "[adc_continuous]")
     }
 
     filter_config.unit = ADC_UNIT_1;
-    TEST_ASSERT(adc_new_continuous_iir_filter(handle, &filter_config, &filter_hdl[ADC_LL_DIGI_IIR_FILTER_NUM]) == ESP_ERR_NOT_FOUND);
+    TEST_ASSERT(adc_new_continuous_iir_filter(handle, &filter_config, &filter_hdl[SOC_ADC_DIGI_IIR_FILTER_NUM]) == ESP_ERR_NOT_FOUND);
 
-    for (int i = 0; i < ADC_LL_DIGI_IIR_FILTER_NUM; i++) {
+    for (int i = 0; i < SOC_ADC_DIGI_IIR_FILTER_NUM; i++) {
         TEST_ESP_OK(adc_del_continuous_iir_filter(filter_hdl[i]));
     }
 

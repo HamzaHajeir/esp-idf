@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,17 +39,6 @@ typedef struct {
 static esp_tee_ota_handle_t ota_handle = {};
 
 static const char *TAG = "esp_tee_ota_ops";
-
-static esp_err_t erase_tee_partition(const esp_partition_info_t *part)
-{
-    const uint32_t aligned_erase_size = (part->pos.size + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
-    int ret = esp_tee_flash_erase_range(part->pos.offset, aligned_erase_size);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Failed to erase partition!");
-        return ESP_ERR_FLASH_OP_FAIL;
-    }
-    return ESP_OK;
-}
 
 static esp_err_t get_tee_otadata_part_pos(esp_partition_pos_t *tee_ota_pos)
 {
@@ -94,9 +83,11 @@ esp_err_t esp_tee_ota_begin(void)
     ESP_LOGI(TAG, "Running partition - Subtype: 0x%x", (uint8_t)tee_boot_part);
     ESP_LOGI(TAG, "Next partition - Subtype: 0x%x (Offset: 0x%" PRIx32 ")", (uint8_t)tee_next_boot_part, tee_next.pos.offset);
 
-    err = erase_tee_partition(&tee_next);
-    if (err != ESP_OK) {
-        return err;
+    const uint32_t aligned_erase_size = (tee_next.pos.size + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
+    int ret = esp_tee_flash_erase_range(tee_next.pos.offset, aligned_erase_size);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to erase partition!");
+        return ESP_ERR_FLASH_OP_FAIL;
     }
 
     memcpy(&ota_handle.tee_next, &tee_next, sizeof(esp_partition_info_t));
@@ -117,7 +108,7 @@ esp_err_t esp_tee_ota_write(uint32_t rel_offset, const void *data, size_t size)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (size > ota_handle.tee_next.pos.size || rel_offset > ota_handle.tee_next.pos.size - size) {
+    if (rel_offset + size > ota_handle.tee_next.pos.size) {
         ESP_LOGE(TAG, "Out of region write not allowed!");
         return ESP_FAIL;
     }
@@ -144,16 +135,9 @@ esp_err_t esp_tee_ota_end(void)
     esp_err_t err = bootloader_utility_tee_set_boot_partition(&ota_handle.tee_ota_data, &ota_handle.tee_next);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set TEE boot partition (0x%"PRIx32")", err);
-        if (err == ESP_ERR_INVALID_VERSION) {
-            /* NOTE: Anti-rollback rejected the image, erase it so it cannot be selected */
-            erase_tee_partition(&ota_handle.tee_next);
-        }
         return err;
     }
 
     ota_handle.tee_ota_state = ESP_TEE_OTA_END;
-
-    /* NOTE: The new image is now the boot target; the TEE restarts the device itself */
-    ESP_LOGI(TAG, "TEE OTA update successful! Restarting...");
-    esp_tee_system_reset();
+    return ESP_OK;
 }

@@ -1,24 +1,18 @@
 /*
- * SPDX-FileCopyrightText: 2022-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
-#include <assert.h>
 #include <stdint.h>
-#include <string.h>
-#include "sdkconfig.h"
 #include "esp_log.h"
-#if CONFIG_TINYUSB_PM
-#include "esp_pm.h"
-#include "esp_sleep.h"
-#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "tinyusb_cdc_acm.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "example";
 static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
@@ -77,25 +71,6 @@ void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
     ESP_LOGI(TAG, "Line state changed on channel %d: DTR:%d, RTS:%d", itf, dtr, rts);
 }
 
-#if CONFIG_TINYUSB_PM
-static void device_event_handler(tinyusb_event_t *event, void *arg)
-{
-    (void) arg;
-
-    switch (event->id) {
-    case TINYUSB_EVENT_SUSPENDED:
-        ESP_LOGI(TAG, "USB suspended with remote wakeup %s; automatic light sleep is now allowed",
-                 event->suspended.remote_wakeup ? "enabled" : "disabled");
-        break;
-    case TINYUSB_EVENT_RESUMED:
-        ESP_LOGI(TAG, "USB resumed");
-        break;
-    default:
-        break;
-    }
-}
-#endif
-
 void app_main(void)
 {
     // Create FreeRTOS primitives
@@ -103,23 +78,8 @@ void app_main(void)
     assert(app_queue);
     app_message_t msg;
 
-#if CONFIG_TINYUSB_PM
-    // Configure Power Management for automatic light sleep
-    const esp_pm_config_t pm_config = {
-        .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-        .min_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-        .light_sleep_enable = true,
-    };
-    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
-    ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_CNNT, ESP_PD_OPTION_ON));
-
-    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG(device_event_handler);
-    tusb_cfg.pm_lock_enable = true;
-#else
-    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-#endif
-
     ESP_LOGI(TAG, "USB initialization");
+    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
     tinyusb_config_cdcacm_t acm_cfg = {

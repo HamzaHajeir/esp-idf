@@ -7,7 +7,7 @@ I80 接口的 LCD
 
     - :cpp:member:`esp_lcd_i80_bus_config_t::clk_src` 设置 I80 总线的时钟源。请注意，不同的 ESP 芯片可能有不同的默认时钟源。
     - :cpp:member:`esp_lcd_i80_bus_config_t::wr_gpio_num` 设置像素时钟的 GPIO 编号（在某些 LCD 规格书中也被称为 ``WR``）
-    - :cpp:member:`esp_lcd_i80_bus_config_t::dc_gpio_num` 设置数据或命令选择管脚的 GPIO 编号（在某些 LCD 规格书中也被称为 ``RS``）。设备没有 D/C 线、只接收数据时，将该值设为 ``-1``。
+    - :cpp:member:`esp_lcd_i80_bus_config_t::dc_gpio_num` 设置数据或命令选择管脚的 GPIO 编号（在某些 LCD 规格书中也被称为 ``RS``）
     - :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` 设置数据总线的位宽（仅支持 ``8`` 位或 ``16`` 位）
     - :cpp:member:`esp_lcd_i80_bus_config_t::data_gpio_nums` 是数据总线的 GPIO 编号数组。GPIO 的数量应与 :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` 的值等同。
     - :cpp:member:`esp_lcd_i80_bus_config_t::max_transfer_bytes` 设置单次传输的最大字节数。
@@ -41,13 +41,6 @@ I80 接口的 LCD
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::pclk_hz` 设置像素时钟频率 (Hz)。像素时钟频率越高，刷新率越高，但如果 DMA 带宽不足或 LCD 控制器芯片不支持高像素时钟频率，则可能会导致闪烁。
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::lcd_cmd_bits` 和 :cpp:member:`esp_lcd_panel_io_i80_config_t::lcd_param_bits` 分别设置 LCD 控制器芯片可识别的命令及参数的位宽。不同芯片对位宽要求不同，请提前参阅 LCD 规格书。
     - :cpp:member:`esp_lcd_panel_io_i80_config_t::trans_queue_depth` 设置在 LCD IO 设备中可以排队的最大传输量。该值越大，可以排队的传输越多，但消耗的内存也越多。
-
-    .. note::
-
-        输出像素时钟 PCLK 频率存在上限，具体取决于数据总线位宽：
-
-        - 当 :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` 为 8 时，PCLK 频率建议值需小于 80 MHz；
-        - 当 :cpp:member:`esp_lcd_i80_bus_config_t::bus_width` 为 16 时，PCLK 频率建议值需小于 40 MHz。
 
     .. code-block:: c
 

@@ -5,14 +5,7 @@ Bluetooth\ :sup:`®` API
 
 This section provides the API reference for Bluetooth components supported in ESP-IDF. ESP-IDF supports two host stacks: **Bluedroid** and **NimBLE**.
 
-.. only:: SOC_BT_CLASSIC_SUPPORTED
-
-    - **Bluedroid** (the default stack): Supports both Bluetooth Classic and Bluetooth LE. Recommended for applications that require both technologies.
-
-.. only:: not SOC_BT_CLASSIC_SUPPORTED
-
-    - **Bluedroid** (the default stack): On {IDF_TARGET_NAME}, supports Bluetooth LE only.
-
+- **Bluedroid** (the default stack): Supports both Bluetooth Classic and Bluetooth LE. Recommended for applications that require both technologies.
 - **NimBLE**: A lightweight stack for Bluetooth LE only. Ideal for resource-constrained applications due to smaller code size and memory usage.
 
 Use the navigation links below to explore API documentation and application examples.
@@ -31,7 +24,7 @@ The low-level interface between the Bluetooth host stack and the controller.
 
 **Bluedroid Stack API**
 
-The default host stack in ESP-IDF.
+The default host stack in ESP-IDF, supporting both Bluetooth Classic and Bluetooth LE.
 
 .. toctree::
     :maxdepth: 1
@@ -72,38 +65,15 @@ For additional details and API reference from the upstream documentation, refer 
 
         esp-ble-mesh
 
-.. only:: SOC_BLE_ISO_SUPPORTED
-
-    **ESP-BLE-ISO API**
-
-    Bluetooth LE Isochronous Channels (CIS/BIS) for LE Audio and time-synchronized streaming.
-
-    .. toctree::
-        :maxdepth: 1
-
-        esp-ble-iso
-
-.. only:: SOC_BLE_AUDIO_SUPPORTED
-
-    **ESP-BLE-AUDIO API**
-
-    Bluetooth LE Audio profiles and services (BAP, PACS, VCP, HAS, CSIP, etc.).
-
-    .. toctree::
-        :maxdepth: 1
-
-        esp-ble-audio
-
 ----
 
 Examples and Tutorials
-----------------------
+---------------------------
 
 Explore examples and tutorials in the ESP-IDF examples directory:
 
 - **Bluedroid**: :example:`bluetooth/bluedroid`
 - **NimBLE**: :example:`bluetooth/nimble`
-- **BLE UART Service** (turnkey serial-over-BLE peripheral on top of NimBLE or Bluedroid, exposing the BLE UART Service GATT layout): :example:`bluetooth/ble_uart_service`
 
 Step-by-step tutorials for developing with the Bluedroid stack:
 
